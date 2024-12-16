@@ -1,3 +1,17 @@
+
+# big question: can conditions change in their spatial definition from year to year?
+# if so, what's the right level for analysis over time?
+
+# similarly, is it right to aggregate to condition and plot, then compute differences (in volume, age, time)?
+# If not, is the alternative to compute differences, then aggregate? Doesn't that leave holes in the data?
+# i.e. only some trees are remeasured so then the aggregates have some weird errors by omission
+
+# note from FIA Guide:
+# Based on the procedures described in Bechtold and Patterson
+# (2005), this attribute must be adjusted using factors stored in the POP_STRATUM table to
+# derive population estimates. Examples of estimating population totals are shown in The
+# Forest Inventory and Analysis Database: Population Estimation User Guide.
+
 # 0. Get packages.
 # 1. Get FIA data in. 
 # join ownership data from COND to PLOT on PLT_CN to CN (but check against potential alternative join keys)
@@ -14,30 +28,33 @@
 library(tidyverse)
 library(ggpubr)
 
+options(scipen = 999)
+
 # 1.
 
 dat_or_plot = "data/OR_PLOT.csv" %>% read_csv # 9 MB
 
 dat_or_cond = "data/OR_COND.csv" %>% read_csv # 18 MB
 
-dat_or_subplot = "data/OR_SUBPLOT.csv" %>% read_csv # 22 MB
+# dat_or_subplot = "data/OR_SUBPLOT.csv" %>% read_csv # 22 MB
 
 dat_or_tree = "data/OR_TREE.csv" %>% read_csv # 429 MB
 
-# ?. Filter plots to western Oregon.
-#  This is a placeholder for a filter on ecoregions (or forestry regions or something).
-#  This and the following snippet use the unique/natural keys, not foreign keys, in FIA jargon.
-#   (but the foreign keys might turn out to be necessary)
-
-#  partial resolution: need cn to link one tree to another, but natural keys seem fine otherwise
+# ?. Filter observations plots to each first pair in western Oregon.
+# (This needs explaining.)
 
 dat_or_plot_less = 
   dat_or_plot %>% 
   filter(LON < -120) %>% 
+  mutate(MATCH_CN = ifelse(is.na(PREV_PLT_CN), CN, PREV_PLT_CN)) %>% 
+  group_by(MATCH_CN) %>% 
+  filter(n() > 1) %>%
+  ungroup %>% 
   select(STATECD, 
          UNITCD, 
          COUNTYCD, 
          PLOT, 
+         MATCH_CN,
          INVYR, 
          MEASYEAR, 
          LON, 
@@ -53,12 +70,15 @@ dat_or_cond_less =
          COUNTYCD, 
          PLOT, 
          CONDID, 
+         CONDPROP_UNADJ,
          INVYR, 
+         STDAGE,
+         SITECLCD,
          DSTRBCD1, 
          DSTRBYR1, 
          TRTCD1, 
          TRTYR1)
-  
+
 # ?. Join filters on plot and condition.
 
 dat_or_keep = 
@@ -66,7 +86,7 @@ dat_or_keep =
   left_join(dat_or_plot_less) %>% 
   semi_join(dat_or_plot_less)
 
-# ?. Filter trees to private Douglas fir in western Oregon.
+# ?. Filter trees on plot and condition, then on being Douglas fir.
 
 dat_or_tree_less = 
   dat_or_tree %>% 
@@ -78,91 +98,72 @@ dat_or_tree_less =
          CONDID,
          TREE,
          INVYR,
-         STATUSCD,
+         # STATUSCD,
          SPGRPCD,
          SPCD,
-         DIA,
-         DIAHTCD,
-         HT,
-         HTCD,
-         ACTUALHT,
-         SAWHT,
-         BOLEHT,
-         HTCALC,
-         STOCKING,
-         TOTAGE,
-         BHAGE,
+         # DIA,
+         # DIAHTCD,
+         # HT,
+         # HTCD,
+         # ACTUALHT,
+         # SAWHT,
+         # BOLEHT,
+         # HTCALC,
+         # STOCKING,
+         # TOTAGE,
+         # BHAGE,
          # starts_with("VOL"),
          VOLCFNET,
-         VOLBFNET,
-         VOLBSGRS,
-         VOLBSNET,
          # starts_with("DRYBIO"),
-         DRYBIO_AG,
-         DRYBIO_BG,
+         # DRYBIO_AG,
+         # DRYBIO_BG,
          # starts_with("CARBON"),
-         CARBON_AG,
-         CARBON_BG,
+         # CARBON_AG,
+         # CARBON_BG,
          TPA_UNADJ) %>% 
+  # Get plot and condition information.
   left_join(dat_or_keep,
             by = c("STATECD", "UNITCD", "COUNTYCD", "PLOT", "CONDID", "INVYR")) %>% 
+  # Filter on plot and condition.
   semi_join(dat_or_keep,
-            by = c("STATECD", "UNITCD", "COUNTYCD", "PLOT", "CONDID", "INVYR"))
+            by = c("STATECD", "UNITCD", "COUNTYCD", "PLOT", "CONDID", "INVYR")) %>% 
+  # Filter on species group (down to Douglas firs). This is equivalent to SPCD == 202.
+  filter(SPGRPCD == 10) 
 
-# next thing: wrangle PREV_TRE_CN. Note there are 24105 observations of 66264 with non-missing PREV_TRE_CN.
+# Aggregate to condition and plot. Is that a stand? That seems like a stand.
+#  (This also needs explaining!)
 
-# --- end new stuff
-
-#   Relating CN to PREV_TRE_CN identifies repeated observations.
-
-dat_cn_check = 
-  dat_or_tree %>% 
-  select(CN, PREV_TRE_CN)
-
-dat_id_check = 
-  dat_cn_check %>% 
-  left_join(dat_cn_check, by = c("PREV_TRE_CN" = "CN")) %>% 
-  left_join(dat_cn_check, by = c("PREV_TRE_CN.y" = "CN"))
-
-dat_id_check %>% drop_na(PREV_TRE_CN.x) %>% nrow
-dat_id_check %>% drop_na(PREV_TRE_CN.y) %>% nrow
-dat_id_check %>% drop_na(PREV_TRE_CN.y.y) %>% nrow
-
-# problem: there aren't a lot of trees with totage or repeated observations (of 749793 total observations)
-#  totage: 31835; these are almost all from 1999, which is unhelpful
-#  cn: 325895 to 27136 to 0 for t-1, t-2, t-3
-
-# so, lacking a perfect option, let's go with totage as the simpler imperfect option.
-
-#  Subset to Benton County for local interest.
-
-dat_benton = 
-  dat_or_tree %>% 
-  filter(COUNTYCD == 3) %>% 
-  filter(!is.na(TOTAGE)) %>% 
-  left_join(dat_or_plot %>% 
-              filter(COUNTYCD == 3) %>% 
-              select(INVYR,
-                     MEASYEAR,
-                     CN,
-                     LON,
-                     LAT,
-                     ELEV),
-            by = c("PLT_CN" = "CN",
-                   "INVYR")) %>% 
-  select(CN,
-         INVYR,
-         MEASYEAR,
-         TOTAGE,
-         DIA,
-         HT,
-         LON,
-         LAT,
-         ELEV) %>% 
-  # Cut outliers for easier model fitting.
-  mutate(rank = TOTAGE %>% percent_rank) %>% 
-  filter(rank <= 0.90) %>% 
-  select(-rank)
+dat_or_tree_wide = 
+  dat_or_tree_less %>% 
+  group_by(STATECD, # Mind the implicit drops.
+           UNITCD, 
+           COUNTYCD, 
+           PLOT, 
+           CONDID, 
+           MATCH_CN, 
+           INVYR, 
+           MEASYEAR, 
+           STDAGE, 
+           LON, 
+           LAT) %>% 
+  summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ, na.rm = TRUE)) %>% # Aggregate to condition.
+  ungroup %>% 
+  group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID) %>% 
+  filter(n() == 2) %>% # Drop stands without multiple observations. (This has some implicit problems if conditions change.)
+  mutate(STAND = cur_group_id()) %>% # Get a persistent ID for stands.
+  ungroup %>% 
+  arrange(STAND) %>% 
+  group_by(STAND) %>% 
+  mutate(WHICH = ifelse(MEASYEAR == max(MEASYEAR), 1, 0)) %>% # Get an ID for first/second observations.
+  ungroup %>% 
+  pivot_wider(names_from = WHICH,
+              values_from = c(INVYR, MEASYEAR, STDAGE, VOLCFNET)) %>% 
+  mutate(MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0,
+         STDAGE_D = STDAGE_1 - STDAGE_0,
+         VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0) %>% 
+  filter(STDAGE_D > 0 & VOLCFNET_D > 0)
+  
+# Following code is for reference only.
 
 # 2.
 
