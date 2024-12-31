@@ -1,11 +1,3 @@
-
-# big question: can conditions change in their spatial definition from year to year?
-# if so, what's the right level for analysis over time?
-
-# similarly, is it right to aggregate to condition and plot, then compute differences (in volume, age, time)?
-# If not, is the alternative to compute differences, then aggregate? Doesn't that leave holes in the data?
-# i.e. only some trees are remeasured so then the aggregates have some weird errors by omission
-
 # note from FIA Guide:
 # Based on the procedures described in Bechtold and Patterson
 # (2005), this attribute must be adjusted using factors stored in the POP_STRATUM table to
@@ -36,8 +28,6 @@ dat_or_plot = "data/OR_PLOT.csv" %>% read_csv # 9 MB
 
 dat_or_cond = "data/OR_COND.csv" %>% read_csv # 18 MB
 
-# dat_or_subplot = "data/OR_SUBPLOT.csv" %>% read_csv # 22 MB
-
 dat_or_tree = "data/OR_TREE.csv" %>% read_csv # 429 MB
 
 # ?. Filter observations plots to each first pair in western Oregon.
@@ -45,7 +35,7 @@ dat_or_tree = "data/OR_TREE.csv" %>% read_csv # 429 MB
 
 dat_or_plot_less = 
   dat_or_plot %>% 
-  filter(LON < -120) %>% 
+  filter(LON < -120) %>% # This is a placeholder filter for western Oregon.
   mutate(MATCH_CN = ifelse(is.na(PREV_PLT_CN), CN, PREV_PLT_CN)) %>% 
   group_by(MATCH_CN) %>% 
   filter(n() > 1) %>%
@@ -130,25 +120,24 @@ dat_or_tree_less =
   # Filter on species group (down to Douglas firs). This is equivalent to SPCD == 202.
   filter(SPGRPCD == 10) 
 
-# Aggregate to condition and plot. Is that a stand? That seems like a stand.
-#  (This also needs explaining!)
+# Aggregate to plot-acres (?!), then pivot so that each plot is an observation with columns for different timesteps.
 
 dat_or_tree_wide = 
   dat_or_tree_less %>% 
-  group_by(STATECD, # Mind the implicit drops.
+  group_by(STATECD, # Mind implicit drops.
            UNITCD, 
            COUNTYCD, 
            PLOT, 
-           CONDID, 
+           # CONDID, 
            MATCH_CN, 
            INVYR, 
            MEASYEAR, 
-           STDAGE, 
+           # STDAGE, 
            LON, 
            LAT) %>% 
   summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ, na.rm = TRUE)) %>% # Aggregate to condition.
   ungroup %>% 
-  group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID) %>% 
+  group_by(STATECD, UNITCD, COUNTYCD, PLOT) %>% # , CONDID) %>% 
   filter(n() == 2) %>% # Drop stands without multiple observations. (This has some implicit problems if conditions change.)
   mutate(STAND = cur_group_id()) %>% # Get a persistent ID for stands.
   ungroup %>% 
@@ -157,12 +146,40 @@ dat_or_tree_wide =
   mutate(WHICH = ifelse(MEASYEAR == max(MEASYEAR), 1, 0)) %>% # Get an ID for first/second observations.
   ungroup %>% 
   pivot_wider(names_from = WHICH,
-              values_from = c(INVYR, MEASYEAR, STDAGE, VOLCFNET)) %>% 
+              values_from = c(INVYR, MEASYEAR, VOLCFNET)) %>% # STDAGE, 
   mutate(MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0,
-         STDAGE_D = STDAGE_1 - STDAGE_0,
-         VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0) %>% 
-  filter(STDAGE_D > 0 & VOLCFNET_D > 0)
-  
+         # STDAGE_D = STDAGE_1 - STDAGE_0,
+         VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0,
+         VOLCFNET_P = VOLCFNET_1 / VOLCFNET_0 - 1) %>% # %>% 
+  filter(VOLCFNET_D > 0) # STDAGE_D > 0 & 
+
+# Visualize:
+#  Change in Volume ~ Time
+#  % Change in Volume ~ Time
+#  Plots on Pyromes
+#  Growth Models (?!)
+
+# plot(dat_or_tree_wide$VOLCFNET_0, dat_or_tree_wide$VOLCFNET_D)
+
+vis_change_absolute = 
+  dat_or_tree_wide %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0,
+                 y = VOLCFNET_D),
+             shape = 21) +
+  theme_pubr()
+
+# plot(dat_or_tree_wide$VOLCFNET_0, dat_or_tree_wide$VOLCFNET_P)
+# plot(dat_or_tree_wide$VOLCFNET_0, log(dat_or_tree_wide$VOLCFNET_P))
+
+vis_change_percent = 
+  dat_or_tree_wide %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0,
+                 y = log(VOLCFNET_P)),
+             shape = 21) +
+  theme_pubr()
+
 # Following code is for reference only.
 
 # 2.
