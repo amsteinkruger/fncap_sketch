@@ -1,28 +1,31 @@
-# note from FIA Guide:
-# Based on the procedures described in Bechtold and Patterson
-# (2005), this attribute must be adjusted using factors stored in the POP_STRATUM table to
-# derive population estimates. Examples of estimating population totals are shown in The
-# Forest Inventory and Analysis Database: Population Estimation User Guide.
+# 0. Get packages.
+# 1. Get data.
+# 2. Filter plots to those (a) in western Oregon (b) with at least one pair of observations.
+# 3. Filter conditions to private Douglas fir.
+# 4. Join filters on plot and condition.
+# 5. Use the result of (4) to filter trees, then filter trees to Douglas fir.
+# 6. Aggregate to plot-acres (?!), then pivot so that rows are plots with timesteps in columns.
+
+# 7. Visualize:
+#     histograms for fun:
+#      measurement years and their difference
+#      volumes and their differences
+#     straightforward objectives from last conversation over Zoom:
+#      Change in Volume ~ Time
+#      % Change in Volume ~ Time
+#     less straightforward objectives from last conversation over Zoom:
+#      visualize site class
+#      visualize pyromes
+#      Growth Models (?!)
 
 # 0. Get packages.
-# 1. Get FIA data in. 
-# join ownership data from COND to PLOT on PLT_CN to CN (but check against potential alternative join keys)
-# group PLOT records across years on CN, etc
-# filter to plots that are private the entire time, include douglas fir (???), and are west of the cascades
-#  - so jump into TREE, filter to douglas fir (and maybe on location while in there?), then antijoin onto PLOT or COND (???)
-# get volume and acres for plot or subplot or cond or tree measurements (???) -- actually, tree measurements by plot, so back into TREE
-# compute volume/acre at intervals of measurement years by plot for private douglas fir in OR west of the cascades following H&S
-# visualize results to see if they're following H&S's appendix plots
-# figure out site class piece
-
-# 0. 
 
 library(tidyverse)
 library(ggpubr)
 
 options(scipen = 999)
 
-# 1.
+# 1. Get data.
 
 dat_or_plot = "data/OR_PLOT.csv" %>% read_csv # 9 MB
 
@@ -30,16 +33,20 @@ dat_or_cond = "data/OR_COND.csv" %>% read_csv # 18 MB
 
 dat_or_tree = "data/OR_TREE.csv" %>% read_csv # 429 MB
 
-# ?. Filter observations plots to each first pair in western Oregon.
-# (This needs explaining.)
+# 2. Filter plots to those (a) in western Oregon (b) with at least one pair of observations.
 
 dat_or_plot_less = 
   dat_or_plot %>% 
-  filter(LON < -120) %>% # This is a placeholder filter for western Oregon.
+  # Filter to western Oregon.
+  filter(LON < -120) %>% 
+  # Filter to pairs of observations.
+  #  This drops plots without multiple observations.
+  #  This also drops observations 3 through n of plots with multiple observations.
   mutate(MATCH_CN = ifelse(is.na(PREV_PLT_CN), CN, PREV_PLT_CN)) %>% 
   group_by(MATCH_CN) %>% 
   filter(n() > 1) %>%
   ungroup %>% 
+  # Select columns to keep for joins.
   select(STATECD, 
          UNITCD, 
          COUNTYCD, 
@@ -50,11 +57,13 @@ dat_or_plot_less =
          LON, 
          LAT)
 
-# ?. Filter conditions to private Douglas fir.
+# 3. Filter conditions to private Douglas fir.
 
 dat_or_cond_less = 
   dat_or_cond %>% 
+  # Filter.
   filter(FORTYPCD %in% 201:203 & OWNGRPCD == 40) %>% 
+  # Select columns to keep for joins. 
   select(STATECD, 
          UNITCD, 
          COUNTYCD, 
@@ -69,17 +78,18 @@ dat_or_cond_less =
          TRTCD1, 
          TRTYR1)
 
-# ?. Join filters on plot and condition.
+# 4. Join filters on plot and condition.
 
 dat_or_keep = 
   dat_or_cond_less %>% 
   left_join(dat_or_plot_less) %>% 
   semi_join(dat_or_plot_less)
 
-# ?. Filter trees on plot and condition, then on being Douglas fir.
+# 5. Use the result of (4) to filter trees, then filter trees to Douglas fir.
 
 dat_or_tree_less = 
   dat_or_tree %>% 
+  # Select columns that we might use.
   select(ends_with("CN"),
          STATECD,
          UNITCD,
@@ -120,7 +130,7 @@ dat_or_tree_less =
   # Filter on species group (down to Douglas firs). This is equivalent to SPCD == 202.
   filter(SPGRPCD == 10) 
 
-# Aggregate to plot-acres (?!), then pivot so that each plot is an observation with columns for different timesteps.
+# 6. Aggregate to plot-acres (?!), then pivot so that rows are plots with timesteps in columns.
 
 dat_or_tree_wide = 
   dat_or_tree_less %>% 
@@ -138,11 +148,13 @@ dat_or_tree_wide =
   summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ, na.rm = TRUE)) %>% # Aggregate to condition.
   ungroup %>% 
   group_by(STATECD, UNITCD, COUNTYCD, PLOT) %>% # , CONDID) %>% 
-  filter(n() == 2) %>% # Drop stands without multiple observations. (This has some implicit problems if conditions change.)
-  mutate(STAND = cur_group_id()) %>% # Get a persistent ID for stands.
+  filter(n() == 2) %>% # Drop stands without multiple observations. 
+  mutate(PLOT_UID = paste(STATECD, UNITCD, COUNTYCD, PLOT, sep = "_")) %>% 
   ungroup %>% 
-  arrange(STAND) %>% 
-  group_by(STAND) %>% 
+  select(-c(STATECD, UNITCD, COUNTYCD, PLOT)) %>%
+  relocate(PLOT_UID) %>% 
+  arrange(PLOT_UID) %>% 
+  group_by(PLOT_UID) %>% 
   mutate(WHICH = ifelse(MEASYEAR == max(MEASYEAR), 1, 0)) %>% # Get an ID for first/second observations.
   ungroup %>% 
   pivot_wider(names_from = WHICH,
@@ -150,14 +162,131 @@ dat_or_tree_wide =
   mutate(MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0,
          # STDAGE_D = STDAGE_1 - STDAGE_0,
          VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0,
-         VOLCFNET_P = VOLCFNET_1 / VOLCFNET_0 - 1) %>% # %>% 
-  filter(VOLCFNET_D > 0) # STDAGE_D > 0 & 
+         VOLCFNET_P = VOLCFNET_1 / VOLCFNET_0 - 1) 
 
 # Visualize:
-#  Change in Volume ~ Time
-#  % Change in Volume ~ Time
-#  Plots on Pyromes
-#  Growth Models (?!)
+#  histograms for fun:
+#   measurement years and their difference
+#   volumes and their differences
+#  actual objectives from last conversation over Zoom:
+#   Change in Volume ~ Time
+#   % Change in Volume ~ Time
+#  maybe objectives from last conversation over Zoom?:
+#   Plots on Pyromes
+#   Growth Models (?!)
+
+# measurement years
+
+# hist(dat_or_tree_wide$MEASYEAR_0)
+# hist(dat_or_tree_wide$MEASYEAR_1)
+# hist(dat_or_tree_wide$MEASYEAR_D)
+
+vis_histogram_years = 
+  dat_or_tree_wide %>% 
+  select(MEASYEAR_0, MEASYEAR_1) %>% 
+  pivot_longer(cols = everything(),
+               names_to = "which",
+               names_prefix = "MEASYEAR",
+               values_to = "year") %>% 
+  mutate(which = ifelse(which == "_0", "First", "Second")) %>% 
+  group_by(which, year) %>% 
+  summarize(count = n()) %>% 
+  ungroup %>% 
+  arrange(year, which) %>% 
+  mutate(year = year %>% factor) %>% 
+  ggplot() +
+  geom_col(aes(x = year,
+               y = count,
+               fill = which,
+               color = which)) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(y = "Observations",
+       fill = "Observation",
+       color = "Observation") +
+  theme_pubr() +
+  theme(axis.title.x = element_blank())
+
+# differences
+
+# hist(dat_or_tree_wide$MEASYEAR_1 - dat_or_tree_wide$MEASYEAR_0)
+
+vis_histogram_years_differences = 
+  dat_or_tree_wide %>% 
+  ggplot() +
+  geom_histogram(aes(x = MEASYEAR_D),
+                 binwidth = 1) +
+  scale_x_continuous(breaks = 8:12) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Difference in Measurement Years",
+       y = "Observations") +
+  theme_pubr()
+
+# volumes
+
+# hist(dat_or_tree_wide$VOLCFNET_0)
+# hist(dat_or_tree_wide$VOLCFNET_1)
+# hist(dat_or_tree_wide$VOLCFNET_D)
+
+vis_histogram_volumes = 
+  dat_or_tree_wide %>% 
+  select(VOLCFNET_0, VOLCFNET_1) %>% 
+  pivot_longer(cols = everything(),
+               names_to = "which",
+               names_prefix = "VOLCFNET",
+               values_to = "volume") %>% 
+  mutate(which = ifelse(which == "_0", "First", "Second"),
+         bin = volume %>% cut(breaks = seq(0, 22000, by = 1000),
+                              labels = paste(seq(0, 21000, by = 1000),
+                                             seq(1000, 22000, by = 1000),
+                                             sep = "-")),
+         bin = bin %>% fct_na_value_to_level("Negative")) %>% 
+  group_by(which, bin) %>% 
+  summarize(count = n()) %>% 
+  ungroup %>% 
+  arrange(bin, which) %>% 
+  ggplot() +
+  geom_col(aes(x = bin,
+               y = count,
+               fill = which,
+               color = which),
+           position = "dodge") +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Plot Volume/Acre (VOLCFNET, Net Cubic-Foot Stem Wood Volume)",
+       y = "Observations",
+       fill = "Observation",
+       color = "Observation") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+# differences
+
+# hist(dat_or_tree_wide$MEASYEAR_1 - dat_or_tree_wide$MEASYEAR_0)
+
+vis_histogram_volumes_differences = 
+  dat_or_tree_wide %>% 
+  select(VOLCFNET_D) %>% 
+  mutate(bin = VOLCFNET_D %>% cut(breaks = seq(0, 5000, by = 1000),
+                                  labels = paste(seq(0, 4000, by = 1000),
+                                                 seq(1000, 5000, by = 1000),
+                                                 sep = "-")),
+         bin = bin %>% fct_na_value_to_level("Negative")) %>% 
+  group_by(bin) %>% 
+  summarize(count = n()) %>% 
+  ungroup %>% 
+  arrange(bin) %>% 
+  ggplot() +
+  geom_col(aes(x = bin,
+               y = count)) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Change in Plot Volume/Acre (VOLCFNET)",
+       y = "Observations",
+       fill = "Observation",
+       color = "Observation") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 # plot(dat_or_tree_wide$VOLCFNET_0, dat_or_tree_wide$VOLCFNET_D)
 
@@ -170,126 +299,21 @@ vis_change_absolute =
   theme_pubr()
 
 # plot(dat_or_tree_wide$VOLCFNET_0, dat_or_tree_wide$VOLCFNET_P)
-# plot(dat_or_tree_wide$VOLCFNET_0, log(dat_or_tree_wide$VOLCFNET_P))
 
 vis_change_percent = 
+  dat_or_tree_wide %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0,
+                 y = VOLCFNET_P),
+             shape = 21) +
+  theme_pubr()
+
+# plot(dat_or_tree_wide$VOLCFNET_0, log(dat_or_tree_wide$VOLCFNET_P))
+
+vis_change_percent_log = 
   dat_or_tree_wide %>% 
   ggplot() +
   geom_point(aes(x = VOLCFNET_0,
                  y = log(VOLCFNET_P)),
              shape = 21) +
   theme_pubr()
-
-# Following code is for reference only.
-
-# 2.
-
-library(terra)
-library(tidyterra)
-
-#  Get boundaries. These geodata originate with the Forest Service. See /data or /documentation for details.
-
-dat_spa_boundaries = 
-  "data/S_USA.ALPGeopoliticalUnit.gdb" %>% 
-  vect %>% 
-  subset(TYPENAMEREFERENCE == "County" & NAME == "Benton" & STATENAME == "Oregon", NSE = TRUE)
-
-dat_spa_plots = 
-  dat_benton %>% 
-  select(LON, LAT) %>% 
-  distinct %>% 
-  as.matrix %>% 
-  vect("points",
-       crs = crs(dat_spa_boundaries))
-
-vis_spa_plots = 
-  ggplot() + 
-  geom_spatvector(data = dat_spa_boundaries) +
-  geom_spatvector(data = dat_spa_plots) +
-  theme_void()
-
-vis_spa_plots %>% print
-
-# 3.
-
-#  Check out the data.
-
-dat_benton %>% slice_head(n = 5)
-
-vis_mod_scatter = 
-  dat_benton %>% 
-  ggplot() +
-  geom_point(aes(x = TOTAGE,
-                 y = HT),
-             alpha = 0.50) +
-  scale_x_continuous(limits = c(0, NA)) +
-  scale_y_continuous(limits = c(0, NA)) +
-  theme_pubr()
-
-vis_mod_scatter %>% print
-
-#  Fit a linear model, just in case that does the trick.
-
-mod_linear_benton = 
-  dat_benton %>% 
-  lm(formula = HT ~ TOTAGE, 
-     data = .)
-
-mod_linear_benton %>% summary
-
-vis_mod_linear = 
-  ggplot() + 
-  geom_point(data = dat_benton,
-             aes(x = TOTAGE,
-                 y = HT),
-             alpha = 0.50) +
-  geom_line(data = dat_benton %>% filter(TOTAGE == TOTAGE %>% max | TOTAGE == TOTAGE %>% min),
-            aes(x = TOTAGE,
-                y = mod_linear_benton$coefficients[[1]] + mod_linear_benton$coefficients[[2]] * TOTAGE),
-            alpha = 1.00,
-            color = "#D73F09",
-            linewidth = 1.00) +
-  scale_x_continuous(limits = c(0, NA)) +
-  scale_y_continuous(limits = c(0, NA)) +
-  theme_pubr()
-
-vis_mod_linear %>% print
-
-#  Fit a nonlinear model (VBGF) for a more credible attempt.
-
-library(gslnls) 
-
-alpha_start = 200 # Asymptotic height.
-beta_start = 1 # Inverse of annual growth rate.
-gamma_start = 0 # Modeling artifact analogous to y-intercept.
-
-mod_nonlinear_benton = 
-  dat_benton %>% 
-  filter(TOTAGE < 100) %>% 
-  gsl_nls(fn = HT ~ alpha * (1 - exp(-(beta / 100) * (TOTAGE - gamma))),
-          data = .,
-          algorithm = "dogleg",
-          start = c(alpha = alpha_start, beta = beta_start, gamma = gamma_start))
-
-m_n_b_coef = mod_nonlinear_benton$m$getPars()
-
-mod_nonlinear_benton %>% summary
-
-fun_nonlinear_benton = function(alpha, beta, gamma, age){alpha * (1 - exp(-(beta / 100) * (age - gamma)))}
-
-vis_mod_nonlinear = 
-  dat_benton %>% 
-  ggplot() + 
-  geom_point(aes(x = TOTAGE,
-                 y = HT),
-             alpha = 0.50) +
-  geom_function(fun = fun_nonlinear_benton,
-                args = list(alpha = m_n_b_coef[["alpha"]], beta = m_n_b_coef[["beta"]], gamma = m_n_b_coef[["gamma"]]),
-                alpha = 1.00,
-                color = "#D73F09",
-                linewidth = 1.00) +
-  scale_x_continuous(limits = c(0, NA)) +
-  scale_y_continuous(limits = c(0, NA)) +
-  theme_pubr()
-
-vis_mod_nonlinear %>% print
