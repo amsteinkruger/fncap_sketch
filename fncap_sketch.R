@@ -242,10 +242,11 @@ vis_histogram_volumes =
                values_to = "volume") %>% 
   mutate(which = ifelse(which == "_0", "First", "Second"),
          bin = volume %>% cut(breaks = seq(0, 22000, by = 1000),
-                              labels = paste(seq(0, 21000, by = 1000),
-                                             seq(1000, 22000, by = 1000),
-                                             sep = "-")),
-         bin = bin %>% fct_na_value_to_level("Negative")) %>% 
+                              labels = c("1-1000",
+                                         paste(seq(1000, 21000, by = 1000),
+                                               seq(2000, 22000, by = 1000),
+                                               sep = "-"))),
+         bin = bin %>% fct_na_value_to_level("0") %>% fct_relevel("0")) %>% 
   group_by(which, bin) %>% 
   summarize(count = n()) %>% 
   ungroup %>% 

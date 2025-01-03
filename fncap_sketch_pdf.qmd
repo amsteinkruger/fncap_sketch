@@ -1,14 +1,12 @@
 ---
 title: "Processing FIA Data for FNCAP"
-format: gfm
+format: pdf
 editor: visual
 ---
 
 # Objectives
 
-This document processes FIA data, then sets up initial exploration and visualization for growth modeling.
-
-The next step is to add growth models following Hashida and Fenichel (2021).
+This document processes FIA data, then sets up initial exploration and visualization for growth modeling. The next step is to add growth models following Hashida and Fenichel (2021).
 
 # Results Preview
 
@@ -71,6 +69,8 @@ dat_or_plot_less =
 
 ```
 
+{{< pagebreak >}}
+
 ## 3. Filtering Conditions
 
 This code filters the full set of conditions in Oregon down to private land with Douglas fir stands.
@@ -101,6 +101,8 @@ dat_or_cond_less =
 
 ```
 
+{{< pagebreak >}}
+
 ## 4. Filtering Trees
 
 This code uses the subsets of plots and conditions from (2) and (3) to filter trees down to Douglas fir stands on private land in western Oregon with at least two observations, then filters the resulting subset of trees down to Douglas firs.
@@ -127,19 +129,9 @@ dat_or_tree_less =
          CONDID,
          TREE,
          INVYR,
-         # STATUSCD,
          SPGRPCD,
          SPCD,
-         # TOTAGE,
-         # BHAGE,
-         # starts_with("VOL"),
          VOLCFNET,
-         # starts_with("DRYBIO"),
-         # DRYBIO_AG,
-         # DRYBIO_BG,
-         # starts_with("CARBON"),
-         # CARBON_AG,
-         # CARBON_BG,
          TPA_UNADJ) %>% 
   # Get plot and condition information.
   left_join(dat_or_keep,
@@ -152,9 +144,11 @@ dat_or_tree_less =
 
 ```
 
+{{< pagebreak >}}
+
 ## 5. Aggregation and Pivot
 
-This code aggregates the trees identified in (4) up to plots, with tree measurements transformed into per-acre metrics, then pivots the data so that each row describes a plot at two timesteps. This step drops observations 3-N for plots with more than two observations. That isn't ideal, but it's the simplest option and affects only a few plots. This step is also where changes to keep additional condition information (FLDAGE or STDAGE to follow Hashida and Fenichel) would come in.
+This code aggregates the trees identified in (4) up to plots, with tree measurements transformed into per-acre metrics, then pivots the data so that each row describes a plot at two timesteps. This step drops observations 3-N for plots with more than two observations. That isn't ideal, but it's the simplest option and affects only a few plots.
 
 ```{r aggregate, output = FALSE}
 
@@ -164,12 +158,9 @@ dat_or_tree_wide =
            UNITCD, 
            COUNTYCD, 
            PLOT, 
-           # CONDID, 
            MATCH_CN, 
            INVYR, 
            MEASYEAR, 
-           # FLDAGE, 
-           # STDAGE, 
            LON, 
            LAT) %>% 
   # Aggregate to plot. 
@@ -196,6 +187,8 @@ dat_or_tree_wide =
          VOLCFNET_P = VOLCFNET_1 / VOLCFNET_0 - 1) 
 
 ```
+
+{{< pagebreak >}}
 
 ## 6. Histograms
 
@@ -362,6 +355,8 @@ The volume/acre measurements fall on a nice distribution. The zero values are om
 
 While change in volume/acre between timesteps also falls on a nice distribution, the "Negative" bin is a problem: a fair proportion of plots see volume decrease over time. I haven't found cases where that's a problem resulting from measurement or computation, so I'm assuming that reflects the real rate of harvest and disturbance for this subset of plots. For the rest of this document, I'm assuming that only plots in that negative bin reflect harvest and disturbance. That's not a great assumption, though, so figuring out a better approach might be a prerequisite for meaningful growth models.
 
+{{< pagebreak >}}
+
 ## 7. Changes over Timesteps
 
 ```{r visualization_scatters, echo = FALSE, output = FALSE}
@@ -432,6 +427,8 @@ I believe we had talked about this specific plot to inform growth modeling, but 
 ![](figures/vis_change_percent_log.png){fig-alt="Log of percent change in volume by initial volume." fig-align="center" width="60%"}
 
 With transformation, the same plot is a little more informative: plots with non-negative growth describe a nice curve, with plots of greater initial volume returning less growth than plots of lesser initial volume. So, without worrying too much about the plots with negative growth and other plots with disturbances, the data should support a growth model following Hashida and Fenichel.
+
+{{< pagebreak >}}
 
 # Discussion
 
