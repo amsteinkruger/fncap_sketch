@@ -72,3 +72,17 @@ end
 
 # 6. Aggregate to volume-per-acre by condition, then pivot so that rows are plots with timesteps in columns.
 
+dat_or_tree_wide = @chain dat_or_tree_less begin
+    @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, INVYR, LON, LAT)
+    @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ, na.rm = TRUE)) # This isn't Julia-fied -- expect an error.
+    @ungroup
+    @group_by()
+    @summarize()
+    @filter(n() == 2)
+    @mutate(PLOT_UID = paste(STATECD, UNITCD, COUNTYCD, PLOT, sep = "_")) # This also isn't Julia-fied.
+    @ungroup
+    @select(-c(STATECD, UNITCD, COUNTYCD, PLOT)) # Mind c().
+    @relocate(PLOT_UID) # Might error out?
+
+
+end

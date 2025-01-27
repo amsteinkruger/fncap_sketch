@@ -167,7 +167,7 @@ dat_or_tree_wide =
   mutate(MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0,
          # STDAGE_D = STDAGE_1 - STDAGE_0,
          VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0,
-         VOLCFNET_P = VOLCFNET_1 / VOLCFNET_0 - 1) 
+         VOLCFNET_P = VOLCFNET_1 / VOLCFNET_0 - 1)
 
 # Visualize:
 #  histograms for fun:
