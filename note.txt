@@ -1,0 +1,7 @@
+- set up jupyter notebook with Julia and VSCode for transition
+- check aggregation docs for age methods
+- review + implement Matt's code
+
+- What's the function lionfishpomdp_halton()? Looking around online suggests it's related to David's past work, but I haven't figured out a way to replicate the function or provide a useful placeholder.
+- What's the function formon_growthls_FIA_SC()? The name is suggestive (estimating growth from FIA by OLS), but I also haven't figured out a way to replicate or fake this function. The MATLAB syntax on the relevant line (106 at the moment) is also a little beyond my intuition -- I can figure it out if the function runs, but talking through it might save some time.
+- What are the last two loops (before visualization) doing? I can also just figure this out myself if all the functions run, but chatting might save some time in this case as well. 
