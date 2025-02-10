@@ -17,6 +17,7 @@
 
 # Instead of learning new things, I'll stick to the Tidyverse. Cheers to the developers.
 
+using DataFrames
 using Tidier
 
 # Try loading data and using a function-as-macro to take a look. Note that applications of Tidier to dataframes often need to be macros.
@@ -73,16 +74,20 @@ end
 # 6. Aggregate to volume-per-acre by condition, then pivot so that rows are plots with timesteps in columns.
 
 dat_or_tree_wide = @chain dat_or_tree_less begin
+    @filter(!ismissing(VOLCFNET) & !ismissing(TPA_UNADJ))
     @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, INVYR, LON, LAT)
-    @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ, na.rm = TRUE)) # This isn't Julia-fied -- expect an error.
+    @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ))
     @ungroup
-    @group_by()
-    @summarize()
+    @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID)
     @filter(n() == 2)
-    @mutate(PLOT_UID = paste(STATECD, UNITCD, COUNTYCD, PLOT, sep = "_")) # This also isn't Julia-fied.
+    @mutate(PLOT_UID = string(STATECD, "_", UNITCD, "_", COUNTYCD, "_", PLOT, "_", CONDID))
     @ungroup
-    @select(-c(STATECD, UNITCD, COUNTYCD, PLOT)) # Mind c().
-    @relocate(PLOT_UID) # Might error out?
-
-
+    @select(PLOT_UID, MATCH_CN, INVYR, LON, LAT, VOLCFNET)
+    @arrange(PLOT_UID, MATCH_CN, INVYR)
+    @group_by(PLOT_UID)
+    @summarize(count = n(), max = max(INVYR), min = min(INVYR)) # Problem: only one INVYR for each PLOT_UID, no idea why
+    @ungroup
+    # @mutate(WHICH = if_else(INVYR == max(INVYR), 1, 0))
+    # @ungroup
+    # @pivot_wider(names_from = WHICH, values_from = VOLCFNET)
 end
