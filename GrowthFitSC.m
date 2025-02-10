@@ -1,10 +1,4 @@
-% Begin code that runs.
-
-%Formon_growthfit_SC
-
-%
-% Fits growth function for single or set of
-% Site classes
+% Fits growth function for single or set of site classes
 %
 % Created 4.11.17 (MS)
 % Modified 20250126 (AS)
@@ -17,7 +11,7 @@ location = 'C:\Users\amste\OneDrive\Documents\GitHub\fncap_sketch'
 
 rng(1949)
 
-b0=[116.2194142,1.8768584,7233.071142,0.51759921];
+b0=[116.2194142, 1.8768584, 7233.071142, 0.51759921];
  
 % initial parameter guesses 
 
@@ -81,17 +75,11 @@ FL = [1,1,3,3,4,9,7,5,9,18,18,8,13,31,9,19,36,33,21,44,43,61,60,56,26,71,...
 1251,1765,1303,595,981,671,1403,820,1404,1661,973,1340,1015,1649,855,...
 1834,1621,1704,893,1033,721,1737,1507,1851,1006,994,923,872,1860];
 
-%%
-
 % Try out haltonset().
 
 p.D = zeros(p.Ndraws, p.T-1);
 p.D = net(haltonset(p.T-1, 'Skip', 1000, 'Leap', 1000), p.Ndraws)
 p.U = (norminv(p.D))
-
-% End code that runs.
-
-%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -114,8 +102,8 @@ bhat
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-filename='NewData/Growth_Data_SC_clean.csv';
-data=csvread(filename);
+% filename='NewData/Growth_Data_SC_clean.csv';
+% data=csvread(filename);
 
 siteclass=4;
 count=0;
@@ -150,8 +138,6 @@ end
   for i=1:p.T;
       W_sim2(i,1)=mean(W_sim(:,i));
   end
-  
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
