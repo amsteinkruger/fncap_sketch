@@ -1,4 +1,4 @@
-# Remember to pull in material from the R script first, then check for consistency with the markdowns.
+# Process FIA data for Oregon plots, conditions, and trees into differences in volume by year for Douglas fir.
 
 # 0. Get packages.
 # 1. Get data.
@@ -6,7 +6,7 @@
 # 3. Filter conditions to private Douglas fir.
 # 4. Join filters on plot and condition.
 # 5. Use the result of (4) to filter trees, then filter trees to Douglas fir.
-# 6. Aggregate to plots with units per acre.
+# 6. Aggregate to conditions with units per acre, then represent change in volume for the first to the second year.
 # 7. Check results in standard visualizations.
 
 # 0. 
@@ -17,10 +17,7 @@
 
 # Instead of learning new things, I'll stick to the Tidyverse. Cheers to the developers.
 
-using DataFrames
 using Tidier
-
-# Try loading data and using a function-as-macro to take a look. Note that applications of Tidier to dataframes often need to be macros.
 
 # 1. Get data.
 
@@ -82,12 +79,34 @@ dat_or_tree_wide = @chain dat_or_tree_less begin
     @filter(n() == 2)
     @mutate(PLOT_UID = string(STATECD, "_", UNITCD, "_", COUNTYCD, "_", PLOT, "_", CONDID))
     @ungroup
-    @select(PLOT_UID, MATCH_CN, INVYR, LON, LAT, VOLCFNET)
+    @select(PLOT_UID, MATCH_CN, LON, LAT, INVYR, VOLCFNET)
     @arrange(PLOT_UID, MATCH_CN, INVYR)
     @group_by(PLOT_UID)
-    @summarize(count = n(), max = max(INVYR), min = min(INVYR)) # Problem: only one INVYR for each PLOT_UID, no idea why
+    @mutate(WHICH = row_number())
+    @mutate(WHICH = if_else(WHICH == 1, "First", "Second"))
     @ungroup
-    # @mutate(WHICH = if_else(INVYR == max(INVYR), 1, 0))
-    # @ungroup
-    # @pivot_wider(names_from = WHICH, values_from = VOLCFNET)
+    # Things get silly in the following section: pivot_wider in Tidier doesn't appear to support pivoting multiple columns.
 end
+
+dat_or_tree_wide_left = @chain dat_or_tree_wide begin
+    @select(-VOLCFNET)
+    @pivot_wider(names_from = WHICH, values_from = INVYR)
+    @rename(Year_First = First, Year_Second = Second)
+end
+
+dat_or_tree_wide_right = @chain dat_or_tree_wide begin
+    @select(-INVYR)
+    @pivot_wider(names_from = WHICH, values_from = VOLCFNET)
+    @rename(Volume_First = First, Volume_Second = Second)
+end
+
+
+dat_or_tree_wider = @left_join(dat_or_tree_wide_left, dat_or_tree_wide_right)
+
+dat_or_differences = @chain dat_or_tree_wider begin
+    @select(-MATCH_CN)
+    @mutate(Year_Difference = Year_Second - Year_First,
+            Volume_Difference = Volume_Second - Volume_First)
+end
+
+write_csv(dat_or_differences, "output/data/dat_or_differences.csv")

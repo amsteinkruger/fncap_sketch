@@ -1,3 +1,0 @@
-- set up jupyter notebook with Julia and VSCode for transition
-- check aggregation docs for age methods
-- review + implement Matt's code
