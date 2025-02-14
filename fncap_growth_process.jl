@@ -33,7 +33,7 @@ dat_or_plot_less = @chain dat_or_plot begin
     @group_by(MATCH_CN)
     @filter(n() > 1)
     @ungroup
-    @select(STATECD, UNITCD, COUNTYCD, PLOT, MATCH_CN, INVYR, LON, LAT)
+    @select(STATECD, UNITCD, COUNTYCD, PLOT, MATCH_CN, INVYR, MEASYEAR, LON, LAT)
     @mutate(join = 1)
 end
 
@@ -42,9 +42,9 @@ end
 dat_or_cond_less = @chain dat_or_cond begin
     @filter(FORTYPCD in 201:203,  OWNGRPCD == 40)
     #  Select columns to keep for joins. 
-    @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1)
+    @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1)
     #  Select fewer columns (for now).
-    @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR)
+    @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD)
 end
 
 # 4. Join subsets of plots and conditions.
@@ -58,7 +58,7 @@ end
 
 dat_or_tree_less = @chain dat_or_tree begin
     # Select columns that we might use.
-    @select(CN, STATECD, UNITCD, COUNTYCD, PLOT, CONDID, INVYR, SPGRPCD, VOLCFNET, TPA_UNADJ)
+    @select(CN, STATECD, UNITCD, COUNTYCD, PLOT, CONDID, INVYR, SPGRPCD, VOLCFNET, VOLBFNET, TPA_UNADJ)
     # Get plot and condition information.
     @left_join(dat_or_keep)
     # Filter on plot and condition.
@@ -72,21 +72,26 @@ end
 
 dat_or_tree_wide = @chain dat_or_tree_less begin
     @filter(!ismissing(VOLCFNET) & !ismissing(TPA_UNADJ))
-    @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, INVYR, LON, LAT)
-    @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ))
+    @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD)
+    @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ), 
+               VOLBFNET = sum(VOLBFNET * TPA_UNADJ))
     @ungroup
     @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID)
     @filter(n() == 2)
     @mutate(PLOT_UID = string(STATECD, "_", UNITCD, "_", COUNTYCD, "_", PLOT, "_", CONDID))
     @ungroup
-    @select(PLOT_UID, MATCH_CN, LON, LAT, INVYR, VOLCFNET)
+    @select(PLOT_UID, MATCH_CN, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD, VOLCFNET, VOLBFNET)
     @arrange(PLOT_UID, MATCH_CN, INVYR)
     @group_by(PLOT_UID)
-    @mutate(WHICH = row_number())
-    @mutate(WHICH = if_else(WHICH == 1, "First", "Second"))
+    @mutate(WHICH = if_else(INVYR == maximum(INVYR), "Second", "First"),
+            SITECLCD = if_else(INVYR == maximum(INVYR), 0, SITECLCD))
+    @mutate(SITECLCD = maximum(SITECLCD)) # This is a harebrained Band-Aid to get a time-invariant site productivity class.
     @ungroup
-    # Things get silly in the following section: pivot_wider in Tidier doesn't appear to support pivoting multiple columns.
+    # This is a Band-Aid for easier pivoting. Time-varying variables could be worth keeping as-is.
+    @select(PLOT_UID, MATCH_CN, LON, LAT, INVYR, SITECLCD, VOLCFNET, WHICH)
 end
+
+# Things get silly in the following section: pivot_wider in Tidier doesn't appear to support pivoting multiple columns.
 
 dat_or_tree_wide_left = @chain dat_or_tree_wide begin
     @select(-VOLCFNET)
@@ -100,7 +105,6 @@ dat_or_tree_wide_right = @chain dat_or_tree_wide begin
     @rename(Volume_First = First, Volume_Second = Second)
 end
 
-
 dat_or_tree_wider = @left_join(dat_or_tree_wide_left, dat_or_tree_wide_right)
 
 dat_or_differences = @chain dat_or_tree_wider begin
@@ -109,4 +113,4 @@ dat_or_differences = @chain dat_or_tree_wider begin
             Volume_Difference = Volume_Second - Volume_First)
 end
 
-write_csv(dat_or_differences, "output/data/dat_or_differences.csv")
+write_csv(dat_or_differences, "output/dat_or_differences.csv")

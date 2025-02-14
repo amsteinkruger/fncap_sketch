@@ -1,0 +1,18 @@
+for growth model, looking to pull through:
+ - site productivity class (SITECLCD)
+ - stand age (STDAGE and maybe the other age thing?)
+ - another volume variable
+ - maybe MEASYEAR?
+ - maybe carbon?
+
+first four are sorted, carbon is not.
+
+note that time-varying variables (MEASYEAR, STDAGE, FLDAGE) are dropped at end of processing
+
+what's the right thing to do for conditions with time-varying site productivity class?
+
+keeping just the first site productivity class for now
+
+remember to pull .jl changes into .ipynb
+
+pick a naming style and stick to it
