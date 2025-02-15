@@ -36,8 +36,8 @@ Random.seed!(112358)
 
 b = [100, 1, 1000, 0.5]
 t = 1
-T = 100
-n = 1000
+T = maximum(dat_growth.Year_Difference)
+skip = 1000
 Draws = 1000
 
 # Get draws.
@@ -51,9 +51,10 @@ Draws = 1000
 # Note that Draws_Halton isn't related to Draws. Names are a work in progress.
 
 Base_Halton = 3
-Draws_Halton = HaltonSeq(Base_Halton, T, n)
+Draws_Halton = HaltonSeq(Base_Halton, Draws * T, skip)
 Vec_Halton = collect(Draws_Halton)
-Out_Halton = quantile(Normal(0, 1), Vec_Halton)
+Out_Halton_Vector = quantile(Normal(0, 1), Vec_Halton)
+Out_Halton_Matrix = reshape(Out_Halton_Vector, Draws, T)
 
 # Get a function to minimize.
 
@@ -63,32 +64,41 @@ Out_Halton = quantile(Normal(0, 1), Vec_Halton)
 #     operations
 # end
 
-function fun_growth_ms(dat, par_siteclcd)
+function fun_growth_ms(dat, par_siteclcd) # worth going through to note global references that should be arguments for defensibility
 
-    par_siteclcd = par_siteclcd # It's clear that Julia requires declaration, not so clear why or how
+    # par_siteclcd = par_siteclcd # It's clear that Julia requires declaration, not so clear why or how
 
-    # Can't tell why the Tidier approach doesn't work, and it's not worth figuring out.
-    # data2 = @filter(data, SITECLCD == par_siteclcd) 
+    dat = dat_growth
 
-    dat_look = dat[dat.SITECLCD .== par_siteclcd, :]
+    dat = dat[dat.SITECLCD .== par_siteclcd, :]
 
     par_count = nrow(dat_look)
 
-    # mat_w_obv = zeros(par_count, 3)
-    # mat_w_gen = zeros(par_count, 1)
+    # kick halton draws into the function for u_t dimensions
 
-    # bunch of loops just to filter on site class (still assuming that's SITECLCD), so dat_look <=> W_obv in .m
+    Base_Halton = 3
+    Draws_Halton = HaltonSeq(Base_Halton, par_count * T, skip)
+    Vec_Halton = collect(Draws_Halton)
+    Out_Halton_Vector = quantile(Normal(0, 1), Vec_Halton)
+    Out_Halton_Matrix = reshape(Out_Halton_Vector, par_count, T)
 
-    W_obv = dat_look
+    # using 2 as a placeholder for second element of b, ditto 3, 4
 
-    W_sim = [3 * ones(Draws, 1), zeros(Draws, T - 1)]
+    W_sim = zeros(par_count, T)
+    # W_sim[:, 1] = W_sim[:, 1] .+ 1 .* 3
 
-    # for loop with counts
+    # Instead,
+    W_sim[:, 1] = reshape(dat.Volume_First, par_count, 1)
 
-    # for i = 1:nrow(data)
-    #     if 
+    for i in 2:T
+        w_t = W_sim[:, i - 1]
+        u_t = Out_Halton_Matrix[:, i - 1]
+        W_sim[:, i] = w_t .* (2 ./ (1 .+ ((2 - 1) ./ 3) .* w_t)) .* exp.(4 .* u_t .- (1 / 2) * 4 .^ 2)
+    end
 
-    W_sim
+    W_sim2 = sum(W_sim, dims = 2)
+
+    W_out = W_sim2 - dat.Volume_Second
 
 end
 

@@ -109,6 +109,8 @@ options.TolFun=1.000e-14;
 [bhat,resnorm,residual,exitflag] = lsqnonlin(@(b)fncap_growth_formon(b,data,p),b0,[0,0,0,0],[],options);
 bhat
 
+%%
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % Generating observations from function file
