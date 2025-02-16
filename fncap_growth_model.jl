@@ -1,3 +1,7 @@
+# Estimate a model or models for growth data from Douglas fir plots in FIA DB.
+
+# So far: got a function to minimize. Next: minimization, functional programming for multiple models, visualization.
+
 # Packages
 
 using Tidier
@@ -5,6 +9,7 @@ using Random
 using Plots
 using FastHalton
 using Distributions
+using Optim
 
 # Data
 
@@ -94,11 +99,15 @@ function fun_growth(b, t, T, par_count, initialization, noise, outcome)
     W_sim2 = sum(W_sim, dims = 2)
 
     # Get residuals.
-    W_out = dat_growth_3_end - W_sim2
+    W_out = outcome - W_sim2
+
+    # return(W_out)
 
     # Get the sum of squared residuals?
-    # W_sq = W_out .^ 2
-    # W_sum_sq = sum(W_sq)
+    W_sq = W_out .^ 2
+    W_sum_sq = sum(W_sq)
+
+    return(W_sum_sq)
 
 end
 
@@ -107,3 +116,37 @@ end
 fun_growth(b, t, T, par_count, W_sim, dat_noise, dat_growth_3_end)
 
 # Minimize.
+
+# demo
+
+f(x) = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+
+optimize(f, [0.0, 0.0])
+
+# set up another function to pass parameters because that's idiomatic, I guess
+# https://stackoverflow.com/questions/26158142/pass-additional-arguments-to-a-built-in-function
+
+function fun_growth_wrapper(b)
+    b = b
+    fun_growth(b, t, T, par_count, W_sim, dat_noise, dat_growth_3_end) # object names are downright tragic
+end
+
+# Test wrapper function with initial values (this is silly, needs revision for order)
+
+fun_growth_wrapper(b)
+
+# actually minimize
+
+dat_results = optimize(fun_growth_wrapper, b)
+
+# get parameters back out of minimization
+
+dat_b = Optim.minimizer(dat_results)
+
+dat_sum_sq = Optim.minimum(dat_results) # that's a big fucking number
+
+# Visualize?
+
+# Compare to polynomials of order 1, 2, 3?
+
+# turn into functional programming approach for each site productivity class
