@@ -22,86 +22,88 @@ plot(dat_growth.Volume_First, dat_growth.Volume_Second, seriestype=:scatter)
 
 plot(dat_growth.Volume_First, dat_growth.Volume_Difference, seriestype=:scatter)
 
-# Seed
-
-#  Question: is this pointless because Julia requires seeds to be defined by function call (unlike MATLAB and R)?
-
-Random.seed!(112358)
-
-# Initialize parameters.
-
-#  Question: is there a good reason to define b_0 sooner rather than later? Might fit better in the minimization block.
-
-# names names names names names
+# Set parameters. 
 
 b = [100, 1, 1000, 0.5]
 t = 1
 T = maximum(dat_growth.Year_Difference)
 skip = 1000
-Draws = 1000
 
-# Get draws.
+# Get a function to minimize (actually do a bunch of other stuff first).
 
-# Questions:
-#  - Does the base in HaltonSeq matter?
-#  - Does the absence of MATLAB's "leap" argument matter?
-#  - Am I confusing the T and n arguments?
-#  - Would pre-allocation be useful?
+# Get data. 
 
-# Note that Draws_Halton isn't related to Draws. Names are a work in progress.
+dat_growth_3 = @filter(dat_growth, SITECLCD == 3) 
 
-Base_Halton = 3
-Draws_Halton = HaltonSeq(Base_Halton, Draws * T, skip)
-Vec_Halton = collect(Draws_Halton)
-Out_Halton_Vector = quantile(Normal(0, 1), Vec_Halton)
-Out_Halton_Matrix = reshape(Out_Halton_Vector, Draws, T)
+# Get length.
+par_count = nrow(dat_growth_3)
 
-# Get a function to minimize.
+# Initialize a data object for simulation.
+W_sim = zeros(par_count, T)
+W_sim[:, 1] = reshape(dat_growth_3.Volume_First, par_count, 1)
+# W_sim[:, 1] = W_sim[:, 1] .+ b_1 # This follows the .m.
 
-#  Arguments: b (to be optimized on?), data, p (t, T, observations in data, draws, Vec_Halton, Out_Halton)
+# Get outcomes for comparison.
 
-# function name(argument)
-#     operations
-# end
+dat_growth_3_end = dat_growth_3.Volume_Second
 
-function fun_growth_ms(dat, par_siteclcd) # worth going through to note global references that should be arguments for defensibility
+# Get noise. 
 
-    # par_siteclcd = par_siteclcd # It's clear that Julia requires declaration, not so clear why or how
+function fun_halton(Base_Halton, Mean_Halton, SD_Halton, par_count, T, skip)
 
-    dat = dat_growth
-
-    dat = dat[dat.SITECLCD .== par_siteclcd, :]
-
-    par_count = nrow(dat_look)
-
-    # kick halton draws into the function for u_t dimensions
-
-    Base_Halton = 3
+    Base_Halton = Base_Halton
     Draws_Halton = HaltonSeq(Base_Halton, par_count * T, skip)
     Vec_Halton = collect(Draws_Halton)
-    Out_Halton_Vector = quantile(Normal(0, 1), Vec_Halton)
+    Out_Halton_Vector = quantile(Normal(Mean_Halton, SD_Halton), Vec_Halton)
     Out_Halton_Matrix = reshape(Out_Halton_Vector, par_count, T)
 
-    # using 2 as a placeholder for second element of b, ditto 3, 4
-
-    W_sim = zeros(par_count, T)
-    # W_sim[:, 1] = W_sim[:, 1] .+ 1 .* 3
-
-    # Instead,
-    W_sim[:, 1] = reshape(dat.Volume_First, par_count, 1)
-
-    for i in 2:T
-        w_t = W_sim[:, i - 1]
-        u_t = Out_Halton_Matrix[:, i - 1]
-        W_sim[:, i] = w_t .* (2 ./ (1 .+ ((2 - 1) ./ 3) .* w_t)) .* exp.(4 .* u_t .- (1 / 2) * 4 .^ 2)
-    end
-
-    W_sim2 = sum(W_sim, dims = 2)
-
-    W_out = W_sim2 - dat.Volume_Second
+    Out_Halton_Matrix
 
 end
 
-fun_growth_ms(dat_growth, 3)
+dat_noise = fun_halton(3, 0, 1, par_count, T, skip)
+
+# Get function to minimize.
+
+function fun_growth(b, t, T, par_count, initialization, noise, outcome)
+
+    # Declare objects. This works, but doesn't seem right.
+    b_1 = b[1]
+    b_2 = b[2]
+    b_3 = b[3]
+    b_4 = b[4]
+    t = t
+    T = T
+
+    # declare objects with stupid names
+    W_sim = initialization
+    Out_Halton_Matrix = noise
+
+    # declare an object because ...
+    # w_t = zeros(par_count, 1)
+    # u_t = zeros(par_count, 1)
+
+    # Run the simulation.
+    for i in 2:T
+        w_t = W_sim[:, i - 1]
+        u_t = Out_Halton_Matrix[:, i - 1]
+        W_sim[:, i] = w_t .* (b_2 ./ (1 .+ ((b_2 - 1) ./ b_3) .* w_t)) .* exp.(b_4 .* u_t .- (1 / 2) * b_4 .^ 2)
+    end
+
+    # Sum values up to the full period of interest. 
+    W_sim2 = sum(W_sim, dims = 2)
+
+    # Get residuals.
+    W_out = dat_growth_3_end - W_sim2
+
+    # Get the sum of squared residuals?
+    # W_sq = W_out .^ 2
+    # W_sum_sq = sum(W_sq)
+
+end
+
+# Test function with initial values.
+
+fun_growth(b, t, T, par_count, W_sim, dat_noise, dat_growth_3_end)
 
 # Minimize.
