@@ -13,6 +13,4 @@ what's the right thing to do for conditions with time-varying site productivity 
 
 keeping just the first site productivity class for now
 
-remember to pull .jl changes into .ipynb
-
 pick a naming style and stick to it

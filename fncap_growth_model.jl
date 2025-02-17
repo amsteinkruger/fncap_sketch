@@ -71,7 +71,7 @@ end
 
 dat_noise = fun_halton(3, 0, 1, par_count, T, skip)
 
-# Get function to minimize.
+# Get an objective function.
 
 function fun_growth(b, t, T, initialization, noise)
 
