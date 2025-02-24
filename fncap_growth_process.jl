@@ -6,16 +6,14 @@
 # 3. Filter conditions to private Douglas fir.
 # 4. Join filters on plot and condition.
 # 5. Use the result of (4) to filter trees, then filter trees to Douglas fir.
-# 6. Aggregate to conditions with units per acre, then represent change in volume for the first to the second year.
-# 7. Check results in standard visualizations.
+# 6. Aggregate to conditions with units per acre, then pivot time-varying variables.
+# 7. Export.
 
 # 0. 
 
 # Is the IDE working?
 
 1 + 1
-
-# Instead of learning new things, I'll stick to the Tidyverse. Cheers to the developers.
 
 using Tidier
 
@@ -44,7 +42,7 @@ dat_or_cond_less = @chain dat_or_cond begin
     #  Select columns to keep for joins. 
     @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1)
     #  Select fewer columns (for now).
-    @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD)
+    # @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD)
 end
 
 # 4. Join subsets of plots and conditions.
@@ -58,7 +56,7 @@ end
 
 dat_or_tree_less = @chain dat_or_tree begin
     # Select columns that we might use.
-    @select(CN, STATECD, UNITCD, COUNTYCD, PLOT, CONDID, INVYR, SPGRPCD, VOLCFNET, VOLBFNET, TPA_UNADJ)
+    @select(CN, STATECD, UNITCD, COUNTYCD, PLOT, CONDID, INVYR, SPGRPCD, VOLCFNET, VOLBFNET, DRYBIO_AG, DRYBIO_BG, CARBON_AG, CARBON_BG, TPA_UNADJ)
     # Get plot and condition information.
     @left_join(dat_or_keep)
     # Filter on plot and condition.
@@ -72,45 +70,58 @@ end
 
 dat_or_tree_wide = @chain dat_or_tree_less begin
     @filter(!ismissing(VOLCFNET) & !ismissing(TPA_UNADJ))
-    @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD)
+    @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1)
     @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ), 
-               VOLBFNET = sum(VOLBFNET * TPA_UNADJ))
+               VOLBFNET = sum(VOLBFNET * TPA_UNADJ), 
+               DRYBIO = sum((DRYBIO_AG + DRYBIO_BG) * TPA_UNADJ), 
+               CARBON = sum((CARBON_AG + CARBON_BG) * TPA_UNADJ))
     @ungroup
     @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID)
     @filter(n() == 2)
     @mutate(PLOT_UID = string(STATECD, "_", UNITCD, "_", COUNTYCD, "_", PLOT, "_", CONDID))
     @ungroup
-    @select(PLOT_UID, MATCH_CN, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD, VOLCFNET, VOLBFNET)
-    @arrange(PLOT_UID, MATCH_CN, INVYR)
+    @select(PLOT_UID, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1, VOLCFNET, VOLBFNET, DRYBIO, CARBON)
+    @arrange(PLOT_UID, INVYR)
     @group_by(PLOT_UID)
-    @mutate(WHICH = if_else(INVYR == maximum(INVYR), "Second", "First"),
-            SITECLCD = if_else(INVYR == maximum(INVYR), 0, SITECLCD))
-    @mutate(SITECLCD = maximum(SITECLCD)) # This is a harebrained Band-Aid to get a time-invariant site productivity class.
+    @mutate(WHICH_STRING = if_else(INVYR == maximum(INVYR), "Second", "First"), 
+            WHICH_1 = if_else(INVYR == maximum(INVYR), 1, 0),
+            WHICH_0 = if_else(INVYR == minimum(INVYR), 1, 0)) 
     @ungroup
-    # This is a Band-Aid for easier pivoting. Time-varying variables could be worth keeping as-is.
-    @select(PLOT_UID, MATCH_CN, LON, LAT, INVYR, SITECLCD, VOLCFNET, WHICH)
+    # This is a trick to get around Tidier's missing support for pivoting wide with multiple variables.
+    #  Note that if any of the product operations return multiple values, then the maximum() call is destroying data. 
+    #  That shouldn't be possible with the preceding @filter(n() == 2), but it's worth checking.
+    @group_by(PLOT_UID, LON, LAT)
+    @summarize(INVYR_0 = maximum(INVYR * WHICH_0),
+               INVYR_1 = maximum(INVYR * WHICH_1),
+               MEASYEAR_0 = maximum(MEASYEAR * WHICH_0),
+               MEASYEAR_1 = maximum(MEASYEAR * WHICH_1),
+               STDAGE_0 = maximum(STDAGE * WHICH_0),
+               STDAGE_1 = maximum(STDAGE * WHICH_1),
+               FLDAGE_0 = maximum(FLDAGE * WHICH_0),
+               FLDAGE_1 = maximum(FLDAGE * WHICH_1),
+               SITECLCD_0 = maximum(SITECLCD * WHICH_0),
+               SITECLCD_1 = maximum(SITECLCD * WHICH_1),
+               DSTRBCD1_0 = maximum(DSTRBCD1 * WHICH_0),
+               DSTRBCD1_1 = maximum(DSTRBCD1 * WHICH_1),
+               DSTRBYR1_0 = maximum(DSTRBYR1 * WHICH_0),
+               DSTRBYR1_1 = maximum(DSTRBYR1 * WHICH_1),
+               TRTCD1_0 = maximum(TRTCD1 * WHICH_0),
+               TRTCD1_1 = maximum(TRTCD1 * WHICH_1),
+               TRTYR1_0 = maximum(TRTYR1 * WHICH_0),
+               TRTYR1_1 = maximum(TRTYR1 * WHICH_1),
+               VOLCFNET_0 = maximum(VOLCFNET * WHICH_0),
+               VOLCFNET_1 = maximum(VOLCFNET * WHICH_1),
+               VOLBFNET_0 = maximum(VOLBFNET * WHICH_0),
+               VOLBFNET_1 = maximum(VOLBFNET * WHICH_1),
+               DRYBIO_0 = maximum(DRYBIO * WHICH_0),
+               DRYBIO_1 = maximum(DRYBIO * WHICH_1),
+               CARBON_0 = maximum(CARBON * WHICH_0),
+               CARBON_1 = maximum(CARBON * WHICH_1))
+    @ungroup
 end
 
-# Things get silly in the following section: pivot_wider in Tidier doesn't appear to support pivoting multiple columns.
+# 7. Tie things off with a descriptive name and export.
 
-dat_or_tree_wide_left = @chain dat_or_tree_wide begin
-    @select(-VOLCFNET)
-    @pivot_wider(names_from = WHICH, values_from = INVYR)
-    @rename(Year_First = First, Year_Second = Second)
-end
+dat_or_intermediate = dat_or_tree_wide
 
-dat_or_tree_wide_right = @chain dat_or_tree_wide begin
-    @select(-INVYR)
-    @pivot_wider(names_from = WHICH, values_from = VOLCFNET)
-    @rename(Volume_First = First, Volume_Second = Second)
-end
-
-dat_or_tree_wider = @left_join(dat_or_tree_wide_left, dat_or_tree_wide_right)
-
-dat_or_differences = @chain dat_or_tree_wider begin
-    @select(-MATCH_CN)
-    @mutate(Year_Difference = Year_Second - Year_First,
-            Volume_Difference = Volume_Second - Volume_First)
-end
-
-write_csv(dat_or_differences, "output/dat_or_differences.csv")
+write_csv(dat_or_intermediate, "output/dat_or_intermediate.csv")
