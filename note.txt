@@ -40,3 +40,10 @@ handle missing for VOLBFNET, DRYBIO, CARBON?
 
 worth bothering about DSTRBCD > 1, TRTCD > 1?
 
+
+
+
+is thinning removal (as treatment)?
+DK: check rough plot for subset of cond/plot/year w/o treatment or disturbance
+MS: line up disturbances w/ changes in site class
+DK: maybe set up conversion function for VOLB, VOLC
