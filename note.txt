@@ -1,27 +1,12 @@
-NB: .ipynb is not updated, only _process.jl, _visualize.R are updated and running
+2025/04/07
 
-immediate goal is for _explore.jl to replicate and extend _visualize.R
+working on:
 
-then follow-in is to bring _model_scratch up to snuff with changes listed below
+accomodating different counts of period for different condition-years
+incorporating B1
+switching to functional programming to estimate many models over site class codes, etc.
 
-then finally the .ipynb will be due for an update with fresh data glimpses, intermediate exploration, and model fits
-
-also
-
-pick a naming style and stick to it (for modeling, where some names inherit from MATLAB and others don't)
-
----
-
-2025/02/25
-
-doing:
-
-change model to accomodate different counts of period for different condition-years
-change model to use B1 per Matt's comment
-extend model to estimate many models
-demo over site class and species
-
-notes to pass on:
+notes from scratch work in R/Julia:
 
 disturbances in only 187 of 2880 conditions (not counting by year, so fewer w/in interval of interest)
 of those 187, year of disturbance is recorded for only 85
@@ -34,5 +19,3 @@ replanting and other commercial treatment account for almost all remaining 68 ob
 problems:
 
 worth bothering about DSTRBCD > 1, TRTCD > 1?
-
-(x) DK: maybe set up conversion function for VOLB, VOLC
