@@ -70,12 +70,17 @@ end
 
 dat_or_tree_wide = @chain dat_or_tree_less begin
     @filter(!ismissing(VOLCFNET) & !ismissing(TPA_UNADJ))
+    @mutate(VOLCFNET_TPA = VOLCFNET * TPA_UNADJ,
+            VOLBFNET_TPA = VOLBFNET * TPA_UNADJ)
     @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, MATCH_CN, LON, LAT, INVYR, MEASYEAR, STDAGE, FLDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1)
-    @summarize(VOLCFNET = sum(VOLCFNET * TPA_UNADJ), 
-               VOLBFNET = sum(VOLBFNET * TPA_UNADJ), 
+    @summarize(VOLCFNET = sum(skipmissing(VOLCFNET_TPA)), 
+               VOLBFNET = sum(skipmissing(VOLBFNET_TPA)), 
                DRYBIO = sum((DRYBIO_AG + DRYBIO_BG) * TPA_UNADJ), 
                CARBON = sum((CARBON_AG + CARBON_BG) * TPA_UNADJ))
     @ungroup
+    # This mutate() corrects zero to missing (to get around the limitations of skipmissing()).
+    @mutate(VOLCFNET = if_else(VOLCFNET == 0, missing, VOLCFNET),
+            VOLBFNET = if_else(VOLBFNET == 0, missing, VOLBFNET))
     @group_by(STATECD, UNITCD, COUNTYCD, PLOT, CONDID)
     @filter(n() == 2)
     @mutate(PLOT_UID = string(STATECD, "_", UNITCD, "_", COUNTYCD, "_", PLOT, "_", CONDID))

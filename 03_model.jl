@@ -1,8 +1,5 @@
 # Estimate a model or models for growth data from Douglas fir plots in FIA DB.
 
-# Done: define and minimize a growth function for a particular site productivity class.
-# To do: transition into functional programming to estimate a model for each site class.
-
 # Packages
 
 using Tidier

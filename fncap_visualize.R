@@ -30,6 +30,129 @@ dat = "output/dat_or_intermediate.csv" %>% read_csv
 
 # Visualize.
 
+#  Data with some shenanigans.
+
+#   Just growth.
+
+vis_growth = 
+  dat %>% 
+  select(starts_with("VOLCFNET")) %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0, 
+                 y = VOLCFNET_1 - VOLCFNET_0),
+             alpha = 0.50) +
+  scale_x_continuous(limits = c(0, 25000), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-15000, 5000), expand = c(0, 0)) +
+  theme_pubr()
+
+#   Growth with DSTRBCD_0, omitting DSTRBCD_0 = 0 to reduce overplotting.  
+
+vis_growth_disturbance_0 = 
+  dat %>% 
+  select(starts_with("VOLCFNET"), starts_with("DSTRBCD")) %>% 
+  filter(DSTRBCD1_0 != 0) %>% 
+  mutate(DSTRBCD1_0 = DSTRBCD1_0 %>% factor) %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0, 
+                 y = VOLCFNET_1 - VOLCFNET_0,
+                 color = DSTRBCD1_0)) +
+  scale_x_continuous(limits = c(0, 25000), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-15000, 5000), expand = c(0, 0)) +
+  theme_pubr() +
+  theme(legend.position = "right")
+
+#   Growth with DSTRBCD1_1, omitting DSTRBCD1_1 = 0 to reduce overplotting.  
+
+vis_growth_disturbance_1 = 
+  dat %>% 
+  select(starts_with("VOLCFNET"), starts_with("DSTRBCD")) %>% 
+  filter(DSTRBCD1_1 != 0) %>% 
+  mutate(DSTRBCD1_1 = DSTRBCD1_1 %>% factor) %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0, 
+                 y = VOLCFNET_1 - VOLCFNET_0,
+                 color = DSTRBCD1_1)) +
+  scale_x_continuous(limits = c(0, 25000), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-15000, 5000), expand = c(0, 0)) +
+  theme_pubr() +
+  theme(legend.position = "right")
+
+#   Growth with TRTCD_0, omitting TRTCD_0 = 0 to reduce overplotting.  
+
+vis_growth_treatment_0 = 
+  dat %>% 
+  select(starts_with("VOLCFNET"), starts_with("TRTCD")) %>% 
+  filter(TRTCD1_0 != 0) %>% 
+  mutate(TRTCD1_0 = TRTCD1_0 %>% factor) %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0, 
+                 y = VOLCFNET_1 - VOLCFNET_0,
+                 color = TRTCD1_0)) +
+  scale_x_continuous(limits = c(0, 25000), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-15000, 5000), expand = c(0, 0)) +
+  theme_pubr() +
+  theme(legend.position = "right")
+
+#   Growth with TRTCD1_1, omitting TRTCD1_1 = 0 to reduce overplotting.  
+
+vis_growth_treatment_1 = 
+  dat %>% 
+  select(starts_with("VOLCFNET"), starts_with("TRTCD")) %>% 
+  filter(TRTCD1_1 != 0) %>% 
+  mutate(TRTCD1_1 = TRTCD1_1 %>% factor) %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0, 
+                 y = VOLCFNET_1 - VOLCFNET_0,
+                 color = TRTCD1_1)) +
+  scale_x_continuous(limits = c(0, 25000), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-15000, 5000), expand = c(0, 0)) +
+  theme_pubr() +
+  theme(legend.position = "right")
+
+#  Growth, highlighting observations with TRTCD1_1 == 10.
+
+vis_growth_treatment_result = 
+  dat %>% 
+  select(starts_with("VOLCFNET"), starts_with("TRTCD")) %>% 
+  mutate(TRTCD1_Result = ifelse(TRTCD1_1 == 10, "Removal", "No Removal")) %>% 
+  ggplot() +
+  geom_point(aes(x = VOLCFNET_0, 
+                 y = VOLCFNET_1 - VOLCFNET_0,
+                 color = TRTCD1_Result),
+             alpha = 0.50) +
+  scale_x_continuous(limits = c(0, 25000), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-15000, 5000), expand = c(0, 0)) +
+  theme_pubr() +
+  theme(legend.position = "right")
+
+#   Comparing changes in site class to the occurrence of any disturbance or treatment.
+
+vis_class_change = 
+  dat %>% 
+  select(starts_with("SITECLCD"), 
+         starts_with("DSTRBCD"), 
+         starts_with("TRTCD")) %>% 
+  mutate(`Class Change` = SITECLCD_1 - SITECLCD_0,
+         `Class Change` = `Class Change` %>% factor,
+         `Dist., Treat.` = (DSTRBCD1_0 + DSTRBCD1_1 + TRTCD1_0 + TRTCD1_1) / (DSTRBCD1_0 + DSTRBCD1_1 + TRTCD1_0 + TRTCD1_1),
+         `Dist., Treat.` = `Dist., Treat.` %>% replace_na(0) %>% factor) %>% 
+  select(`Class Change`, `Dist., Treat.`) %>% 
+  group_by(`Class Change`, `Dist., Treat.`) %>% 
+  summarize(Count = n()) %>% 
+  ungroup %>% 
+  ggplot() +
+  geom_col(aes(x = `Class Change`,
+               y = Count,
+               fill = `Dist., Treat.`),
+           position = position_dodge2()) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 200),
+                     breaks = seq(0, 200, by = 50),
+                     expand = c(0, 0)) +
+  theme_pubr()
+
+#  Data with no shenanigans.
+
 #  INVYR
 
 vis_invyr = 
@@ -284,15 +407,13 @@ vis_volcfnet =
 
 #  VOLBFNET
 
-#   (Lots of missing values.)
-
 vis_volbfnet = 
   dat %>% 
   select(VOLBFNET_0, VOLBFNET_1) %>% 
   mutate(VOLBFNET_D = VOLBFNET_1 - VOLBFNET_0) %>% 
   pivot_longer(everything()) %>% 
-  mutate(facet = ifelse(name == "VOLBFNET_D", "Difference", ifelse(name == "VOLBFNET_1", "Gross Board-Foot Sawlog Volume (0)", "Gross Board-Foot Sawlog Volume (1)")),
-         facet = facet %>% factor %>% fct_relevel("Gross Board-Foot Sawlog Volume (0)", "Gross Board-Foot Sawlog Volume (1)")) %>% 
+  mutate(facet = ifelse(name == "VOLBFNET_D", "Difference", ifelse(name == "VOLBFNET_0", "Gross Sawlog Volume (0)", "Gross Sawlog Volume (1)")),
+         facet = facet %>% factor %>% fct_relevel("Gross Sawlog Volume (0)", "Gross Sawlog Volume (1)", "Difference")) %>% 
   ggplot() +
   geom_histogram(aes(x = value,
                      fill = name),
@@ -351,6 +472,63 @@ vis_carbon =
         axis.title.y = element_blank())
 
 # Export.
+
+#  Growth
+
+ggsave("figures/vis_growth.png",
+       vis_growth,
+       dpi = 300,
+       width = 5,
+       height = 4)
+
+#  Growth, Disturbance (0)
+
+ggsave("figures/vis_growth_disturbance_0.png",
+       vis_growth_disturbance_0,
+       dpi = 300,
+       width = 6,
+       height = 4)
+
+#  Growth, Disturbance (1)
+
+ggsave("figures/vis_growth_disturbance_1.png",
+       vis_growth_disturbance_1,
+       dpi = 300,
+       width = 6,
+       height = 4)
+
+#  Growth, Treatment (0)
+
+ggsave("figures/vis_growth_treatment_0.png",
+       vis_growth_treatment_0,
+       dpi = 300,
+       width = 6,
+       height = 4)
+
+#  Growth, Treatment (1)
+
+ggsave("figures/vis_growth_treatment_1.png",
+       vis_growth_treatment_1,
+       dpi = 300,
+       width = 6,
+       height = 4)
+
+#  Growth, highlighting observations with TRTCD1_1 == 10.
+
+ggsave("figures/vis_growth_treatment_result.png",
+       vis_growth_treatment_result,
+       dpi = 300,
+       width = 6,
+       height = 4.25)
+
+# Changes in site class with treatment and disturbance.
+
+ggsave("figures/vis_class_change.png",
+       vis_class_change,
+       dpi = 300,
+       width = 5,
+       height = 5)
+
 #  INVYR
 #  MEASYEAR
 #  STDAGE

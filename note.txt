@@ -16,9 +16,6 @@ pick a naming style and stick to it (for modeling, where some names inherit from
 
 doing:
 
-(*) pull all variables of interest (except carbon) through with summarize
-(~) describe changes in time-varying variables, especially SITECLCD, in quick plots
-break out disturbances and responses in more quick plots
 change model to accomodate different counts of period for different condition-years
 change model to use B1 per Matt's comment
 extend model to estimate many models
@@ -36,14 +33,6 @@ replanting and other commercial treatment account for almost all remaining 68 ob
 
 problems:
 
-handle missing for VOLBFNET, DRYBIO, CARBON?
-
 worth bothering about DSTRBCD > 1, TRTCD > 1?
 
-
-
-
-is thinning removal (as treatment)?
-DK: check rough plot for subset of cond/plot/year w/o treatment or disturbance
-MS: line up disturbances w/ changes in site class
-DK: maybe set up conversion function for VOLB, VOLC
+(x) DK: maybe set up conversion function for VOLB, VOLC
