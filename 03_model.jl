@@ -17,38 +17,43 @@ dat = read_csv("output/dat_or_intermediate.csv")
 
 # ---------- breakpoint for maintenance ----------- #
 
-#  Drop
+#  Keep observations with negative growth (or don't).
 
-# need to compute difference here
-
-dat_growth = @filter(dat_growth, Volume_Difference > 0)
+dat = @chain dat begin
+    @mutate(VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0,
+            MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0)
+    @filter(VOLCFNET_D == VOLCFNET_D)
+end
 
 # Set up inputs to a growth function for minimization.
 
-# Set parameters. 
+# Set parameters. Of these, T needs to be set up for functional programming.
 
 b = [100, 1, 100, 0.5]
 t = 1
-T = maximum(dat_growth.Year_Difference) # need to extend this to a T for each observation
+# T = maximum(dat.MEASYEAR_D) 
+T = 10
 skip = 1000
 
-# Get data. 
+# Set site class code. This introduces the first dimension for functional programming to iterate over.
+#  i.e. meaningful changes start here
+#  note Julia's native map(f, x) and f.(x); then TidierIteration all about piping
 
-dat_growth_3 = @filter(dat_growth, SITECLCD == 3) # use this step to transform data into functional format
+dat_3 = @filter(dat, SITECLCD_1 == 3) 
 
 # Get length.
 
-par_count = nrow(dat_growth_3) # need to be in functional mode from here on; note Julia's native map(f, x) and f.(x); then TidierIteration all about piping
+par_count = nrow(dat_3) 
 
 # Initialize a data object for simulation.
 
 W_sim = zeros(par_count, T)
-W_sim[:, 1] = reshape(dat_growth_3.Volume_First, par_count, 1)
-# W_sim[:, 1] = W_sim[:, 1] .+ b_1 # This follows the .m in initializing growth with a parameter.
+W_sim[:, 1] = reshape(dat_3.VOLCFNET_0, par_count, 1)
+# W_sim[:, 1] = W_sim[:, 1] .+ b_1 # This follows code for MATLAB in initializing growth with a parameter.
 
 # Get outcomes for comparison.
 
-dat_growth_3_end = dat_growth_3.Volume_Second
+dat_3_end = dat_3.VOLCFNET_1
 
 # Get noise. 
 
@@ -106,7 +111,7 @@ function fun_growth_wrapper(b)
     b = b
     dat_out = fun_growth(b, t, T, W_sim, dat_noise) 
 
-    out = sum((dat_growth_3_end - dat_out) .^ 2) # Mind the global reference to dat_growth_3_end.
+    out = sum((dat_3_end - dat_out) .^ 2) # Fix this global reference.
 
 end
 
@@ -128,20 +133,18 @@ dat_sum_sq = Optim.minimum(dat_results)
 
 dat_predictions_col = fun_growth(dat_b, t, T, W_sim, dat_noise)
 
-dat_predictions = copy(dat_growth_3)
+dat_predictions = copy(dat_3)
 
 dat_predictions[!, :predictions] = vec(dat_predictions_col)
 
-dat_predictions[!, :Volume_Difference_Predicted] = dat_predictions.predictions - dat_predictions.Volume_First
+dat_predictions[!, :Volume_Difference_Predicted] = dat_predictions.predictions - dat_predictions.VOLCFNET_0
 
 #  Plot second volume on first volume.
 
-plot(dat_predictions.Volume_First, dat_predictions.Volume_Second, seriestype=:scatter)
-plot!(dat_predictions.Volume_First, dat_predictions.predictions, seriestype=:scatter)
+plot(dat_predictions.VOLCFNET_0, dat_predictions.VOLCFNET_1, seriestype=:scatter)
+plot!(dat_predictions.VOLCFNET_0, dat_predictions.predictions, seriestype=:scatter)
 
 #  Plot growth on first volume.
 
-plot(dat_predictions.Volume_First, dat_predictions.Volume_Difference, seriestype=:scatter)
-plot!(dat_predictions.Volume_First, dat_predictions.Volume_Difference_Predicted, seriestype=:scatter)
-
-# Transition into functional programming to estimate a model for each site productivity class.
+plot(dat_predictions.VOLCFNET_0, dat_predictions.VOLCFNET_D, seriestype=:scatter)
+plot!(dat_predictions.VOLCFNET_0, dat_predictions.Volume_Difference_Predicted, seriestype=:scatter)
