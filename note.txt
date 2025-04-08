@@ -1,5 +1,11 @@
 2025/04/07
 
+problem: incorporating B1 leads to nonconvergence. so, need some diagnostics to see why
+fix might be to follow MATLAB in exact manipulation for objective function output but that doesn't seem right
+
+problem in MATLAB: modified scripts now run all the way through, but indexing issue and modification lead to nonsense results
+(but at least the nonsense results converge!)
+
 working on:
 
 accomodating different counts of period for different condition-years

@@ -21,12 +21,15 @@ dat = @chain dat begin
     @mutate(VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0,
             MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0)
     @filter(VOLCFNET_D == VOLCFNET_D)
-    # @filter(VOLCFNET_D > 0)
 end
 
 # Set up inputs to a growth function for minimization.
 
-# Set parameters. Of these, T needs to be set up for functional programming. (Or all of them do, depending.)
+# Set up fake data.
+
+
+
+# Set parameters. Of these, T needs to be set up for functional programming.
 
 b = [100, 1, 100, 0.5]
 t = 1
@@ -44,13 +47,11 @@ dat_3 = @filter(dat, SITECLCD_1 == 3)
 
 par_count = nrow(dat_3) 
 
-# Initialize a data object for simulation. Note that the first commented-out line reappears in the objective function.
+# Initialize a data object for simulation.
 
 W_sim = zeros(par_count, T)
-
-# W_sim[:, 1] = W_sim[:, 1] .+ b[1] # This follows code for MATLAB in initializing growth with a parameter. Has to be in the function.
-
-W_sim[:, 1] = reshape(dat_3.VOLCFNET_0, par_count, 1) # This grabs observed initial volume. Does not have to be in the function.
+W_sim[:, 1] = reshape(dat_3.VOLCFNET_0, par_count, 1)
+# W_sim[:, 1] = W_sim[:, 1] .+ b_1 # This follows code for MATLAB in initializing growth with a parameter.
 
 # Get outcomes for comparison.
 
@@ -86,11 +87,6 @@ function fun_growth(b, t, T, initialization, noise)
     W_sim = initialization
     Out_Halton_Matrix = noise
 
-    # Tag b_1 into the initialized data. 
-
-    # W_sim[:, 1] = W_sim[:, 1] .+ b_1
-    # W_sim[:, 1] = zeros(par_count, 1) .+ b_1 # Alternative for scratch work.
-
     # Run the simulation.
     for i in 2:T
         w_t = W_sim[:, i - 1]
@@ -98,7 +94,7 @@ function fun_growth(b, t, T, initialization, noise)
         W_sim[:, i] = w_t .* (b_2 ./ (1 .+ ((b_2 - 1) ./ b_3) .* w_t)) .* exp.(b_4 .* u_t .- (1 / 2) * b_4 .^ 2)
     end
 
-    # Note that this is the spot to add manipulations following MATLAB code to get identical results.
+    # this is the spot to pull in code replicating MS's MATLAB dimensional reference trick that brings in B1
 
     # Sum values up to the full period of interest. 
     W_sim2 = sum(W_sim, dims = 2)
