@@ -12,18 +12,22 @@ using Optim
 # Set up fake data.
 #  Omit complications: negative growth, uneven counts of periods between observations, . . ..
 
+obs = 100
+mean = 100
+sd = 25
+
 vec_volume_0 = 
 @chain begin
-    Normal(100, 25)
+    Normal(mean, sd)
     Truncated(0, Inf)
-    rand(100)
+    rand(obs)
 end
 
 vec_volume_1 = 
 @chain begin
-    Normal(100, 25)
+    Normal(mean, sd)
     Truncated(0, Inf)
-    rand(100)
+    rand(obs)
     + vec_volume_0
 end
 
@@ -37,14 +41,10 @@ t = 1
 T = 10
 skip = 1000
 
-# Get data length.
-
-par_count = nrow(dat) 
-
 # Initialize a data object for simulation.
 
-dat_initial = zeros(par_count, T)
-dat_initial[:, 1] = reshape(dat.volume_0, par_count, 1)
+dat_initial = zeros(obs, T)
+dat_initial[:, 1] = dat.volume_0
 
 # Get outcomes for comparison.
 
@@ -52,19 +52,19 @@ dat_end = dat.volume_1
 
 # Get noise. 
 
-function fun_halton(base_halton, mean_halton, sd_halton, par_count, T, skip)
+function fun_halton(base_halton, mean_halton, sd_halton, obs, T, skip)
 
     base_halton = base_halton
-    draws_halton = HaltonSeq(base_halton, par_count * T, skip)
+    draws_halton = HaltonSeq(base_halton, obs * T, skip)
     vector_halton_0 = collect(draws_halton)
     vector_halton_1 = quantile(Normal(mean_halton, sd_halton), vector_halton_0)
-    matrix_halton = reshape(vector_halton_1, par_count, T)
+    matrix_halton = reshape(vector_halton_1, obs, T)
 
     matrix_halton
 
 end
 
-dat_noise = fun_halton(3, 0, 1, par_count, T, skip)
+dat_noise = fun_halton(3, 0, 1, obs, T, skip)
 
 # Get a growth function.
 
@@ -105,7 +105,7 @@ function fun_objective(b = b, t = t, T = T, dat_initial = dat_initial, dat_noise
     dat_noise = dat_noise
     dat_end = dat_end
 
-    dat_out = fun_growth(b, t, T, W_sim, dat_noise) 
+    dat_out = fun_growth(b, t, T, dat_initial, dat_noise) 
 
     sum((dat_end - dat_out) .^ 2)
 

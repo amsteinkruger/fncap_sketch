@@ -42,7 +42,6 @@ dat_or_cond_less = @chain dat_or_cond begin
     #  Select columns to keep for joins. 
     @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD, DSTRBCD1, DSTRBYR1, TRTCD1, TRTYR1)
     #  Select fewer columns (for now).
-    # @select(STATECD, UNITCD, COUNTYCD, PLOT, CONDID, CONDPROP_UNADJ, INVYR, STDAGE, FLDAGE, SITECLCD)
 end
 
 # 4. Join subsets of plots and conditions.

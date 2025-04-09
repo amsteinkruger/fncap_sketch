@@ -9,13 +9,11 @@
 
 # 0. Packages
 
-# using
+using Tidier
 
 # 1. Data
 
 dat = read_csv("output/dat_or_intermediate.csv")
-
-# --- Breakpoint for heinous scratch work ---
 
 # 2. Tables
 
@@ -23,16 +21,33 @@ dat = read_csv("output/dat_or_intermediate.csv")
 
 #    Inventory Year
 
-# but pivot into two columns, one for each end of the interval? or something related that's actually interpretable
-
-dat_tab_1 = @chain dat begin
-    @group_by(INVYR_0)
+dat_tab_1_INVYR = 
+@chain dat begin
+    @select(INVYR_0, INVYR_1)
+    @pivot_longer(cols = everything())
+    @group_by(value, variable)
     @summarize(count = n())
     @ungroup
-    @arrange(INVYR_0)
+    @pivot_wider(names_from = variable, values_from = count)
+    @rename(year = value)
+    @arrange(year)
+    coalesce.(0)
 end
 
 #   Measurement Year
+
+dat_tab_2_MEASYEAR = 
+@chain dat begin
+    @select(MEASYEAR_0, MEASYEAR_1)
+    @pivot_longer(cols = everything())
+    @group_by(value, variable)
+    @summarize(count = n())
+    @ungroup
+    @pivot_wider(names_from = variable, values_from = count)
+    @rename(year = value)
+    @arrange(year)
+    coalesce.(0)
+end
 
 #   Stand Age by 5-Year Bins
 
