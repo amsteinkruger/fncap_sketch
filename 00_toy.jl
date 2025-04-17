@@ -45,10 +45,9 @@ t = 1
 T = 10
 skip = 1000
 
-# Initialize a data object for simulation.
+# Get a data object for simulation.
 
 dat_initial = zeros(obs, T)
-# dat_initial[:, 1] = dat.volume_0
 
 # Get noise. 
 
