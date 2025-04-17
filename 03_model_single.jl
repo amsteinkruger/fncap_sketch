@@ -1,4 +1,4 @@
-# Estimate a model or models for growth data from Douglas fir plots in FIA DB.
+# Estimate a model for a subset of growth data from Douglas fir plots in FIA DB.
 
 # Packages
 

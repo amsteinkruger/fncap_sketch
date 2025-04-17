@@ -1,16 +1,10 @@
-2025/04/07
-
-problem: incorporating B1 leads to nonconvergence. so, need some diagnostics to see why
-fix might be to follow MATLAB in exact manipulation for objective function output but that doesn't seem right
-
-problem in MATLAB: modified scripts now run all the way through, but indexing issue and modification lead to nonsense results
-(but at least the nonsense results converge!)
+2025/04/17
 
 working on:
 
-accomodating different counts of period for different condition-years
-incorporating B1
-switching to functional programming to estimate many models over site class codes, etc.
+_ accomodating different counts of period for different condition-years
+~ incorporating B1
+_ switching to functional programming to estimate many models over site class codes, etc.
 
 notes from scratch work in R/Julia:
 
@@ -22,6 +16,3 @@ with disease damage, wind, and grazing (top three) accounting for a little over 
 treatment is more common (488 obs), with removals accounting for 420 of those obs.
 replanting and other commercial treatment account for almost all remaining 68 obs.
 
-problems:
-
-worth bothering about DSTRBCD > 1, TRTCD > 1?
