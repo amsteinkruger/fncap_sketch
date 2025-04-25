@@ -2,9 +2,16 @@
 
 working on:
 
-_ accomodating different counts of period for different condition-years
-~ incorporating B1
-_ switching to functional programming to estimate many models over site class codes, etc.
+replicating MATLAB results in Julia with latest SC code
+
+done: replicating in principle
+not done: persuading optimization and growth function to play well
+also not done: adding other loss functions, extending to multiple site classes etc
+
+problems: 
+growth function isn't quite matching MATLAB's optimized output (for regular NLLS) in the first place
+growth function is pretty sensitive to reseeding Halton draws*
+* but much less sensitive with the sum of squares loss function than the sum of absolute deviations
 
 notes from scratch work in R/Julia:
 
