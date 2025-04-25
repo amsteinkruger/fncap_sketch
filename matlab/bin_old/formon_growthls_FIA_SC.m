@@ -1,7 +1,9 @@
 %Growth Function for Site Class
 %Generates Residual
 
-function out = formon_growthls_FIA_SC(b,data,p)
+function [out] = formon_growthls_FIA_SC(b,data,p)
+
+
 
 siteclass=4;
 count=0;
