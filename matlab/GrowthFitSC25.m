@@ -48,17 +48,15 @@ p.N = length(dataAgeClass); % Number of observations in an age class (scalar, al
 % compute age class-specific means
 dataVolumes = dataAgeClass(:,2); % i.e. biomasses
 [ii,jj] = ndgrid( dataAgeClass(:,1), 1:size( dataVolumes, 2 )) ;
-iijj  = [ii(:), jj(:)] ; % ???
-VolumeSums  = accumarray( iijj, dataVolumes(:) ) ;
-VolumeCnts  = accumarray( iijj, ones( numel( dataVolumes ), 1 )) ;
+iijj = [ii(:), jj(:)] ; % ???
+VolumeSums = accumarray( iijj, dataVolumes(:) ) ;
+VolumeCnts = accumarray( iijj, ones( numel( dataVolumes ), 1 )) ;
 VolumeByAgeMeans = VolumeSums./VolumeCnts ;
 p.SAVolumeAverage = zeros(p.N,1);
 for i=1:p.N
 	SA = dataAgeClass(i,1);
 	p.SAVolumeAverage(i)=VolumeByAgeMeans(SA);
 end
-
-%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -99,7 +97,6 @@ options.Algorithm='levenberg-marquardt';
 % 3 = sum of squared errors relative to age class average
 % 4 = weight by 1/(stand age)
 
-
 % Growth curve estimation
 % GrowthCurveCalc:
 % 1 = average
@@ -117,20 +114,20 @@ p.LossChoice = 1;
 b0 = bGuess;
 [bhatLoss1,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[],[],options);
 
-p.LossChoice = 3;
-b0 = bGuess2; % initial guess
+% p.LossChoice = 3;
+% b0 = bGuess2; % initial guess
 
-[bhatLoss3,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[1,1.1,0,0],[],options);
+% [bhatLoss3,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[1,1.1,0,0],[],options);
 
-p.LossChoice = 2;
-b0 = bhatLoss3; % initial guess
+% p.LossChoice = 2;
+% b0 = bhatLoss3; % initial guess
 
-[bhatLoss2,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[1,1.1,0,0],[],options);
+% [bhatLoss2,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[1,1.1,0,0],[],options);
 
-p.LossChoice = 4;
-b0 = bhatLoss1; % initial guess
+% p.LossChoice = 4;
+% b0 = bhatLoss1; % initial guess
 
-[bhatLoss4,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[],[],options);
+% [bhatLoss4,resnorm,residual,exitflag] = lsqnonlin(@(b)GrowthFitResiduals(b,dataAgeClass,p),b0,[],[],options);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -139,19 +136,21 @@ b0 = bhatLoss1; % initial guess
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 GrowthCurveLoss1 = GrowthFit(bhatLoss1,dataAgeClass,p);
-GrowthCurveLoss2 = GrowthFit(bhatLoss2,dataAgeClass,p);
-GrowthCurveLoss3 = GrowthFit(bhatLoss3,dataAgeClass,p);
-GrowthCurveLoss4 = GrowthFit(bhatLoss4,dataAgeClass,p);
+% GrowthCurveLoss2 = GrowthFit(bhatLoss2,dataAgeClass,p);
+% GrowthCurveLoss3 = GrowthFit(bhatLoss3,dataAgeClass,p);
+% GrowthCurveLoss4 = GrowthFit(bhatLoss4,dataAgeClass,p);
 
 figure
 tt=linspace(1,p.T,p.T);
 scatter(dataAgeClass(:,1),dataAgeClass(:,2),'filled')
 hold on
   plot(tt,GrowthCurveLoss1,'LineWidth',1.5)
-  plot(tt,GrowthCurveLoss2,'--','color',[.5 .5 .5],'LineWidth',1.5)
-  plot(tt,GrowthCurveLoss3,'-.','color','m','LineWidth',1.5)
-  plot(tt,GrowthCurveLoss4,':','color','green','LineWidth',1.5)
+  % plot(tt,GrowthCurveLoss2,'--','color',[.5 .5 .5],'LineWidth',1.5)
+  % plot(tt,GrowthCurveLoss3,'-.','color','m','LineWidth',1.5)
+  % plot(tt,GrowthCurveLoss4,':','color','green','LineWidth',1.5)
 xlabel('Stand Age')
 ylabel('Cu.ft. Biomass')
-legend({'Data';'NL Least Squares';'Relative Error';'Relative to SA mean';'NLLS Weighted by Age'},'location','eastoutside','FontSize',24);
+legend({'Data';'NL Least Squares'},'location','eastoutside','FontSize',24);
 hold off
+
+% ;'Relative Error';'Relative to SA mean';'NLLS Weighted by Age'
