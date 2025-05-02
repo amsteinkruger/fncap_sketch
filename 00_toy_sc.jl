@@ -41,8 +41,6 @@ base_halton = 2
 dim_1_halton = 10000 # Draws
 dim_2_halton = age_max # Maximum Stand Age
 skip_halton = 1000
-mean_halton = 0
-sd_halton = 1
 
 #  Get draws. 
 
@@ -111,11 +109,11 @@ end
 
 fun_objective()
 
-# Minimize the wrapper function. 
+# Optimize. 
 
 estimate = optimize(fun_objective, b, LevenbergMarquardt())
 
-# Back parameters out of minimization.
+# Get estimated parameters.
 
 b_hat = estimate.minimizer
 measure = estimate.ssr

@@ -3,11 +3,13 @@
 # Packages
 
 using Tidier
+using DataFrames
 using Random
 using Plots
 using FastHalton
 using Distributions
 using Optim
+using LeastSquaresOptim
 
 # Seed.
 
@@ -15,13 +17,22 @@ Random.seed!(0112358)
 
 # Data
 
-dat = @chain begin
-    read_csv("output/dat_or_intermediate.csv")
-    @mutate(VOLCFNET_D = VOLCFNET_1 - VOLCFNET_0,
-            MEASYEAR_D = MEASYEAR_1 - MEASYEAR_0)
-    @filter(VOLCFNET_D > 0) # Drop negative growth.
-    @filter(SITECLCD_1 == 3) # Pick a site class code.
+# The selection simplifies renaming, but drops initial observations. Keep those to test marginal effects in STDAGE.
+
+dat = 
+    @chain begin
+        read_csv("output/dat_or_intermediate.csv")
+        @filter(VOLCFNET_1 - VOLCFNET_0 > 0) # Drop negative growth.
+        @filter(SITECLCD_1 == 3) # Pick a site class code.
+        @select(PLOT_UID,
+                MEASYEAR_1,
+                STDAGE_1,
+                SITECLCD_1,
+                VOLCFNET_1)
+        rename(Dict("STDAGE_1" => "Age", "SITECLCD_1" => "Class", "VOLCFNET_1" => "Volume"))
 end
+
+age_max = maximum(dat.Age)
 
 # Parameters
 
