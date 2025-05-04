@@ -24,86 +24,89 @@ dat =
         read_csv("output/dat_or_intermediate.csv")
         @filter(VOLCFNET_1 - VOLCFNET_0 > 0) # Drop negative growth.
         @filter(SITECLCD_1 == 3) # Pick a site class code.
-        @select(PLOT_UID,
-                MEASYEAR_1,
-                STDAGE_1,
+        @select(STDAGE_1,
                 SITECLCD_1,
                 VOLCFNET_1)
+        dropmissing()
         rename(Dict("STDAGE_1" => "Age", "SITECLCD_1" => "Class", "VOLCFNET_1" => "Volume"))
 end
 
-age_max = maximum(dat.Age)
+age_max = maximum(skipmissing(dat.Age))
 
-# Parameters
+# Seed
 
-b = [100, 1, 100, 0.5]
-t = 1
-T = 10 # maximum(dat.MEASYEAR_D) 
-skip = 1000
-obs = nrow(dat) 
+Random.seed!(0112358)
 
-# Get a data object for simulation.
+# Halton
 
-dat_initial = zeros(obs, T)
+#  Set parameters.
 
-# Get noise. 
+base_halton = 2
+dim_1_halton = 10000 # Draws
+dim_2_halton = age_max # Maximum Stand Age
+skip_halton = 1000
 
-function fun_halton(Base_Halton, Mean_Halton, SD_Halton, obs, T, skip)
+#  Get draws. 
 
-    Base_Halton = Base_Halton
-    Draws_Halton = HaltonSeq(Base_Halton, obs * T, skip)
-    Vec_Halton = collect(Draws_Halton)
-    Out_Halton_Vector = quantile(Normal(Mean_Halton, SD_Halton), Vec_Halton)
-    Out_Halton_Matrix = reshape(Out_Halton_Vector, obs, T)
-
-    Out_Halton_Matrix
-
+dat_noise =
+    @chain begin
+        HaltonSeq(base_halton, dim_1_halton * dim_2_halton, skip_halton) # Note docs reverse arguments.
+        collect
+        quantile(Normal(), _)
+        reshape((dim_1_halton, dim_2_halton))
+        shuffle
 end
 
-dat_noise = fun_halton(3, 0, 1, obs, T, skip)
+# Get functions for growth and optimization.
 
-# Get a growth function.
+#  Set parameter guesses.
 
-function fun_growth(b = b, t = t, T = T, initial = dat_initial, noise = dat_noise)
+b = [3.0, 1.5, 7.5, 7.5] # Scaling for easier comparison.
 
-    # Declare objects. 
-    b_1 = b[1]
-    b_2 = b[2]
-    b_3 = b[3]
-    b_4 = b[4]
-    t = t
-    T = T 
-    dat_simulation = initial
-    dat_simulation[:, 1] .= b_1
-    dat_noise = noise
+#  Initialize a data object to loop over.
+
+dat_initial = zeros(dim_1_halton, dim_2_halton)
+
+#  Set up the growth function.
+
+function fun_growth(b = b, T = age_max, dat_simulation = dat_initial, dat_noise = dat_noise)
+
+    b = b .* [1e1, 1e0, 1e3, 1e-1] # This rescales parameter guesses.
+
+    dat_simulation[:, 1] .= b[1]
 
     # Run the simulation.
+
     for i in 2:T
-        w_t = dat_simulation[:, i - 1]
-        u_t = dat_noise[:, i - 1]
-        dat_simulation[:, i] = w_t .* (b_2 ./ (1 .+ ((b_2 - 1) ./ b_3) .* w_t)) .* exp.(b_4 .* u_t .- (1 / 2) * b_4 .^ 2)
+        w_t = dat_simulation[:, i-1]
+        u_t = dat_noise[:, i-1]
+        dat_simulation[:, i] = w_t .* (b[2] ./ (1 .+ ((b[2] - 1) ./ b[3]) .* w_t)) .* exp.(b[4] * u_t .- (1 / 2) * b[4] ^ 2)
     end
 
-    # Sum values up to the full period of interest. 
-    sum(dat_simulation, dims = 2)
+    # Get means over simulations.
+
+    out = mean(dat_simulation, dims=1)
+
+    return(out)
 
 end
 
-# Test the growth function.
+#  Test the growth function.
 
 fun_growth()
 
-# Get an objective function to wrap the growth function.
 
-function fun_objective(b = b, t = t, T = T, dat_initial = dat_initial, dat_noise = dat_noise, dat_change = dat.VOLCFNET_D)
-    b = b
-    t = t
-    T = T
-    dat_initial = dat_initial
-    dat_noise = dat_noise
-    dat_change = dat_change
+#  Set up the objective function.
 
-    abs(sum(dat_change - fun_growth(b, t, T, dat_initial, dat_noise)))
+function fun_objective(b = b, T = age_max, dat_initial = dat_initial, dat_noise = dat_noise, dat_observed = dat)
+
+    dat_prediction = DataFrame(Age = 1:T, Volume_Hat = Array(fun_growth(b, T, dat_initial, dat_noise)')[:, 1]) # Awful.
+    dat = leftjoin(dat_observed, dat_prediction, on = :Age)
+    out = sum(skipmissing((dat.Volume - dat.Volume_Hat) .^ 2))
+    # out = sum(abs.(dat.Volume - dat.Volume_Hat))
+    # Other loss functions go here, with a selection function defaulting to sum of squares.
+
+    return(out)
 
 end
 
@@ -111,30 +114,23 @@ end
 
 fun_objective()
 
-# Minimize the wrapper function. 
+# Optimize. 
 
-estimate = optimize(fun_objective, b)
+estimate = optimize(fun_objective, b, LevenbergMarquardt())
 
-# Back parameters out of minimization.
+# Get estimated parameters.
 
-b_hat = Optim.minimizer(estimate)
+b_hat = estimate.minimizer
+measure = estimate.ssr
 
-measure = Optim.minimum(estimate)
+# Visualize.
 
-# Visualize
+#  Set up single dataframe of observations and predictions. This could be tidier.
 
-dat_predictions = copy(dat)
-dat_predictions[!, :VOLCFNET_1_HAT] = dat_predictions.VOLCFNET_0 + vec(fun_growth(b_hat))
-dat_predictions[!, :VOLCFNET_D_HAT] = vec(fun_growth(b_hat))
+dat_prediction = DataFrame(Age = 1:age_max, Volume_Hat = Array(fun_growth(b_hat)')[:, 1])
+dat_out = leftjoin(dat, dat_prediction, on =:Age)
 
-#  Plot second volume on first volume.
+#  Plot observed and predicted volumes on stand age.
 
-plot(dat_predictions.VOLCFNET_0, dat_predictions.VOLCFNET_1, seriestype=:scatter)
-plot!(dat_predictions.VOLCFNET_0, dat_predictions.VOLCFNET_1_HAT, seriestype=:scatter)
-
-#  Plot growth on first volume.
-
-plot(dat_predictions.VOLCFNET_0, dat_predictions.VOLCFNET_D, seriestype=:scatter)
-plot!(dat_predictions.VOLCFNET_0, dat_predictions.VOLCFNET_D_HAT, seriestype=:scatter)
-
-# Problem: the model is practically returning a scalar (' ~= 0) instead of a nice nonlinear curve (' > 0, '' < 0).
+plot(dat_out.Age, dat_out.Volume, seriestype=:scatter)
+plot!(dat_out.Age, dat_out.Volume_Hat, seriestype=:scatter)

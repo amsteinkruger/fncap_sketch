@@ -29,11 +29,11 @@ dat =
 
 age_max = maximum(dat.Age)
 
-# Halton 
-
-# Set seed.
+# Seed
 
 Random.seed!(0112358)
+
+# Halton
 
 #  Set parameters.
 
