@@ -1,9 +1,8 @@
-2025/05/03
+2025/07/01
 
 recently done:
 
-- brought the SC demo model up to speed with DK's MATLAB scripts
-- brought the OR paplication up to speed with the SC demo model
+---
 
 working on:
 
@@ -11,6 +10,12 @@ working on:
 - adding fake fire
 - adding real fire
 - adding other disturbances and treatments?
+
+working on but in detail:
+- grab Matt's sketch
+- work out data interactions
+- work out actual modeling
+- figure out what to hand off
 
 notes from scratch work in R/Julia:
 

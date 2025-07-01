@@ -52,7 +52,7 @@ dat_noise =
     @chain begin
         HaltonSeq(base_halton, dim_1_halton * dim_2_halton, skip_halton) # Note docs reverse arguments.
         collect
-        quantile(Normal(), _)
+        quantile(Normal(), _) # revisit to cut out pseudoquasi?randomness
         reshape((dim_1_halton, dim_2_halton))
         shuffle
 end
@@ -80,7 +80,7 @@ function fun_growth(b = b, T = age_max, dat_simulation = dat_initial, dat_noise 
     for i in 2:T
         w_t = dat_simulation[:, i-1]
         u_t = dat_noise[:, i-1]
-        dat_simulation[:, i] = w_t .* (b[2] ./ (1 .+ ((b[2] - 1) ./ b[3]) .* w_t)) .* exp.(b[4] * u_t .- (1 / 2) * b[4] ^ 2)
+        dat_simulation[:, i] = w_t .* (b[2] ./ (1 .+ ((b[2] - 1) ./ b[3]) .* w_t)) # .* exp.(b[4] * u_t .- (1 / 2) * b[4] ^ 2)
     end
 
     # Get means over simulations.
@@ -94,7 +94,6 @@ end
 #  Test the growth function.
 
 fun_growth()
-
 
 #  Set up the objective function.
 
