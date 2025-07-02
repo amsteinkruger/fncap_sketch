@@ -12,7 +12,6 @@ working on:
 - adding other disturbances and treatments?
 
 working on but in detail:
-- grab Matt's sketch
 - work out data interactions
 - work out actual modeling
 - figure out what to hand off
