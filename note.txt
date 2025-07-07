@@ -1,20 +1,10 @@
-2025/07/01
-
-recently done:
-
----
+2025/07/07
 
 working on:
 
-- iterative stuff to estimate several models over combinations of categorical variables in the data, e.g. site class and pyrome
-- adding fake fire
-- adding real fire
+- iterating over several models for combinations of categorical variables in the data, e.g. site class and pyrome
+- adding stand destruction probabilities to the growth model
 - adding other disturbances and treatments?
-
-working on but in detail:
-- work out data interactions
-- work out actual modeling
-- figure out what to hand off
 
 notes from scratch work in R/Julia:
 

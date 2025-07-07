@@ -1,14 +1,24 @@
-# Get probabilities of stand destruction from an FSIM product by way of Matt's napkin sketch.
-# 2025/07/02
+---
+title: "FNCAP | Stand Destruction"
+format: html
+editor: visual
+---
 
-# Packages
+This document annotates a first pass at stand destruction probabilities for FNCAP.
+
+First, miscellaneous data shenanigans:
+
+```{r packages, include = FALSE}
 
 library(tidyverse)
 library(terra)
 library(tidyterra)
 library(viridis)
 
-# Data
+options(scipen = 999)
+```
+
+```{r data}
 
 #  Bounds
 
@@ -88,48 +98,37 @@ data_stands =
 
 crs(data_stands) <- epsg_fsim
 
-data_stands %>% plot
+# data_stands %>% plot
 
-# Processing
+```
+
+Next, do a little raster arithmetic following Matt's notes (this is by raster cell, not by stand):
+
+```{r arithmetic}
 
 #  Transform flame length probabilities into destruction probabilities, sum, and multiply by burn probabilities.
 
-data_fsim_flp1_sd = data_fsim_flp1 * 0.00
-data_fsim_flp2_sd = data_fsim_flp2 * 0.10
-data_fsim_flp3_sd = data_fsim_flp3 * 0.30
-data_fsim_flp4_sd = data_fsim_flp4 * 0.50
-data_fsim_flp5_sd = data_fsim_flp5 * 0.70
-data_fsim_flp6_sd = data_fsim_flp6 * 1.00
-
-data_fsim_sd_sum = data_fsim_flp1_sd + data_fsim_flp2_sd + data_fsim_flp3_sd + data_fsim_flp4_sd + data_fsim_flp5_sd + data_fsim_flp6_sd
+data_fsim_sd_sum = 
+  0.00 * data_fsim_flp1 + 
+  0.10 * data_fsim_flp2 + 
+  0.30 * data_fsim_flp3 + 
+  0.50 * data_fsim_flp4 + 
+  0.70 * data_fsim_flp5 + 
+  1.00 * data_fsim_flp6
 
 data_fsim_sd_out = data_fsim_sd_sum * data_fsim_bp
 
-rm(data_fsim_flp1, 
-   data_fsim_flp2, 
-   data_fsim_flp3, 
-   data_fsim_flp4, 
-   data_fsim_flp5, 
-   data_fsim_flp6, 
-   data_fsim_flp1_sd,
-   data_fsim_flp2_sd,
-   data_fsim_flp3_sd,
-   data_fsim_flp4_sd,
-   data_fsim_flp5_sd,
-   data_fsim_flp6_sd,
-   data_fsim_sd_sum)
+```
 
-#  Assign stand destruction probabilities to plots. (FSIM to FIA.)
+Then we're set to relate stand destruction probabilities to particular stands and pyromes:
+
+```{r process}
+
+#  Assign stand destruction probabilities to plots. 
 
 data_sd_stands = extract(data_fsim_sd_out, data_stands, bind = TRUE)
 
-#   Export for the growth model (?).
-
-data_sd_stands %>% as.data.frame %>% select(PLOT_UID, PSD = Band_1) %>% write_csv("output/data_sd_plots.csv")
-
-#  Assign stand destruction probabilities to pyromes (from plots). (FSIM to FIA to . . . pyromes.)
-
-#   First, extract backwards (because that doesn't require critical thinking.)
+#  Assign stand destruction probabilities to pyromes (from plots). 
 
 data_sd_extract = 
   extract(data_pyromes, data_sd_stands) %>% 
@@ -146,11 +145,13 @@ data_sd_pyromes =
   select(PYROME) %>% 
   left_join(data_sd_extract, by = "PYROME", keep = FALSE)
 
-rm(data_sd_extract)
+```
 
-# Summarize by cell.
+Finally, we can visualize stand destruction for (1) OR, (2) stands, and (3) pyromes.
 
-# data_fsim_sd_out %>% as.data.frame %>% pull(Band_1) %>% log %>% abs %>% hist
+OR:
+
+```{r plot_1, echo = FALSE}
 
 ggplot() +
   geom_spatraster(data = data_fsim_sd_out,
@@ -163,9 +164,11 @@ ggplot() +
         legend.ticks = element_blank(),
         legend.key.height = unit(3, "lines"))
 
-# Summarize by stand.
+```
 
-# data_sd_stands %>% as.data.frame %>% pull(Band_1) %>% log %>% abs %>% hist
+Stands (in pyromes of interest):
+
+```{r plot_2, echo = FALSE}
 
 ggplot() +
   geom_spatvector(data = data_bounds_vector) +
@@ -177,15 +180,28 @@ ggplot() +
         legend.ticks = element_blank(),
         legend.key.height = unit(3, "lines"))
 
-# Summarize by pyrome.
+```
 
-# data_sd_pyromes %>% as.data.frame %>% pull(PSD) %>% log %>% abs %>% hist
+Pyromes:
 
-data_sd_pyromes %>% 
-  ggplot() +
+```{r plot_3, echo = FALSE}
+
+ggplot() +
   geom_spatvector(data = data_bounds_vector) +
-  geom_spatvector(aes(fill = PSD), color = NA) +
+  geom_spatvector(data = data_sd_pyromes,
+                  aes(fill = PSD), 
+                  color = NA) +
   theme_void() +
   theme(legend.title = element_blank(),
         legend.ticks = element_blank(),
         legend.key.height = unit(3, "lines"))
+
+```
+
+And a few concluding questions:
+
+1.  Do these subsets of pyromes and stands look about right? To be clear, these are the stands we've used in growth modeling.
+2.  Does the raster arithmetic look right?
+3.  Does this approach need any tuning before we plug the results into growth modeling?
+4.  Finally, what resolution of stand destruction output should go into growth modeling, both for simulation and validation?
+    -   i.e. should observed stands be associated with their actual P(SD=1)? What about simulated stands?
