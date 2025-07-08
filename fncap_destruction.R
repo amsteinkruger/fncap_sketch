@@ -1,5 +1,5 @@
 # Get probabilities of stand destruction from an FSIM product by way of Matt's napkin sketch.
-# 2025/07/02
+# 2025/07/08
 
 # Packages
 
@@ -105,20 +105,6 @@ data_fsim_sd_sum = data_fsim_flp1_sd + data_fsim_flp2_sd + data_fsim_flp3_sd + d
 
 data_fsim_sd_out = data_fsim_sd_sum * data_fsim_bp
 
-rm(data_fsim_flp1, 
-   data_fsim_flp2, 
-   data_fsim_flp3, 
-   data_fsim_flp4, 
-   data_fsim_flp5, 
-   data_fsim_flp6, 
-   data_fsim_flp1_sd,
-   data_fsim_flp2_sd,
-   data_fsim_flp3_sd,
-   data_fsim_flp4_sd,
-   data_fsim_flp5_sd,
-   data_fsim_flp6_sd,
-   data_fsim_sd_sum)
-
 #  Assign stand destruction probabilities to plots. (FSIM to FIA.)
 
 data_sd_stands = extract(data_fsim_sd_out, data_stands, bind = TRUE)
@@ -146,11 +132,7 @@ data_sd_pyromes =
   select(PYROME) %>% 
   left_join(data_sd_extract, by = "PYROME", keep = FALSE)
 
-rm(data_sd_extract)
-
 # Summarize by cell.
-
-# data_fsim_sd_out %>% as.data.frame %>% pull(Band_1) %>% log %>% abs %>% hist
 
 ggplot() +
   geom_spatraster(data = data_fsim_sd_out,
@@ -165,8 +147,6 @@ ggplot() +
 
 # Summarize by stand.
 
-# data_sd_stands %>% as.data.frame %>% pull(Band_1) %>% log %>% abs %>% hist
-
 ggplot() +
   geom_spatvector(data = data_bounds_vector) +
   geom_spatvector(data = data_pyromes) +
@@ -179,13 +159,41 @@ ggplot() +
 
 # Summarize by pyrome.
 
-# data_sd_pyromes %>% as.data.frame %>% pull(PSD) %>% log %>% abs %>% hist
-
-data_sd_pyromes %>% 
-  ggplot() +
+ggplot() +
   geom_spatvector(data = data_bounds_vector) +
-  geom_spatvector(aes(fill = PSD), color = NA) +
+  geom_spatvector(data = data_sd_pyromes,
+                  aes(fill = PSD), 
+                  color = NA) +
   theme_void() +
   theme(legend.title = element_blank(),
         legend.ticks = element_blank(),
         legend.key.height = unit(3, "lines"))
+
+# Bonus (1): find zeros. 
+
+data_fsim_bp %>% 
+  filter(Band_1 == 0) %>% 
+  `+` (1) %>% 
+  global("sum", na.rm = TRUE) %>% 
+  `/` (dim(data_fsim_bp)[1] * dim(data_fsim_bp)[2])
+
+#  2.1% of burn probabilities are zeros.
+
+data_fsim_flp1 %>% 
+  filter(Band_1 == 1) %>% 
+  global("sum", na.rm = TRUE) %>% 
+  `/` (dim(data_fsim_flp1)[1] * dim(data_fsim_flp1)[2])
+
+#  0.7% of cells have FLP1 = 1 (and those end up with zeros for SDP).
+
+# Bonus (2): find which zeros are extracted into plots of interest.
+
+data_fsim_bp %>% filter(Band_1 == 0) %>% extract(data_stands) %>% filter(!is.na(Band_1)) %>% nrow
+
+#  0 plots of interest have BP = 0.
+
+data_fsim_flp1 %>% filter(Band_1 == 1) %>% extract(data_stands) %>% filter(!is.na(Band_1)) %>% nrow
+
+#  22 plots of interest have FLP1 = 1
+
+#  Let's suppose the remaining two NAs follow from meaningful NAs in the FLP layers.
