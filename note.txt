@@ -1,10 +1,14 @@
-2025/07/07
+2025/07/14
 
 working on:
 
+- doing something with harvest notifications
 - iterating over several models for combinations of categorical variables in the data, e.g. site class and pyrome
 - adding stand destruction probabilities to the growth model
-- adding other disturbances and treatments?
+- adding other disturbances and treatments
+- adding error quantification/visualization for the growth model
+- parsing out post-SD initial conditions
+- handling CA/WA data
 
 notes from scratch work in R/Julia:
 
