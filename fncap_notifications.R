@@ -38,9 +38,10 @@ dat_flat_join =
   # Filter to clearcuts.
   filter(`Activity Type` == "Clearcut/Overstory Removal") %>% 
   # Filter to private (?) owners.
-  filter(LandOwnerType %in% c("Partnership/Corporate Forestland Ownership", 
-                              "Individual/Private Forestland Ownership", 
-                              "Private/Non-Profit")) %>% 
+  # filter(LandOwnerType %in% c("Partnership/Corporate Forestland Ownership", 
+  #                             "Individual/Private Forestland Ownership", 
+  #                             "Private/Non-Profit")) %>% 
+  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
   # Filter to observations in MBF. Note other observations might be recoverable, but they're annoying.
   filter(`Activity Units` == "MBF") %>% 
   # Manipulate columns.
@@ -97,6 +98,8 @@ dat_join_1 =
   filter(n() == 1) %>% # Cut many-many matches.
   ungroup
 
+# Note that many-many matches are appearing as of 2025/07/21?
+
 dat_join_index = dat_join_1$UID %>% unique
 
 dat_join_2 = 
@@ -105,13 +108,35 @@ dat_join_2 =
   filter(UID %in% dat_join_index) %>% 
   select(UID) %>% 
   left_join(dat_join_1, by = "UID") %>% 
-  select(NoapIdentifier, LOName, DateStart, DateEnd, DateContinuationStart, DateContinuationEnd, Link, MBF)
+  select(NoapIdentifier, LOName, DateStart, DateEnd, DateContinuationStart, DateContinuationEnd, Link, MBF) %>% 
+  cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
+  rename(Acres = y)
 
-# spatial operations go here
+# Check out runtime with a DEM to get elevation and slope.
 
-# Then the general problem moving forward is (1) appending 1990-2014 and 2014-2024/5 and (2) interpreting rows
+# dat_elevation_10m = "data/OR_DEM_10M.gdb.zip" %>% rast
+# dat_elevation_100m = dat_elevation_10m %>% aggregate(fact = 13, fun = mean) 
 
-# Get the replication data from Hashida and Lewis. R4 denotes non-industrial private owners; R5 denotes industrial private owners. Whatever that means.
+# dat_join_try = 
+#   dat_join_2 %>% 
+#   filter(row_number() %in% 1:25) %>% 
+#   project(crs(dat_elevation_10m)) %>% 
+#   extract(dat_elevation, ., fun = "mean")
+
+# 5 minutes for 25 obs > 7432 minutes (little bit more than 5 days) for 37162 obs. 
+# Recall that output of terra::extract() is a flat dataframe of row IDs and extracted results; here, ID and (mean) elevation.
+
+# Export recent notifications for reference.
+
+writeVector(dat_join_2, 
+            "output/dat_or_notifications_join_20142025.gdb",
+            overwrite = TRUE)
+
+rm(list = ls())
+
+dat_join_20142025 = "output/dat_or_notifications_join_20142025.gdb" %>% vect
+
+# Get replication data from Hashida and Lewis. R4 denotes non-industrial private owners; R5 denotes industrial private owners. Whatever that means.
 
 # load("data/hvst_panel_07_R4.RData")
 # load("data/hvst_panel_07_R5.RData")
@@ -127,54 +152,111 @@ dat_hl_r4 =
 
 
 dat_hl_r5 = 
-  "data/Replication_HashidaLewis_R4.csv" %>% 
+  "data/Replication_HashidaLewis_R5.csv" %>% 
   read_csv %>% 
   mutate(Type_Numeric = 5,
          Type_String = "Industrial Private")
 
-dat_hl = bind_rows(dat_hl_r4, dat_hl_r5)
-
-# This is a good spot to resolve spatial stuff.
-
-# Picking columns:
-
-dat_bind_hl = 
-  dat_hl %>% 
+dat_hl = 
+  bind_rows(dat_hl_r4, dat_hl_r5) %>% 
+  # Keep only observations with harvest (following sitedata.R from Hashida and Fenichel (2021)).
+  filter(hvst == 1) %>% 
   # Set up altered columns to keep.
   mutate(Month = ifelse(str_sub(month_yr, 2, 2) == "/", 
                         paste0(0, str_sub(month_yr, 1, 1)), 
                         str_sub(month_yr, 1, 2)),
          Year = str_sub(month_yr, -4, -1),
-         Year_Month = paste0(Year, Month),
+         YearMonth = paste0(Year, Month),
          UID = row_number()) %>% 
   # Keep columns.
   select(UID,
+         Sec_Town_Q,
          Year, 
          Month, 
-         Year_Month,
+         YearMonth,
          Acres = ActAcreage,
          MBF = ActMbf)
 
-dat_bind_flat = 
-  dat_flat %>% 
-  # Set up columns to keep.
-  mutate(Month = SubmitDate %>% month %>% ifelse(str_length(.) < 2, paste0(0, .), .),
-         Year = SubmitDate %>% year,
-         Year_Month = paste0(Year, Month),
-         UID = row_number() + max(dat_bind_hl$UID),
-         MBF = ifelse(`Activity Units` == "MBF", `Unit Quantity`, NA)) %>% 
-  # Keep columns.
-  select(UID,
-         Year, 
-         Month, 
-         Year_Month, 
-         MBF)
+# Resolve spatial stuff.
 
-# note that acres requires spatial operations
-# note that this still requires filtering
+dat_qq = "data/PLSS_QQ_OR.gdb" %>% vect
 
-# do: compute spatial statistics for newer data; have blank/bonus columns in bind-ed (bound) output; resolve unique ID questions for both datasets
+dat_qq_flat = dat_qq %>% as.data.frame
 
-# solving identification problem:
-#  - assume all rows are actually unique
-#  - next: subset (newer) data to activities and owners of interest (?)
+dat_qq_join = 
+  dat_qq_flat %>% 
+  select(meridian, qq, sctn, township, township_char, range, range_char) %>% 
+  mutate(Meridian = meridian,
+         QuarterQuarter_Section_Township_Range = 
+           paste0(qq, 
+                  "_S", 
+                  sctn, 
+                  "_T", 
+                  township, 
+                  township_char, 
+                  "_R", 
+                  range, 
+                  range_char)) %>% 
+  distinct
+
+dat_hl_join = 
+  dat_hl %>% 
+  separate_wider_delim(Sec_Town_Q, 
+                       delim = " ", 
+                       names = c("QuarterQuarter", 
+                                 "Section", 
+                                 "Township", 
+                                 "Range"),
+                       cols_remove = FALSE) %>% 
+  mutate(QuarterQuarter = QuarterQuarter %>% str_replace(",", ""),
+         QuarterQuarter_Section_Township_Range = 
+           paste(QuarterQuarter, 
+                 Section, 
+                 Township, 
+                 Range, 
+                 sep = "_")) %>% 
+  select(QuarterQuarter_Section_Township_Range,
+         Sec_Town_Q) %>% 
+  distinct
+
+dat_qq_hl = 
+  inner_join(dat_hl_join,
+             dat_qq_join)
+
+dat_hl_use = 
+  dat_qq %>% 
+  inner_join(dat_qq_hl) %>% 
+  select(Meridian, QuarterQuarter_Section_Township_Range, Sec_Town_Q) %>% 
+  left_join(dat_hl) %>% 
+  select(UID, Year, Month, YearMonth, Acres, MBF)
+
+# Combine.
+
+dat_20142025_bind = 
+  dat_join_20142025 %>% 
+  as_tibble %>% 
+  arrange(desc(DateStart)) %>% 
+  mutate(UID = paste0("A_", row_number()),
+         Year = year(DateStart),
+         Month = month(DateStart),
+         YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month)) %>% 
+  select(UID, Year, Month, YearMonth, MBF, Acres)
+
+dat_19902014_bind = 
+  dat_hl_use %>% 
+  as_tibble %>% 
+  arrange(desc(YearMonth)) %>% 
+  mutate(UID = paste0("B_", row_number()),
+         Year = Year %>% as.numeric,
+         Month = Month %>% as.numeric) %>% 
+  select(UID, Year, Month, YearMonth, MBF, Acres)
+
+dat_bind = bind_rows(dat_20142025_bind, dat_19902014_bind)
+  
+dat_bind %>% group_by(Year) %>% summarize(count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = count))
+dat_bind %>% group_by(Year) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF))
+
+# So counts and MBF sums are both not quite right. Check multicounting of MBF over geometries and units on MBF.
+# Export for reference.
+
+write_csv(dat_bind, "output/notifications_20250721.csv")
