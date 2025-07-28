@@ -1,6 +1,12 @@
-2025/07/14
+2025/07/28
+
+q: are we selecting and parameterizing "new" growth functions where Wang and Lewis pulled from Hashida and Lewis?
+q: is the subjective burn probability just Wang and Lewis's radius thing?
 
 working on:
+
+- checking harvest notifications w/ alternative order of filters to get a better flat/spatial join
+- setting up notification-MTBS intersect(s) following Wang and Lewis
 
 - doing something with harvest notifications
 - iterating over several models for combinations of categorical variables in the data, e.g. site class and pyrome
