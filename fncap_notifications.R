@@ -1,116 +1,109 @@
 # Check out harvest notifications from different sources.
 
+# Remember that Hashida and Lewis should actually be Hashida and Fenichel; get references straight.
+
 library(tidyverse)
 library(terra)
 library(tidyterra)
 library(readxl)
 
-dat_points = "data/Points_Notifications.gdb" %>% vect
-dat_lines = "data/Lines_Notifications.gdb" %>% vect
+# Get spatial data. Exclude points and lines for now; clearcuts only appear as polygons.
+
+# dat_points = "data/Points_Notifications.gdb" %>% vect
+# dat_lines = "data/Lines_Notifications.gdb" %>% vect
 dat_polygons = "data/Polygons_Notifications.gdb" %>% vect
-dat_polygons %>% as.data.frame %>% group_by(ActType) %>% summarize(count = n()) %>% ungroup %>% arrange(desc(count))
 
-# So, clearcuts appear in the polygon data and the NoapIdentifier field corresponds to related data of interest.
-
-# Get the flat data for comparison merging.
+# Get flat data.
 
 dat_flat = read_excel("data/Flat_Notifications.xlsx")
 
-# Compile NoapIdentifier values from spatial data to merge.
+# Set up a join.
 
-dat_points_flat = dat_points %>% as.data.frame %>% as_tibble %>% mutate(SpatialType = "Point", UID = row_number())
-dat_lines_flat = dat_lines %>% as.data.frame %>% as_tibble %>% mutate(SpatialType = "Line", UID = row_number())
-dat_polygons_flat = dat_polygons %>% as.data.frame %>% as_tibble %>% mutate(SpatialType = "Polygon", UID = row_number())
-
-dat_spatial_flat = bind_rows(dat_points_flat, dat_lines_flat, dat_polygons_flat)
-
-# First, check merges on NoapIdentifier. Note that NoapIdentifiers are nonunique, and/but a lot of rows are nonunique on all fields (???).
-
-dat_noap_check = inner_join(dat_flat %>% select(NoapIdentifier) %>% distinct,
-                            dat_spatial_flat %>% select(NoapIdentifier) %>% distinct)
-
-# Nice. This gets all of the flat NoapIdentifier values except two (138556/138558) (?), and 138556/144411 values from the spatial data.
-
-# Next, work out rows and columns to (1) keep and (2) join on. In particular, join flat data to spatial data.
-
-dat_flat_join = 
+dat_right = 
   dat_flat %>% 
-  # Filter to clearcuts.
-  filter(`Activity Type` == "Clearcut/Overstory Removal") %>% 
-  # Filter to private (?) owners.
-  # filter(LandOwnerType %in% c("Partnership/Corporate Forestland Ownership", 
-  #                             "Individual/Private Forestland Ownership", 
-  #                             "Private/Non-Profit")) %>% 
-  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  # Filter to observations in MBF. Note other observations might be recoverable, but they're annoying.
-  filter(`Activity Units` == "MBF") %>% 
-  # Manipulate columns.
-  #  Consolidate landowner names into a single column.
   mutate(across(starts_with("LO"), ~ifelse(. == "NULL", "", .)),
          across(c("LOFirstName", "LOMiddleName"), ~ifelse(. == "", "", paste0(., " "))),
          `LO Company Name` = ifelse(`LO Company Name` == "", "", paste0(", ", `LO Company Name`)),
-         LOName = paste0(LOFirstName, LOMiddleName, LOLastName, `LO Company Name`) %>% str_trim) %>% 
-  #  Handle MBF.
-  mutate(MBF = `Unit Quantity` %>% as.numeric) %>% 
-  # Pick columns.
-  select(NoapIdentifier, 
-         LOName, 
-         # DateSubmit = SubmitDate, 
-         DateStart = `Actvity StartDate`, 
-         DateEnd = `Activity EndDate`, MBF) %>% 
-  # Reduce to unique observations. Note that this is problematic (41630 to 37921).
-  distinct %>% 
-  group_by(across(-MBF)) %>% 
-  summarize(MBF = sum(MBF, na.rm = TRUE)) %>% 
-  ungroup
+         LandOwnerName = paste0(LOFirstName, LOMiddleName, LOLastName, `LO Company Name`) %>% str_trim,
+         UID_Right = row_number()) %>% 
+  select(NOAPID = NoapIdentifier,
+         UnitID = Id,
+         UnitName = `Unit Name`,
+         ActivityType = `Activity Type`,
+         UID_Right,
+         ActivityUnit_Right = `Activity Units`,
+         ActivityQuantity_Right = `Unit Quantity`,
+         LandOwnerType_Right = LandOwnerType,
+         LandOwnerName_Right = LandOwnerName,
+         DateSubmit_Right = SubmitDate,
+         DateStart_Right = `Actvity StartDate`,
+         DateEnd_Right = `Activity EndDate`)
 
-dat_spatial_flat_join = 
-  dat_spatial_flat %>% 
-  # Filter to clearcuts.
-  filter(ActType == "Clearcut/Overstory Removal") %>% 
-  # Filter to private (?) owners? Nope, can't.
-  # Filter to observations in MBF? Can't.
-  # No other filters of interest?
-  # Clean up strings.
-  mutate(LandOwners = LandOwners %>% str_trim) %>% 
-  # Pick columns.
-  select(NoapIdentifier, 
-         LONameSpatial = LandOwners, 
-         # DateSubmit = SubmitDate, 
-         DateStart = StartDate, 
-         DateEnd = EndDate, 
-         DateContinuationStart = ContinuationIssueDate,
-         DateContinuationEnd = ContinuationExpiryDate,
-         Link = PDFLink,
-         SpatialType,
-         UID) %>% 
-  # Reduce to unique observations. This is also problematic.
-  distinct %>% 
-  # Add a flag for joins.
-  mutate(Join = 1)
-
-dat_join_1 = 
-  left_join(dat_flat_join, 
-            dat_spatial_flat_join, 
-            by = c("NoapIdentifier", "DateStart", "DateEnd")) %>% 
-  filter(Join == 1) %>% 
-  group_by(UID) %>% 
-  filter(n() == 1) %>% # Cut many-many matches.
-  ungroup
-
-# Note that many-many matches are appearing as of 2025/07/21?
-
-dat_join_index = dat_join_1$UID %>% unique
-
-dat_join_2 = 
+dat_left = 
   dat_polygons %>% 
-  mutate(UID = row_number()) %>% 
-  filter(UID %in% dat_join_index) %>% 
-  select(UID) %>% 
-  left_join(dat_join_1, by = "UID") %>% 
-  select(NoapIdentifier, LOName, DateStart, DateEnd, DateContinuationStart, DateContinuationEnd, Link, MBF) %>% 
+  mutate(LandOwnerName = LandOwners %>% str_trim,
+         UID_Left = row_number()) %>% 
+  select(NOAPID = NoapIdentifier,
+         UnitID,
+         UnitName,
+         ActivityType = ActType,
+         UID_Left,
+         LandOwnerName_Left = LandOwnerName,
+         DateStart_Left = StartDate,
+         DateEnd_Left = EndDate,
+         DateContinuationStart_Left = ContinuationIssueDate,
+         DateContinutationEnd_Left = ContinuationExpiryDate,
+         Link_Left = PDFLink)
+
+dat = 
+  left_join(dat_left,
+            dat_right,
+            multiple = "all",
+            relationship = "many-to-many")
+
+# Count UIDs kept on each side. (Should be all for both, likely isn't.)
+#  All 234485 UID values from dat_left remain in dat.
+#  Only 260140 of 326841 UID values from dat_right remain in dat. Check whether the missing observations are of interest (after working out filters).
+
+# Work out filters.
+
+dat_filter = 
+  dat %>% 
+  # as_tibble %>% 
+  # Sort out columns.
+  select(NOAPID,
+         UnitID,
+         UnitName,
+         ActivityType,
+         ActivityUnit = ActivityUnit_Right,
+         ActivityQuantity = ActivityQuantity_Right,
+         LandOwnerName_Left,
+         LandOwnerName_Right,
+         LandOwnerType = LandOwnerType_Right,
+         DateSubmit = DateSubmit_Right,
+         DateStart_Left,
+         DateStart_Right,
+         DateEnd_Left,
+         DateEnd_Right,
+         DateContinuationStart = DateContinuationStart_Left,
+         DateContinuationEnd = DateContinutationEnd_Left,
+         Link = Link_Left) %>% 
+  # Filter.
+  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  # filter(LandOwnerType %in% c("Individual/Private Forestland Ownership", 
+  #                             "Partnership/Corporate Forestland Ownership",
+  #                             "Private/Non-Profit")) %>% 
+  filter(LandOwnerType == "Individual/Private Forestland Ownership") %>% 
+  filter(ActivityUnit == "MBF") %>% 
+  # Sort out columns again.
+  select(-c(ActivityType, LandOwnerType, ActivityUnit)) %>% 
+  # Get areas.
   cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
-  rename(Acres = y)
+  rename(Acres = y) # %>% 
+  # Get slopes and elevations?
+  # Aggregate MBF/Acre and Acres?
+  # Reduce to centroids?
+  # Get slopes and elevations for centroids?
 
 # Check out runtime with a DEM to get elevation and slope.
 
@@ -128,13 +121,13 @@ dat_join_2 =
 
 # Export recent notifications for reference.
 
-writeVector(dat_join_2, 
-            "output/dat_or_notifications_join_20142025.gdb",
-            overwrite = TRUE)
-
-rm(list = ls())
-
-dat_join_20142025 = "output/dat_or_notifications_join_20142025.gdb" %>% vect
+# writeVector(dat_join_2, 
+#             "output/dat_or_notifications_join_20142025.gdb",
+#             overwrite = TRUE)
+# 
+# rm(list = ls())
+# 
+# dat_join_20142025 = "output/dat_or_notifications_join_20142025.gdb" %>% vect
 
 # Get replication data from Hashida and Lewis. R4 denotes non-industrial private owners; R5 denotes industrial private owners. Whatever that means.
 
@@ -233,13 +226,14 @@ dat_hl_use =
 # Combine.
 
 dat_20142025_bind = 
-  dat_join_20142025 %>% 
-  as_tibble %>% 
-  arrange(desc(DateStart)) %>% 
+  dat_filter %>%
+  as_tibble %>%
+  arrange(DateStart_Left) %>%
   mutate(UID = paste0("A_", row_number()),
-         Year = year(DateStart),
-         Month = month(DateStart),
-         YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month)) %>% 
+         Year = year(DateStart_Left),
+         Month = month(DateStart_Left),
+         YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
+         MBF = ActivityQuantity %>% as.numeric) %>%
   select(UID, Year, Month, YearMonth, MBF, Acres)
 
 dat_19902014_bind = 
@@ -251,12 +245,16 @@ dat_19902014_bind =
          Month = Month %>% as.numeric) %>% 
   select(UID, Year, Month, YearMonth, MBF, Acres)
 
-dat_bind = bind_rows(dat_20142025_bind, dat_19902014_bind)
-  
-dat_bind %>% group_by(Year) %>% summarize(count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = count))
-dat_bind %>% group_by(Year) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF))
+dat_bind = bind_rows(dat_20142025_bind, dat_19902014_bind) %>% mutate(Period = UID %>% str_sub(1, 1))
 
-# So counts and MBF sums are both not quite right. Check multicounting of MBF over geometries and units on MBF.
+dat_bind %>% group_by(Year, Period) %>% summarize(count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = count, fill = Period))
+dat_bind %>% group_by(Year, Period) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF, fill = Period))
+dat_bind %>% group_by(Year, Period) %>% summarize(Acres = sum(Acres)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Acres, fill = Period))
+
+# So counts and MBF sums are both not quite right. Check multicounting of MBF over geometries and units on MBF. Acres look right!
+
+# The ways in which counts and MBF don't line up (counts are a little high, MBF is a lot high) suggest aggregation matters. Ditto acres.
+
 # Export for reference.
 
 write_csv(dat_bind, "output/notifications_20250721.csv")
