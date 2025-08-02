@@ -1,11 +1,13 @@
 # Check out harvest notifications from different sources.
 
-# Remember that Hashida and Lewis should actually be Hashida and Fenichel; get references straight.
+# Note that Hashida and Lewis should actually be Hashida and Fenichel; get references straight.
 
 library(tidyverse)
 library(terra)
 library(tidyterra)
 library(readxl)
+
+options(scipen=999)
 
 # Get spatial data. Exclude points and lines for now; clearcuts only appear as polygons.
 
@@ -69,7 +71,7 @@ dat =
 
 dat_filter = 
   dat %>% 
-  # as_tibble %>% 
+  # as_tibble %>%
   # Sort out columns.
   select(NOAPID,
          UnitID,
@@ -97,14 +99,25 @@ dat_filter =
   filter(ActivityUnit == "MBF") %>% 
   # Sort out columns again.
   select(-c(ActivityType, LandOwnerType, ActivityUnit)) %>% 
+  # Tidy up a little.
+  arrange(NOAPID, UnitID, UnitName) %>% 
+  # Band-Aid for duplication.
+  distinct %>% 
   # Get areas.
   cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
-  rename(Acres = y) # %>% 
+  rename(Acres = y)
   # Get slopes and elevations?
-  # Aggregate MBF/Acre and Acres?
-  # Reduce to centroids?
-  # Get slopes and elevations for centroids?
 
+dat_filter_centroids = 
+  dat_filter %>% 
+  centroids
+# Get slopes and elevations for centroids?
+
+# Note duplication issue, e.g.:
+dat_polygons %>% filter(NoapIdentifier == "2014-532-07703") # 2
+dat_flat %>% filter(NoapIdentifier == "2014-532-07703") # 2
+dat_filter %>% filter(NOAPID == "2014-532-07703") # 4
+  
 # Check out runtime with a DEM to get elevation and slope.
 
 # dat_elevation_10m = "data/OR_DEM_10M.gdb.zip" %>% rast
@@ -223,10 +236,21 @@ dat_hl_use =
   left_join(dat_hl) %>% 
   select(UID, Year, Month, YearMonth, Acres, MBF)
 
+dat_hl_centroids = dat_hl_use %>% centroids
+
+dat_hl_centroids %>% nrow
+dat_hl_centroids %>% crop(ext(-14000000, -13400000, 5000000, 6000000)) %>% nrow
+
+# Note that 26675 of 27404 observations have nonproblematic locations (at a glance). So, 729 (2%) appear to be misplaced.
+
+dat_hl_centroids = dat_hl_centroids %>% crop(ext(-14000000, -13400000, 5000000, 6000000)) # Band-Aid for extent in earlier period.
+
+dat_filter_centroids_less = dat_filter_centroids %>% crop(dat_hl_centroids) # Band-Aid for extent in later period.
+
 # Combine.
 
 dat_20142025_bind = 
-  dat_filter %>%
+  dat_filter_centroids_less %>%
   as_tibble %>%
   arrange(DateStart_Left) %>%
   mutate(UID = paste0("A_", row_number()),
@@ -237,7 +261,7 @@ dat_20142025_bind =
   select(UID, Year, Month, YearMonth, MBF, Acres)
 
 dat_19902014_bind = 
-  dat_hl_use %>% 
+  dat_hl_centroids %>% 
   as_tibble %>% 
   arrange(desc(YearMonth)) %>% 
   mutate(UID = paste0("B_", row_number()),
@@ -254,6 +278,66 @@ dat_bind %>% group_by(Year, Period) %>% summarize(Acres = sum(Acres)) %>% ungrou
 # So counts and MBF sums are both not quite right. Check multicounting of MBF over geometries and units on MBF. Acres look right!
 
 # The ways in which counts and MBF don't line up (counts are a little high, MBF is a lot high) suggest aggregation matters. Ditto acres.
+
+dat_bind %>% 
+  group_by(Year) %>% 
+  mutate(MBF_Bin = MBF %>% percent_rank()) %>% 
+  ungroup %>% 
+  filter((MBF_Bin < 0.95 & Period == "A") | Period == "B") %>% 
+  group_by(Year, Period) %>% 
+  summarize(MBF = sum(MBF)) %>% 
+  ungroup %>% 
+  ggplot() + 
+  geom_col(aes(x = Year, 
+               y = MBF, 
+               fill = Period))
+
+dat_bind %>% mutate(MBFAcre = MBF / Acres) %>% pull(MBFAcre) %>% log %>% hist
+
+library(ggridges)
+
+dat_bind %>% 
+  mutate(MBFAcre = MBF / Acres) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = MBFAcre %>% log,
+                          y = Year %>% factor,
+                          fill = Period,
+                          color = Period),
+                      scale = 1)
+
+dat_bind %>% 
+  mutate(MBFAcre = MBF / Acres) %>% 
+  filter(log(MBFAcre) > 0 & log(MBFAcre) < 5) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = MBFAcre %>% log,
+                          y = Year %>% factor,
+                          fill = Period,
+                          color = Period),
+                      scale = 1)
+
+dat_bind %>% 
+  mutate(MBFAcre = MBF / Acres) %>% 
+  filter(log(MBFAcre) > 0 & log(MBFAcre) < 5) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = MBF %>% log,
+                          y = Year %>% factor,
+                          fill = Period,
+                          color = Period),
+                      scale = 1)
+
+# So substantial difference in harvest notification MBF is the result of the top 5-10% (by MBF) of later observations being a lot . . . bigger?
+
+# Comment above was w/ fewer plots. Clearly difference appears across the distribution. Note trend and abrupt change in mean, median, skew.
+
+# Note that earlier extent Band-Aids (more or less) eliminate the possibility that non-West Side notifications drive the MBF difference.
+
+# Compare w/ aggregate harvest statistics from ODF. Mind absence of metadata.
+
+"data/dat_harvest.csv" %>% 
+  read_csv %>% 
+  ggplot() + 
+  geom_col(aes(x = year,
+               y = `Total Private`))
 
 # Export for reference.
 
