@@ -1,0 +1,65 @@
+
+# dat_filter = 
+#   dat %>% 
+  # as_tibble %>%
+  # Sort out columns.
+  # select(NOAPID,
+  #        UnitID,
+  #        UnitName,
+  #        ActivityType,
+  #        ActivityUnit = ActivityUnit_Right,
+  #        ActivityQuantity = ActivityQuantity_Right,
+  #        LandOwnerName_Left,
+  #        LandOwnerName_Right,
+  #        LandOwnerType = LandOwnerType_Right,
+  #        DateSubmit = DateSubmit_Right,
+  #        DateStart_Left,
+  #        DateStart_Right,
+  #        DateEnd_Left,
+  #        DateEnd_Right,
+  #        DateContinuationStart = DateContinuationStart_Left,
+  #        DateContinuationEnd = DateContinutationEnd_Left,
+  #        Link = Link_Left) %>% 
+  # Filter.
+  # filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  # filter(LandOwnerType %in% c("Individual/Private Forestland Ownership",
+  #                             "Partnership/Corporate Forestland Ownership",
+  #                             "Private/Non-Profit")) %>%
+  # filter(LandOwnerType == "Individual/Private Forestland Ownership") %>%
+  # filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>%
+  # filter(LandOwnerType == "Private/Non-Profit") %>%
+  # filter(ActivityUnit == "MBF") %>% 
+  # Sort out columns again.
+  # select(-c(ActivityType, LandOwnerType, ActivityUnit)) %>% 
+  # Tidy up a little.
+  # arrange(NOAPID, UnitID, UnitName) %>% 
+  # Band-Aid for duplication.
+  # distinct %>% 
+  # Get areas.
+  # cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
+  # rename(Acres = y)
+  # Get slopes and elevations?
+
+# Check out runtime with a DEM to get elevation and slope.
+
+# dat_elevation_10m = "data/OR_DEM_10M.gdb.zip" %>% rast
+# dat_elevation_100m = dat_elevation_10m %>% aggregate(fact = 13, fun = mean) 
+
+# dat_join_try = 
+#   dat_join_2 %>% 
+#   filter(row_number() %in% 1:25) %>% 
+#   project(crs(dat_elevation_10m)) %>% 
+#   extract(dat_elevation, ., fun = "mean")
+
+# 5 minutes for 25 obs > 7432 minutes (little bit more than 5 days) for 37162 obs. 
+# Recall that output of terra::extract() is a flat dataframe of row IDs and extracted results; here, ID and (mean) elevation.
+
+# Export recent notifications for reference.
+
+# writeVector(dat_join_2, 
+#             "output/dat_or_notifications_join_20142025.gdb",
+#             overwrite = TRUE)
+# 
+# rm(list = ls())
+# 
+# dat_join_20142025 = "output/dat_or_notifications_join_20142025.gdb" %>% vect

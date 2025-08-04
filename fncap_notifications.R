@@ -1,7 +1,5 @@
 # Check out harvest notifications from different sources.
 
-# Note that Hashida and Lewis should actually be Hashida and Fenichel; get references straight.
-
 library(tidyverse)
 library(terra)
 library(tidyterra)
@@ -11,15 +9,15 @@ options(scipen=999)
 
 # Get spatial data. Exclude points and lines for now; clearcuts only appear as polygons.
 
-# dat_points = "data/Points_Notifications.gdb" %>% vect
-# dat_lines = "data/Lines_Notifications.gdb" %>% vect
+dat_points = "data/Points_Notifications.gdb" %>% vect
+dat_lines = "data/Lines_Notifications.gdb" %>% vect
 dat_polygons = "data/Polygons_Notifications.gdb" %>% vect
 
 # Get flat data.
 
 dat_flat = read_excel("data/Flat_Notifications.xlsx")
 
-# Set up a join.
+# Set up joins.
 
 dat_right = 
   dat_flat %>% 
@@ -41,7 +39,7 @@ dat_right =
          DateStart_Right = `Actvity StartDate`,
          DateEnd_Right = `Activity EndDate`)
 
-dat_left = 
+dat_left_polygons = 
   dat_polygons %>% 
   mutate(LandOwnerName = LandOwners %>% str_trim,
          UID_Left = row_number()) %>% 
@@ -51,28 +49,79 @@ dat_left =
          ActivityType = ActType,
          UID_Left,
          LandOwnerName_Left = LandOwnerName,
+         DateSubmit_Left = SubmitDate,
          DateStart_Left = StartDate,
          DateEnd_Left = EndDate,
          DateContinuationStart_Left = ContinuationIssueDate,
          DateContinutationEnd_Left = ContinuationExpiryDate,
          Link_Left = PDFLink)
 
-dat = 
-  left_join(dat_left,
+dat_left_lines = 
+  dat_lines %>% 
+  mutate(LandOwnerName = LandOwners %>% str_trim,
+         UID_Left = row_number()) %>% 
+  select(NOAPID = NoapIdentifier,
+         UnitID,
+         UnitName,
+         ActivityType = ActType,
+         UID_Left,
+         LandOwnerName_Left = LandOwnerName,
+         DateSubmit_Left = SubmitDate,
+         DateStart_Left = StartDate,
+         DateEnd_Left = EndDate,
+         DateContinuationStart_Left = ContinuationIssueDate,
+         DateContinutationEnd_Left = ContinuationExpiryDate,
+         Link_Left = PDFLink)
+
+dat_left_points = 
+  dat_points %>% 
+  mutate(LandOwnerName = LandOwners %>% str_trim,
+         UID_Left = row_number()) %>% 
+  select(NOAPID = NoapIdentifier,
+         UnitID,
+         UnitName,
+         ActivityType = ActType,
+         UID_Left,
+         LandOwnerName_Left = LandOwnerName,
+         DateSubmit_Left = SubmitDate,
+         DateStart_Left = StartDate,
+         DateEnd_Left = EndDate,
+         DateContinuationStart_Left = ContinuationIssueDate,
+         DateContinutationEnd_Left = ContinuationExpiryDate,
+         Link_Left = PDFLink)
+  
+dat_join_polygons = 
+  left_join(dat_left_polygons,
             dat_right,
             multiple = "all",
-            relationship = "many-to-many")
+            relationship = "many-to-many") %>% 
+  filter(!is.na(UID_Right))
 
-# Count UIDs kept on each side. (Should be all for both, likely isn't.)
-#  All 234485 UID values from dat_left remain in dat.
-#  Only 260140 of 326841 UID values from dat_right remain in dat. Check whether the missing observations are of interest (after working out filters).
+dat_join_lines = 
+  left_join(dat_left_lines,
+            dat_right,
+            multiple = "all",
+            relationship = "many-to-many") %>% 
+  filter(!is.na(UID_Right))
 
-# Work out filters.
+dat_join_points = 
+  left_join(dat_left_points,
+            dat_right,
+            multiple = "all",
+            relationship = "many-to-many") %>% 
+  filter(!is.na(UID_Right))
 
-dat_filter = 
-  dat %>% 
-  # as_tibble %>%
-  # Sort out columns.
+# Count UIDs kept on each side.
+#  All observations from the spatial data are kept in the join, with meaningful proportions of points, lines, and polygons filtered out afterward.
+#  260140 observations from the flat data correspond to polygons.
+#  43712 observations from the flat data correspond to lines.
+#  11540 observations from the flat data correspond to points.
+#  So, 315392 of 327841 flat observations (96%) correspond to spatial data. Nice.
+
+# Set up centroids and combine spatial datasets.
+
+dat_centroids_polygons = 
+  dat_join_polygons %>% 
   select(NOAPID,
          UnitID,
          UnitName,
@@ -90,83 +139,105 @@ dat_filter =
          DateContinuationStart = DateContinuationStart_Left,
          DateContinuationEnd = DateContinutationEnd_Left,
          Link = Link_Left) %>% 
-  # Filter.
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-  # filter(LandOwnerType %in% c("Individual/Private Forestland Ownership", 
-  #                             "Partnership/Corporate Forestland Ownership",
-  #                             "Private/Non-Profit")) %>% 
-  filter(LandOwnerType == "Individual/Private Forestland Ownership") %>% 
-  filter(ActivityUnit == "MBF") %>% 
-  # Sort out columns again.
-  select(-c(ActivityType, LandOwnerType, ActivityUnit)) %>% 
   # Tidy up a little.
-  arrange(NOAPID, UnitID, UnitName) %>% 
+  arrange(NOAPID, UnitID, UnitName, DateSubmit) %>% 
   # Band-Aid for duplication.
   distinct %>% 
   # Get areas.
   cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
-  rename(Acres = y)
-  # Get slopes and elevations?
+  rename(Acres = y) %>% 
+  # Get centroids.
+  centroids # %>% 
+  # Get elevation, slope, fires.
 
-dat_filter_centroids = 
-  dat_filter %>% 
-  centroids
-# Get slopes and elevations for centroids?
+dat_centroids_lines = 
+  dat_join_lines %>% 
+  select(NOAPID,
+         UnitID,
+         UnitName,
+         ActivityType,
+         ActivityUnit = ActivityUnit_Right,
+         ActivityQuantity = ActivityQuantity_Right,
+         LandOwnerName_Left,
+         LandOwnerName_Right,
+         LandOwnerType = LandOwnerType_Right,
+         DateSubmit = DateSubmit_Right,
+         DateStart_Left,
+         DateStart_Right,
+         DateEnd_Left,
+         DateEnd_Right,
+         DateContinuationStart = DateContinuationStart_Left,
+         DateContinuationEnd = DateContinutationEnd_Left,
+         Link = Link_Left) %>% 
+  # Tidy up a little.
+  arrange(NOAPID, UnitID, UnitName, DateSubmit) %>% 
+  # Band-Aid for duplication.
+  distinct %>% 
+  # Get areas.
+  mutate(Acres = 0) %>% 
+  # Get centroids.
+  centroids # %>% 
+  # Get elevation, slope, fires.
 
-# Note duplication issue, e.g.:
-dat_polygons %>% filter(NoapIdentifier == "2014-532-07703") # 2
-dat_flat %>% filter(NoapIdentifier == "2014-532-07703") # 2
-dat_filter %>% filter(NOAPID == "2014-532-07703") # 4
-  
-# Check out runtime with a DEM to get elevation and slope.
+dat_centroids_points = 
+  dat_join_points %>% 
+  select(NOAPID,
+         UnitID,
+         UnitName,
+         ActivityType,
+         ActivityUnit = ActivityUnit_Right,
+         ActivityQuantity = ActivityQuantity_Right,
+         LandOwnerName_Left,
+         LandOwnerName_Right,
+         LandOwnerType = LandOwnerType_Right,
+         DateSubmit = DateSubmit_Right,
+         DateStart_Left,
+         DateStart_Right,
+         DateEnd_Left,
+         DateEnd_Right,
+         DateContinuationStart = DateContinuationStart_Left,
+         DateContinuationEnd = DateContinutationEnd_Left,
+         Link = Link_Left) %>% 
+  # Tidy up a little.
+  arrange(NOAPID, UnitID, UnitName, DateSubmit) %>% 
+  # Band-Aid for duplication.
+  distinct %>% 
+  # Get areas.
+  mutate(Acres = 0) # %>% 
+  # Get centroids. (Already done.)
+  # Get elevation, slope, fires.
 
-# dat_elevation_10m = "data/OR_DEM_10M.gdb.zip" %>% rast
-# dat_elevation_100m = dat_elevation_10m %>% aggregate(fact = 13, fun = mean) 
+dat_centroids = 
+  dat_centroids_points %>% 
+  rbind(dat_centroids_lines) %>% 
+  rbind(dat_centroids_polygons)
 
-# dat_join_try = 
-#   dat_join_2 %>% 
-#   filter(row_number() %in% 1:25) %>% 
-#   project(crs(dat_elevation_10m)) %>% 
-#   extract(dat_elevation, ., fun = "mean")
-
-# 5 minutes for 25 obs > 7432 minutes (little bit more than 5 days) for 37162 obs. 
-# Recall that output of terra::extract() is a flat dataframe of row IDs and extracted results; here, ID and (mean) elevation.
-
-# Export recent notifications for reference.
-
-# writeVector(dat_join_2, 
-#             "output/dat_or_notifications_join_20142025.gdb",
-#             overwrite = TRUE)
-# 
-# rm(list = ls())
-# 
-# dat_join_20142025 = "output/dat_or_notifications_join_20142025.gdb" %>% vect
-
-# Get replication data from Hashida and Lewis. R4 denotes non-industrial private owners; R5 denotes industrial private owners. Whatever that means.
+# Get replication data from Hashida and Fenichel. R4 denotes non-industrial private owners; R5 denotes industrial private owners. 
 
 # load("data/hvst_panel_07_R4.RData")
 # load("data/hvst_panel_07_R5.RData")
 # 
-# write_csv(hvst_panel_07_R4, "data/Replication_HashidaLewis_R4.csv")
-# write_csv(hvst_panel_07_R5, "data/Replication_HashidaLewis_R5.csv")
+# write_csv(hvst_panel_07_R4, "data/Replication_HashidaFenichel_R4.csv")
+# write_csv(hvst_panel_07_R5, "data/Replication_HashidaFenichel_R5.csv")
 
-dat_hl_r4 = 
-  "data/Replication_HashidaLewis_R4.csv" %>% 
+dat_hf_r4 = 
+  "data/Replication_HashidaFenichel_R4.csv" %>% 
   read_csv %>% 
   mutate(Type_Numeric = 4,
          Type_String = "Non-Industrial Private")
 
 
-dat_hl_r5 = 
-  "data/Replication_HashidaLewis_R5.csv" %>% 
+dat_hf_r5 = 
+  "data/Replication_HashidaFenichel_R5.csv" %>% 
   read_csv %>% 
   mutate(Type_Numeric = 5,
          Type_String = "Industrial Private")
 
-dat_hl = 
-  bind_rows(dat_hl_r4, dat_hl_r5) %>% 
+dat_hf = 
+  bind_rows(dat_hf_r4, dat_hf_r5) %>% 
+  # filter(Type_String == "Industrial Private") %>% 
   # Keep only observations with harvest (following sitedata.R from Hashida and Fenichel (2021)).
-  filter(hvst == 1) %>% 
+  # filter(hvst == 1) %>%
   # Set up altered columns to keep.
   mutate(Month = ifelse(str_sub(month_yr, 2, 2) == "/", 
                         paste0(0, str_sub(month_yr, 1, 1)), 
@@ -180,6 +251,8 @@ dat_hl =
          Year, 
          Month, 
          YearMonth,
+         Landowner = ownername,
+         Landowner_Type = Type_String,
          Acres = ActAcreage,
          MBF = ActMbf)
 
@@ -205,8 +278,8 @@ dat_qq_join =
                   range_char)) %>% 
   distinct
 
-dat_hl_join = 
-  dat_hl %>% 
+dat_hf_join = 
+  dat_hf %>% 
   separate_wider_delim(Sec_Town_Q, 
                        delim = " ", 
                        names = c("QuarterQuarter", 
@@ -225,66 +298,88 @@ dat_hl_join =
          Sec_Town_Q) %>% 
   distinct
 
-dat_qq_hl = 
-  inner_join(dat_hl_join,
+dat_qq_hf = 
+  inner_join(dat_hf_join,
              dat_qq_join)
 
-dat_hl_use = 
+dat_hf_use = 
   dat_qq %>% 
-  inner_join(dat_qq_hl) %>% 
+  inner_join(dat_qq_hf) %>% 
   select(Meridian, QuarterQuarter_Section_Township_Range, Sec_Town_Q) %>% 
-  left_join(dat_hl) %>% 
-  select(UID, Year, Month, YearMonth, Acres, MBF)
+  left_join(dat_hf) %>% 
+  select(UID, Year, Month, YearMonth, Landowner, Landowner_Type, Acres, MBF)
 
-dat_hl_centroids = dat_hl_use %>% centroids
+dat_hf_centroids = dat_hf_use %>% centroids
 
-dat_hl_centroids %>% nrow
-dat_hl_centroids %>% crop(ext(-14000000, -13400000, 5000000, 6000000)) %>% nrow
+dat_hf_centroids %>% nrow
+dat_hf_centroids %>% crop(ext(-14000000, -13400000, 5000000, 6000000)) %>% nrow
 
 # Note that 26675 of 27404 observations have nonproblematic locations (at a glance). So, 729 (2%) appear to be misplaced.
 
-dat_hl_centroids = dat_hl_centroids %>% crop(ext(-14000000, -13400000, 5000000, 6000000)) # Band-Aid for extent in earlier period.
+dat_hf_centroids = dat_hf_centroids %>% crop(ext(-14000000, -13400000, 5000000, 6000000)) # Band-Aid for extent in earlier period.
 
-dat_filter_centroids_less = dat_filter_centroids %>% crop(dat_hl_centroids) # Band-Aid for extent in later period.
+dat_centroids_less = dat_centroids %>% crop(dat_hf_centroids) # Band-Aid for extent in later period.
 
-# Combine.
+# Combine. Skip coordinates export (until after figuring out point shenanigans).
 
 dat_20142025_bind = 
-  dat_filter_centroids_less %>%
+  dat_centroids_less %>%
+  # project(y = "epsg:4326") %>% 
+  # cbind(., crds(., df = TRUE)) %>% 
   as_tibble %>%
-  arrange(DateStart_Left) %>%
-  mutate(UID = paste0("A_", row_number()),
-         Year = year(DateStart_Left),
+  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  filter(ActivityUnit == "MBF") %>% 
+  mutate(Year = year(DateStart_Left),
          Month = month(DateStart_Left),
          YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
          MBF = ActivityQuantity %>% as.numeric) %>%
-  select(UID, Year, Month, YearMonth, MBF, Acres)
+  arrange(desc(Year), desc(Month), LandOwnerType, LandOwnerName_Right, desc(MBF), desc(Acres)) %>% 
+  mutate(UID = paste0("B_", row_number())) %>% 
+  select(UID, 
+         Landowner = LandOwnerName_Right,
+         Landowner_Type = LandOwnerType,
+         Year, 
+         Month, 
+         YearMonth, 
+         MBF, 
+         Acres)
 
 dat_19902014_bind = 
-  dat_hl_centroids %>% 
+  dat_hf_centroids %>% 
   as_tibble %>% 
-  arrange(desc(YearMonth)) %>% 
-  mutate(UID = paste0("B_", row_number()),
-         Year = Year %>% as.numeric,
+  mutate(Year = Year %>% as.numeric,
          Month = Month %>% as.numeric) %>% 
-  select(UID, Year, Month, YearMonth, MBF, Acres)
+  arrange(desc(Year), desc(Month), Landowner_Type, Landowner, desc(MBF), desc(Acres)) %>% 
+  mutate(UID = paste0("A_", row_number())) %>% 
+  select(UID, 
+         Landowner,
+         Landowner_Type,
+         Year, 
+         Month, 
+         YearMonth, 
+         MBF, 
+         Acres)
 
-dat_bind = bind_rows(dat_20142025_bind, dat_19902014_bind) %>% mutate(Period = UID %>% str_sub(1, 1))
+dat_bind = 
+  bind_rows(dat_20142025_bind, dat_19902014_bind) %>% 
+  mutate(Period = UID %>% str_sub(1, 1))
 
-dat_bind %>% group_by(Year, Period) %>% summarize(count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = count, fill = Period))
-dat_bind %>% group_by(Year, Period) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF, fill = Period))
+write_csv(dat_bind, "output/dat_notifications_20250804.csv")
+
+# Code breaks on names from here on.
+
+# Check out time series of aggregate values for counts of notifications, acres of notifications, and MBF.
+
+dat_bind %>% group_by(Year, Period) %>% summarize(Count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Count, fill = Period))
 dat_bind %>% group_by(Year, Period) %>% summarize(Acres = sum(Acres)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Acres, fill = Period))
+dat_bind %>% group_by(Year, Period) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF, fill = Period))
 
-# So counts and MBF sums are both not quite right. Check multicounting of MBF over geometries and units on MBF. Acres look right!
-
-# The ways in which counts and MBF don't line up (counts are a little high, MBF is a lot high) suggest aggregation matters. Ditto acres.
+# Check a distributional feature of MBF in the later period.
 
 dat_bind %>% 
-  group_by(Year) %>% 
-  mutate(MBF_Bin = MBF %>% percent_rank()) %>% 
-  ungroup %>% 
-  filter((MBF_Bin < 0.95 & Period == "A") | Period == "B") %>% 
   group_by(Year, Period) %>% 
+  mutate(Percentile = percent_rank(MBF)) %>% 
+  filter(Percentile < 0.95) %>%
   summarize(MBF = sum(MBF)) %>% 
   ungroup %>% 
   ggplot() + 
@@ -292,32 +387,21 @@ dat_bind %>%
                y = MBF, 
                fill = Period))
 
-dat_bind %>% mutate(MBFAcre = MBF / Acres) %>% pull(MBFAcre) %>% log %>% hist
+# Point being, outliers on MBF in the later period distort aggregate results (so, lose those).
+
+# Check out time series of distributions of values for acres, MBF, and MBF/acre (by notification).
 
 library(ggridges)
 
 dat_bind %>% 
-  mutate(MBFAcre = MBF / Acres) %>% 
   ggplot() + 
-  geom_density_ridges(aes(x = MBFAcre %>% log,
+  geom_density_ridges(aes(x = Acres %>% log,
                           y = Year %>% factor,
                           fill = Period,
                           color = Period),
                       scale = 1)
 
 dat_bind %>% 
-  mutate(MBFAcre = MBF / Acres) %>% 
-  filter(log(MBFAcre) > 0 & log(MBFAcre) < 5) %>% 
-  ggplot() + 
-  geom_density_ridges(aes(x = MBFAcre %>% log,
-                          y = Year %>% factor,
-                          fill = Period,
-                          color = Period),
-                      scale = 1)
-
-dat_bind %>% 
-  mutate(MBFAcre = MBF / Acres) %>% 
-  filter(log(MBFAcre) > 0 & log(MBFAcre) < 5) %>% 
   ggplot() + 
   geom_density_ridges(aes(x = MBF %>% log,
                           y = Year %>% factor,
@@ -325,18 +409,66 @@ dat_bind %>%
                           color = Period),
                       scale = 1)
 
-# So substantial difference in harvest notification MBF is the result of the top 5-10% (by MBF) of later observations being a lot . . . bigger?
+dat_bind %>% 
+  mutate(MBFAcre = MBF / Acres) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = MBFAcre %>% log,
+                          y = Year %>% factor,
+                          fill = Period,
+                          color = Period),
+                      scale = 1)
 
-# Comment above was w/ fewer plots. Clearly difference appears across the distribution. Note trend and abrupt change in mean, median, skew.
+dat_bind %>% 
+  mutate(MBFAcre = MBF / Acres) %>% 
+  filter(log(MBFAcre) > 0 & log(MBFAcre) < 5) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = MBFAcre %>% log,
+                          y = Year %>% factor,
+                          fill = Period,
+                          color = Period),
+                      scale = 1) +
+  scale_x_continuous(limits = c(0, 5))
 
-# Note that earlier extent Band-Aids (more or less) eliminate the possibility that non-West Side notifications drive the MBF difference.
+# Check out a time series of distributions of notifications over months.
+
+dat_bind %>% 
+  group_by(Period, Year, Month) %>% 
+  summarize(Count = n()) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = Count,
+                          y = Month %>% factor,
+                          fill = Period,
+                          color = Period),
+                      alpha = 0.50,
+                      scale = 1)
+
+dat_bind %>% 
+  filter(Acres < 150) %>% 
+  ggplot() + 
+  geom_density_ridges(aes(x = Acres,
+                          y = Month %>% factor,
+                          fill = Period,
+                          color = Period),
+                      alpha = 0.50,
+                      scale = 1)
+
+dat_bind %>% 
+  filter(MBF < 10000) %>%
+  ggplot() + 
+  geom_density_ridges(aes(x = MBF,
+                          y = Month %>% factor,
+                          fill = Period,
+                          color = Period),
+                      alpha = 0.50,
+                      scale = 1)
 
 # Compare w/ aggregate harvest statistics from ODF. Mind absence of metadata.
 
 "data/dat_harvest.csv" %>% 
   read_csv %>% 
+  filter(Year %in% 1990:2025) %>% 
   ggplot() + 
-  geom_col(aes(x = year,
+  geom_col(aes(x = Year,
                y = `Total Private`))
 
 # Export for reference.
