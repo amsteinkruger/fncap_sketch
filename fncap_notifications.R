@@ -120,7 +120,9 @@ dat_join_points =
 
 # Set up centroids and combine spatial datasets.
 
-dat_centroids_polygons = 
+# 2025/08/12: Band-Aid for export. Note that this breaks subsequent code.
+
+dat_join_polygons_out = 
   dat_join_polygons %>% 
   select(NOAPID,
          UnitID,
@@ -145,10 +147,15 @@ dat_centroids_polygons =
   distinct %>% 
   # Get areas.
   cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
-  rename(Acres = y) %>% 
-  # Get centroids.
-  centroids # %>% 
-  # Get elevation, slope, fires.
+  rename(Acres = y)
+
+writeVector(dat_join_polygons_out, "output/dat_polygons_20250812.gdb")
+
+dat_centroids_polygons = 
+  dat_join_polygons_out %>% 
+  centroids
+
+# Back to earlier code.
 
 dat_centroids_lines = 
   dat_join_lines %>% 
@@ -176,8 +183,7 @@ dat_centroids_lines =
   # Get areas.
   mutate(Acres = 0) %>% 
   # Get centroids.
-  centroids # %>% 
-  # Get elevation, slope, fires.
+  centroids
 
 dat_centroids_points = 
   dat_join_points %>% 
@@ -203,9 +209,7 @@ dat_centroids_points =
   # Band-Aid for duplication.
   distinct %>% 
   # Get areas.
-  mutate(Acres = 0) # %>% 
-  # Get centroids. (Already done.)
-  # Get elevation, slope, fires.
+  mutate(Acres = 0)
 
 dat_centroids = 
   dat_centroids_points %>% 
@@ -253,6 +257,7 @@ dat_hf =
          YearMonth,
          Landowner = ownername,
          Landowner_Type = Type_String,
+         Harvest = hvst,
          Acres = ActAcreage,
          MBF = ActMbf)
 
@@ -307,7 +312,7 @@ dat_hf_use =
   inner_join(dat_qq_hf) %>% 
   select(Meridian, QuarterQuarter_Section_Township_Range, Sec_Town_Q) %>% 
   left_join(dat_hf) %>% 
-  select(UID, Year, Month, YearMonth, Landowner, Landowner_Type, Acres, MBF)
+  select(UID, Year, Month, YearMonth, Landowner, Landowner_Type, Harvest, Acres, MBF)
 
 dat_hf_centroids = dat_hf_use %>% centroids
 
@@ -357,6 +362,7 @@ dat_19902014_bind =
          Year, 
          Month, 
          YearMonth, 
+         Harvest,
          MBF, 
          Acres)
 
@@ -368,15 +374,20 @@ write_csv(dat_bind, "output/dat_notifications_20250804.csv")
 
 # Code breaks on names from here on.
 
+dat_bind_use = 
+  dat_bind %>% 
+  filter(Landowner_Type %in% c("Partnership/Corporate Forestland Ownership", "Industrial Private")) %>% 
+  filter(is.na(Harvest) | Harvest == 1)
+
 # Check out time series of aggregate values for counts of notifications, acres of notifications, and MBF.
 
-dat_bind %>% group_by(Year, Period) %>% summarize(Count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Count, fill = Period))
-dat_bind %>% group_by(Year, Period) %>% summarize(Acres = sum(Acres)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Acres, fill = Period))
-dat_bind %>% group_by(Year, Period) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF, fill = Period))
+dat_bind_use %>% group_by(Year, Period) %>% summarize(Count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Count, fill = Period))
+dat_bind_use %>% group_by(Year, Period) %>% summarize(Acres = sum(Acres)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = Acres, fill = Period))
+dat_bind_use %>% group_by(Year, Period) %>% summarize(MBF = sum(MBF)) %>% ungroup %>% ggplot() + geom_col(aes(x = Year, y = MBF, fill = Period))
 
 # Check a distributional feature of MBF in the later period.
 
-dat_bind %>% 
+dat_bind_use %>% 
   group_by(Year, Period) %>% 
   mutate(Percentile = percent_rank(MBF)) %>% 
   filter(Percentile < 0.95) %>%
