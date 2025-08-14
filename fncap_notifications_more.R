@@ -81,7 +81,7 @@ dat_pyrome =
   vect %>% 
   rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
   filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
-  select(WHICH) %>% 
+  select(Pyrome = WHICH) %>% 
   project("EPSG:2992")
 
 dat_join_pyrome = 
@@ -108,37 +108,93 @@ ggplot() +
 # 1. No Buffer
 
 dat_join_mtbs_1 = 
-  dat_notifications %>% 
+  dat_notifications_less %>% 
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
+            by = "UID") %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
+  mutate(Year_MTBS = Ig_Date %>% year) %>% 
+  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
   group_by(UID) %>% 
   summarize(MTBS_1 = n()) %>% 
   ungroup
 
-# 2. 15km Buffer
+# 2. 15km Buffer, Difference
 #  Note switch back to subset of notifications.
 
 dat_join_mtbs_2 = 
   dat_notifications_less %>% 
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
+            by = "UID") %>% 
   buffer(width = 15 * 3280.84) %>% # Oregon GIC Lambert is in feet, so convert kilometer buffer width into feet.
   erase(dat_notifications_less) %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
+  mutate(Year_MTBS = Ig_Date %>% year) %>% 
+  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
   group_by(UID) %>% 
   summarize(MTBS_2 = n()) %>% 
   ungroup
 
-# 3. 30km Buffer
+# 3. 30km Buffer, Difference
 
 dat_join_mtbs_3 = 
   dat_notifications_less %>% 
-  buffer(width = 30 * 3280.84) %>% # Oregon GIC Lambert is in feet, so convert kilometer buffer width into feet.
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
+            by = "UID") %>% 
+  buffer(width = 30 * 3280.84) %>% 
   erase(dat_notifications_less %>% buffer(width = 15 * 3280.84)) %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
+  mutate(Year_MTBS = Ig_Date %>% year) %>% 
+  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
   group_by(UID) %>% 
   summarize(MTBS_3 = n()) %>% 
   ungroup
+
+# 4. 15km Buffer, Union
+
+dat_join_mtbs_4 = 
+  dat_notifications_less %>% 
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
+            by = "UID") %>% 
+  buffer(width = 15 * 3280.84) %>% 
+  intersect(dat_mtbs) %>% 
+  as_tibble %>% 
+  mutate(Year_MTBS = Ig_Date %>% year) %>% 
+  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
+  group_by(UID) %>% 
+  summarize(MTBS_4 = n()) %>% 
+  ungroup
+
+# 5. 30km Buffer, Union
+
+dat_join_mtbs_5 = 
+  dat_notifications_less %>% 
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
+            by = "UID") %>% 
+  buffer(width = 30 * 3280.84) %>% 
+  intersect(dat_mtbs) %>% 
+  as_tibble %>% 
+  mutate(Year_MTBS = Ig_Date %>% year) %>% 
+  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
+  group_by(UID) %>% 
+  summarize(MTBS_5 = n()) %>% 
+  ungroup
+
+# 6. Combine
+
+dat_join_mtbs = 
+  dat_join_mtbs_1 %>% 
+  full_join(dat_join_mtbs_2, by = "UID") %>% 
+  full_join(dat_join_mtbs_3, by = "UID") %>% 
+  full_join(dat_join_mtbs_4, by = "UID") %>% 
+  full_join(dat_join_mtbs_5, by = "UID") %>%
+  rename(Fire_0 = MTBS_1,
+         Fire_15_Difference = MTBS_2,
+         Fire_30_Difference = MTBS_3,
+         Fire_15_Union = MTBS_4,
+         Fire_30_Union = MTBS_5)
 
 # Prices
 
@@ -199,6 +255,25 @@ dat_join_prices =
             by = c("Year", "Region")) %>% 
   select(UID, Price)
 
-#  Soil Quality
+# Soil Quality
 
-#   Get nGRASGO?
+#  Note "Catastrophic Failure" message (!) from gNATSGO download.
+
+# Finale
+
+dat_notifications_out = 
+  dat_notifications_less %>% 
+  left_join(dat_join_pyrome, by = "UID") %>% 
+  left_join(dat_join_elevation, by = "UID") %>% 
+  left_join(dat_join_slope, by = "UID") %>% 
+  left_join(dat_join_mtbs, by = "UID") %>% 
+  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # Accounting for observations dropped in MTBS intersect/filter steps.
+  left_join(dat_join_prices, by = "UID") %>% 
+  left_join(dat_notifications %>% as_tibble, by = "UID") %>% # Band-Aid for demo.
+  relocate(UID, Year, Month, YearMonth, Landowner, MBF, Acres, Pyrome, Elevation, Slope, starts_with("Fire"), Price) # Ditto.
+
+# Go back and unfuck MTBS as a panel.
+  
+writeVector(dat_notifications_out, "output/data_notifications_demo_20250814.gdb")
+
+write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250814.csv")
