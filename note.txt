@@ -1,6 +1,5 @@
 2025/08/18
 
-- shifting workflow to server
 - expanding data joins to complete set of 2014-2025 notifications
 - resolving outstanding data join issues (Douglas fir subset, site class, soil quality, fire risk, small fires)
 - iterating over several models for combinations of categorical variables in the data, e.g. site class and pyrome

@@ -9,6 +9,8 @@ library(terra)
 library(tidyterra)
 library(readxl)
 
+time_start = Sys.time()
+
 # Notifications
 
 dat_notifications = 
@@ -22,16 +24,16 @@ dat_notifications =
          YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
          MBF = ActivityQuantity %>% as.numeric) %>%
   arrange(desc(Year), desc(Month), LandOwnerType, LandOwnerName_Right, desc(MBF), desc(Acres)) %>% 
-  mutate(UID = row_number()) %>% # paste0("B_", row_number())) %>% 
+  mutate(UID = row_number()) %>% 
   select(UID, 
          Landowner = LandOwnerName_Right,
-         # Landowner_Type = LandOwnerType,
          Year, 
          Month, 
          YearMonth, 
          MBF, 
          Acres) %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %>% 
+  slice_sample(n = 1000)
 
 # Elevation
 
@@ -39,38 +41,45 @@ dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 
 #  Subset for benchmarking.
 
-dat_elevation_less = dat_elevation %>% crop(ext(500000, 600000, 500000, 600000))
+# dat_elevation_less = dat_elevation %>% crop(ext(500000, 600000, 500000, 600000))
 
 #  Subset notifications to match.
 
-dat_notifications_less = dat_notifications %>% crop(ext(dat_elevation_less)) %>% select(UID) %>% slice_sample(n = 100)
+# dat_notifications_less = dat_notifications %>% crop(ext(dat_elevation_less)) %>% select(UID) # %>% slice_sample(n = 10000)
 
-dat_join_elevation = 
-  dat_notifications_less %>% 
-  extract(x = dat_elevation_less, 
-          y = ., 
-          fun = mean, 
-          ID = FALSE,
-          bind = TRUE) %>% 
-  rename(Elevation = 2) %>% 
-  as_tibble
+# dat_join_elevation = 
+#   dat_notifications %>% 
+#   extract(x = dat_elevation, 
+#           y = ., 
+#           fun = mean, 
+#           ID = FALSE,
+#           bind = TRUE) %>% 
+#   rename(Elevation = 2) %>% 
+#   as_tibble
 
 # Slope
 
-#  Ideally, (1) check whether there exists a slope file in /output/, then (2) read it if so, (3) else create/write one.
-
-dat_slope = dat_elevation_less %>% terrain(v = "slope")
-
-dat_join_slope = 
-  dat_notifications_less %>% 
-  extract(x = dat_slope, 
-          y = ., 
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE,
-          na.rm = TRUE) %>% 
-  rename(Slope = 2) %>% 
-  as_tibble
+# if (file.exists("output/dat_slope.tif")) {
+#   
+#   dat_slope = "output/dat_slope.tif" %>% rast
+#   
+# } else {
+#   
+#   dat_slope = dat_elevation %>% terrain(v = "slope")
+#   writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
+#   
+# }
+# 
+# dat_join_slope = 
+#   dat_notifications %>% 
+#   extract(x = dat_slope, 
+#           y = ., 
+#           fun = mean,
+#           ID = FALSE,
+#           bind = TRUE,
+#           na.rm = TRUE) %>% 
+#   rename(Slope = 2) %>% 
+#   as_tibble
 
 #  Note warning about units and projection in terra documentation.
 
@@ -85,14 +94,14 @@ dat_pyrome =
   project("EPSG:2992")
 
 dat_join_pyrome = 
-  dat_notifications_less %>% 
+  dat_notifications %>% 
   intersect(dat_pyrome) %>% 
-  as_tibble
+  as_tibble %>% 
+  select(UID, Pyrome)
 
 # Note that this does not account for notifications falling across pyromes.
 
 # MTBS
-#  Note use of full notifications, since subsets of notifications tend to return a null.
 
 dat_mtbs = 
   "data/mtbs_perimeter_data" %>% 
@@ -105,12 +114,12 @@ ggplot() +
   geom_spatvector(data = dat_notifications, fill = "blue", color = NA, alpha = 0.50) +
   theme_void()
 
+ggsave("figures/vis_mtbs.png", dpi = 300, height = 8.5, width = 11)
+
 # 1. No Buffer
 
 dat_join_mtbs_1 = 
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
-            by = "UID") %>% 
+  dat_notifications %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
   mutate(Year_MTBS = Ig_Date %>% year) %>% 
@@ -123,11 +132,9 @@ dat_join_mtbs_1 =
 #  Note switch back to subset of notifications.
 
 dat_join_mtbs_2 = 
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
-            by = "UID") %>% 
+  dat_notifications %>% 
   buffer(width = 15 * 3280.84) %>% # Oregon GIC Lambert is in feet, so convert kilometer buffer width into feet.
-  erase(dat_notifications_less) %>% 
+  erase(dat_notifications) %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
   mutate(Year_MTBS = Ig_Date %>% year) %>% 
@@ -139,11 +146,9 @@ dat_join_mtbs_2 =
 # 3. 30km Buffer, Difference
 
 dat_join_mtbs_3 = 
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
-            by = "UID") %>% 
+  dat_notifications %>% 
   buffer(width = 30 * 3280.84) %>% 
-  erase(dat_notifications_less %>% buffer(width = 15 * 3280.84)) %>% 
+  erase(dat_notifications %>% buffer(width = 15 * 3280.84)) %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
   mutate(Year_MTBS = Ig_Date %>% year) %>% 
@@ -155,9 +160,7 @@ dat_join_mtbs_3 =
 # 4. 15km Buffer, Union
 
 dat_join_mtbs_4 = 
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
-            by = "UID") %>% 
+  dat_notifications %>% 
   buffer(width = 15 * 3280.84) %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
@@ -170,9 +173,7 @@ dat_join_mtbs_4 =
 # 5. 30km Buffer, Union
 
 dat_join_mtbs_5 = 
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
-            by = "UID") %>% 
+  dat_notifications %>% 
   buffer(width = 30 * 3280.84) %>% 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
@@ -190,7 +191,8 @@ dat_join_mtbs =
   full_join(dat_join_mtbs_3, by = "UID") %>% 
   full_join(dat_join_mtbs_4, by = "UID") %>% 
   full_join(dat_join_mtbs_5, by = "UID") %>%
-  rename(Fire_0 = MTBS_1,
+  select(UID,
+         Fire_0 = MTBS_1,
          Fire_15_Difference = MTBS_2,
          Fire_30_Difference = MTBS_3,
          Fire_15_Union = MTBS_4,
@@ -246,14 +248,14 @@ dat_prices_regions =
 #  Map regions to notifications, then add prices. Note silliness with the subset of notifications here.
 
 dat_join_prices = 
-  dat_notifications_less %>% 
+  dat_notifications %>% 
   intersect(dat_prices_regions) %>% 
   as_tibble %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Year),
-            by = "UID") %>% 
   left_join(dat_prices, 
             by = c("Year", "Region")) %>% 
   select(UID, Price)
+
+# Inflation Adjustment?
 
 # Soil Quality
 
@@ -262,18 +264,22 @@ dat_join_prices =
 # Finale
 
 dat_notifications_out = 
-  dat_notifications_less %>% 
+  dat_notifications %>% 
   left_join(dat_join_pyrome, by = "UID") %>% 
-  left_join(dat_join_elevation, by = "UID") %>% 
-  left_join(dat_join_slope, by = "UID") %>% 
+  # left_join(dat_join_elevation, by = "UID") %>% 
+  # left_join(dat_join_slope, by = "UID") %>% 
   left_join(dat_join_mtbs, by = "UID") %>% 
   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # Accounting for observations dropped in MTBS intersect/filter steps.
-  left_join(dat_join_prices, by = "UID") %>% 
-  left_join(dat_notifications %>% as_tibble, by = "UID") %>% # Band-Aid for demo.
-  relocate(UID, Year, Month, YearMonth, Landowner, MBF, Acres, Pyrome, Elevation, Slope, starts_with("Fire"), Price) # Ditto.
+  left_join(dat_join_prices, by = "UID")
 
-# Go back and unfuck MTBS as a panel.
+# Check reason for additional observations from start to finish.
   
-writeVector(dat_notifications_out, "output/data_notifications_demo_20250814.gdb")
+writeVector(dat_notifications_out, "output/data_notifications_demo_20250820.gdb", overwrite = TRUE)
 
-write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250814.csv")
+write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250820.csv")
+
+time_end = Sys.time()
+
+time = time_end - time_start
+
+time
