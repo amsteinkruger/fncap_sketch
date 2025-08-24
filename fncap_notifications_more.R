@@ -24,8 +24,8 @@ dat_notifications =
          YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
          MBF = ActivityQuantity %>% as.numeric) %>%
   arrange(desc(Year), desc(Month), LandOwnerType, LandOwnerName_Right, desc(MBF), desc(Acres)) %>% 
-  mutate(UID = row_number()) %>% 
-  select(UID, 
+  # mutate(UID = row_number()) %>% 
+  select(# UID, 
          Landowner = LandOwnerName_Right,
          Year, 
          Month, 
@@ -33,11 +33,42 @@ dat_notifications =
          MBF, 
          Acres) %>% 
   project("EPSG:2992") %>% 
-  slice_sample(n = 1000)
+  # Check whether polygons are valid.
+  cbind(., is.valid(.)) %>% 
+  rename(Valid_0 = y) %>% 
+  # Try fixing any invalid polygons.
+  makeValid %>% 
+  # Check again.
+  cbind(., is.valid(.)) %>% 
+  rename(Valid_1 = y) %>%
+  # Drop columns. This would be a nice spot to return counts of valid, invalid, and fixed polygons as a side effect.
+  select(-starts_with("Valid")) %>% 
+  # Subset for testing.
+  # slice_sample(n = 1000) %>% 
+  # Swap unique ID assignment to this step for convenience.
+  mutate(UID = row_number())
+
+# Try filtering on counts of vertices.
+
+dat_vertices = 
+  dat_notifications %>% 
+  geom %>% 
+  as_tibble %>% 
+  group_by(geom) %>% 
+  summarize(count = n()) %>% 
+  arrange(count) %>% 
+  mutate(rank = percent_rank(count)) %>% 
+  filter(rank < 0.5)
+
+# Use the subset of spatial objects with fewer vertices for a filtering join on notifications.
+
+dat_notifications =
+  dat_notifications %>%
+  semi_join(dat_vertices, by = c("UID" = "geom"))
 
 # Elevation
 
-dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
+# dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 
 #  Subset for benchmarking.
 
@@ -103,18 +134,20 @@ dat_join_pyrome =
 
 # MTBS
 
+# Consider reorganizing for (1) better memory management around buffers (2) better memory management around which MTBS perimeters are worth intersecting
+
 dat_mtbs = 
   "data/mtbs_perimeter_data" %>% 
   vect %>% 
   filter(substr(Event_ID, 1, 2) == "OR") %>% 
   project("EPSG:2992")
 
-ggplot() +
-  geom_spatvector(data = dat_mtbs, fill = "red", color = NA, alpha = 0.50) + 
-  geom_spatvector(data = dat_notifications, fill = "blue", color = NA, alpha = 0.50) +
-  theme_void()
-
-ggsave("figures/vis_mtbs.png", dpi = 300, height = 8.5, width = 11)
+# ggplot() +
+#   geom_spatvector(data = dat_mtbs, fill = "red", color = NA, alpha = 0.50) + 
+#   geom_spatvector(data = dat_notifications, fill = "blue", color = NA, alpha = 0.50) +
+#   theme_void()
+# 
+# ggsave("figures/vis_mtbs.png", dpi = 300, height = 8.5, width = 11)
 
 # 1. No Buffer
 
@@ -274,12 +307,10 @@ dat_notifications_out =
 
 # Check reason for additional observations from start to finish.
   
-writeVector(dat_notifications_out, "output/data_notifications_demo_20250820.gdb", overwrite = TRUE)
+writeVector(dat_notifications_out, "output/data_notifications_demo_20250824.gdb", overwrite = TRUE)
 
-write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250820.csv")
+write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250824.csv")
 
 time_end = Sys.time()
 
-time = time_end - time_start
-
-time
+time_end - time_start
