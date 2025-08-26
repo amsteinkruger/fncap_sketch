@@ -32,8 +32,8 @@ dat_notifications =
          YearMonth, 
          MBF, 
          Acres) %>% 
-  project("EPSG:2992") %>% 
-  slice_sample(n = 1000)
+  project("EPSG:2992") # %>% 
+  # slice_sample(n = 1000)
 
 # Elevation
 
@@ -47,39 +47,39 @@ dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 
 # dat_notifications_less = dat_notifications %>% crop(ext(dat_elevation_less)) %>% select(UID) # %>% slice_sample(n = 10000)
 
-# dat_join_elevation = 
-#   dat_notifications %>% 
-#   extract(x = dat_elevation, 
-#           y = ., 
-#           fun = mean, 
-#           ID = FALSE,
-#           bind = TRUE) %>% 
-#   rename(Elevation = 2) %>% 
-#   as_tibble
+dat_join_elevation =
+  dat_notifications %>%
+  extract(x = dat_elevation,
+          y = .,
+          fun = mean,
+          ID = FALSE,
+          bind = TRUE) %>%
+  rename(Elevation = 2) %>%
+  as_tibble
 
 # Slope
 
-# if (file.exists("output/dat_slope.tif")) {
-#   
-#   dat_slope = "output/dat_slope.tif" %>% rast
-#   
-# } else {
-#   
-#   dat_slope = dat_elevation %>% terrain(v = "slope")
-#   writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
-#   
-# }
-# 
-# dat_join_slope = 
-#   dat_notifications %>% 
-#   extract(x = dat_slope, 
-#           y = ., 
-#           fun = mean,
-#           ID = FALSE,
-#           bind = TRUE,
-#           na.rm = TRUE) %>% 
-#   rename(Slope = 2) %>% 
-#   as_tibble
+if (file.exists("output/dat_slope.tif")) {
+
+  dat_slope = "output/dat_slope.tif" %>% rast
+
+} else {
+
+  dat_slope = dat_elevation %>% terrain(v = "slope")
+  writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
+
+}
+
+dat_join_slope =
+  dat_notifications %>%
+  extract(x = dat_slope,
+          y = .,
+          fun = mean,
+          ID = FALSE,
+          bind = TRUE,
+          na.rm = TRUE) %>%
+  rename(Slope = 2) %>%
+  as_tibble
 
 #  Note warning about units and projection in terra documentation.
 
@@ -266,8 +266,8 @@ dat_join_prices =
 dat_notifications_out = 
   dat_notifications %>% 
   left_join(dat_join_pyrome, by = "UID") %>% 
-  # left_join(dat_join_elevation, by = "UID") %>% 
-  # left_join(dat_join_slope, by = "UID") %>% 
+  left_join(dat_join_elevation, by = "UID") %>%
+  left_join(dat_join_slope, by = "UID") %>%
   left_join(dat_join_mtbs, by = "UID") %>% 
   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # Accounting for observations dropped in MTBS intersect/filter steps.
   left_join(dat_join_prices, by = "UID")
@@ -280,6 +280,4 @@ write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_2
 
 time_end = Sys.time()
 
-time = time_end - time_start
-
-time
+time_end - time_start
