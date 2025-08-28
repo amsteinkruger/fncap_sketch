@@ -24,9 +24,7 @@ dat_notifications =
          YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
          MBF = ActivityQuantity %>% as.numeric) %>%
   arrange(desc(Year), desc(Month), LandOwnerType, LandOwnerName_Right, desc(MBF), desc(Acres)) %>% 
-  # mutate(UID = row_number()) %>% 
-  select(# UID, 
-         Landowner = LandOwnerName_Right,
+  select(Landowner = LandOwnerName_Right,
          Year, 
          Month, 
          YearMonth, 
@@ -44,51 +42,33 @@ dat_notifications =
   # Drop columns. This would be a nice spot to return counts of valid, invalid, and fixed polygons as a side effect.
   select(-starts_with("Valid")) %>% 
   # Subset for testing.
-  # slice_sample(n = 1000) %>% 
+  # slice_sample(n = 1000) %>%
   # Swap unique ID assignment to this step for convenience.
   mutate(UID = row_number())
 
 # Try filtering on counts of vertices.
 
-dat_vertices = 
-  dat_notifications %>% 
-  geom %>% 
-  as_tibble %>% 
-  group_by(geom) %>% 
-  summarize(count = n()) %>% 
-  arrange(count) %>% 
-  mutate(rank = percent_rank(count)) %>% 
-  filter(rank < 0.5)
+# dat_vertices = 
+#   dat_notifications %>% 
+#   geom %>% 
+#   as_tibble %>% 
+#   group_by(geom) %>% 
+#   summarize(count = n()) %>% 
+#   arrange(count) %>% 
+#   mutate(rank = percent_rank(count)) %>% 
+#   filter(rank < 0.5)
 
 # Use the subset of spatial objects with fewer vertices for a filtering join on notifications.
 
-dat_notifications =
-  dat_notifications %>%
-  semi_join(dat_vertices, by = c("UID" = "geom"))
+# dat_notifications =
+#   dat_notifications %>%
+#   semi_join(dat_vertices, by = c("UID" = "geom"))
 
-# Elevation
+# Elevation (Data)
 
-# dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
+dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 
-#  Subset for benchmarking.
-
-# dat_elevation_less = dat_elevation %>% crop(ext(500000, 600000, 500000, 600000))
-
-#  Subset notifications to match.
-
-# dat_notifications_less = dat_notifications %>% crop(ext(dat_elevation_less)) %>% select(UID) # %>% slice_sample(n = 10000)
-
-dat_join_elevation =
-  dat_notifications %>%
-  extract(x = dat_elevation,
-          y = .,
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE) %>%
-  rename(Elevation = 2) %>%
-  as_tibble
-
-# Slope
+# Slope (Data/Processing)
 
 if (file.exists("output/dat_slope.tif")) {
 
@@ -100,6 +80,20 @@ if (file.exists("output/dat_slope.tif")) {
   writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
 
 }
+
+# Elevation (Processing)
+
+dat_join_elevation =
+  dat_notifications %>%
+  extract(x = dat_elevation,
+          y = .,
+          fun = mean,
+          ID = FALSE,
+          bind = TRUE) %>%
+  rename(Elevation = 2) %>%
+  as_tibble
+
+# Slope (Processing)
 
 dat_join_slope =
   dat_notifications %>%
@@ -278,7 +272,7 @@ dat_prices_regions =
          .keep = "none") %>% 
   drop_na(Region)
   
-#  Map regions to notifications, then add prices. Note silliness with the subset of notifications here.
+#  Map regions to notifications, then add prices. 
 
 dat_join_prices = 
   dat_notifications %>% 
@@ -299,10 +293,10 @@ dat_join_prices =
 dat_notifications_out = 
   dat_notifications %>% 
   left_join(dat_join_pyrome, by = "UID") %>% 
-  left_join(dat_join_elevation, by = "UID") %>%
-  left_join(dat_join_slope, by = "UID") %>%
+  left_join(dat_join_elevation %>% select(UID, Elevation = OR_DEM_10M.gdb), by = "UID") %>% # Kick this up to the elevation block.
+  left_join(dat_join_slope %>% select(UID, Slope = slope), by = "UID") %>% # Ditto.
   left_join(dat_join_mtbs, by = "UID") %>% 
-  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # Accounting for observations dropped in MTBS intersect/filter steps.
+  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
   left_join(dat_join_prices, by = "UID")
 
 # Check reason for additional observations from start to finish.
