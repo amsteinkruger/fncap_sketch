@@ -66,6 +66,8 @@ dat_notifications =
 
 # Elevation (Data)
 
+# Remember to swap in alternative OR DEM.
+
 dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 
 # Slope (Data/Processing)
@@ -224,6 +226,42 @@ dat_join_mtbs =
          Fire_30_Difference = MTBS_3,
          Fire_15_Union = MTBS_4,
          Fire_30_Union = MTBS_5)
+
+# Site Class (Latta)
+
+# Get FIA. Sketch interpolation.
+
+# EVT
+
+#  Get a binary raster of yes-fir / no-fir from fncap_landfire.R.
+
+# TCC
+
+#  This might require separate processing for size.
+
+# LCC (Soil)
+
+#  Grab smaller data import for OR.
+
+# Distances to Mills
+
+#  Note that (1) this is a placeholder and (2) this dataset features mills across the western US.
+
+dat_mills = 
+  "data/Data_Mills_MS_20250916.xlsx" %>% 
+  read_xlsx %>% 
+  vect(geom = c("Long", "Lat"),
+       crs = "EPSG:4326") %>% # This could be wrong!
+  project("EPSG:2992")
+
+dat_join_mills = 
+  dat_mills # %>% 
+  # distance calculation goes here.
+
+#  Remember to pull this into the "finale" section.
+
+# Distances to Cities
+# Distances to Major Roads
 
 # Prices
 

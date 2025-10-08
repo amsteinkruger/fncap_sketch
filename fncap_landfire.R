@@ -1,5 +1,5 @@
 # Check out LANDFIRE Existing Vegetation Type.
-# 2025/09/15
+# 2025/10/07
 
 # Packages
 
@@ -18,14 +18,6 @@ dat_bounds_vector =
   filter(STUSPS == "OR") %>% 
   project("EPSG:2992")
 
-# data_bounds = 
-#   "data/cb_2023_us_state_500k" %>% 
-#   vect %>% 
-#   filter(STUSPS == "OR") %>% 
-#   project("EPSG:5070") %>% 
-#   select(STATEFP) %>% 
-#   rasterize(crop(data_reference, .))
-
 # Pyromes
 
 dat_pyrome = 
@@ -40,46 +32,55 @@ dat_pyrome =
 
 # Extent
 
-dat_ext = 
+dat_keep_detail = 
   intersect(dat_bounds_vector, dat_pyrome) %>% 
   disagg %>% # Handle island polygons. These are not real islands.
   cbind(., expanse(., unit = "ha")) %>% 
   filter(y == max(y)) %>% 
-  select(-y)
+  select(-y) %>% 
+  project("EPSG:5070") # From LANDFIRE.
 
-#  LANDFIRE
-#   Note shenanigans with plot() recognizing attributes.
+# LANDFIRE
 
-# data_evt = 
-#   "data/LF2024_EVT_250_CONUS/LC24_EVT_250.tif" %>% 
-#   rast %>% 
-#   project("EPSG:4269")
-
-# 2016
-
-# Problem: either crop() or project() is breaking something dramatically.
-
-# Problem persists w/ small slice of OR. Maybe ext nested in crop needs explicit projection? But dat_ext has one.
-# Note that the small slice is grabbing the Gulf Coast (?!), so it's definitely just wrong.
+#  2016
 
 dat_evt_2016 = 
   "data/LF2016_EVT_200_CONUS/Tif/LC16_EVT_200.tif" %>% 
   rast %>% 
-  crop(ext(2e+05, 5e+05, 5e+05, 7e+05)) %>% 
-  # crop(dat_ext) %>% 
+  crop(dat_keep_detail, mask = TRUE) %>% 
   project("EPSG:2992")
 
-levels(dat_evt_2016)
+# Check frequencies.
 
-# Value, EVT_NAME
+dat_evt_2016 %>% 
+  freq %>% 
+  as.data.frame %>% 
+  ggplot() +
+  geom_col(aes(x = value %>% factor,
+               y = count))
 
-cats(dat_evt_2016)
+# So, 
 
-# Whole dataframe.
+# Reduce LANDFIRE to just EVT_GP, which is a numeric code for existing vegetation type group. 
 
-#activeCat()
-#catalyze()
-  
+activeCat(dat_evt_2016) <- "EVT_GP"
+
+# Problem: "as.numeric" only keeps EVT_PHYS, which is unhelpful.
+# Try swapping out categories.
+
+# newcats = dat_evt_2016 %>% cats %>% magrittr::extract2(1) %>% select(EVT_GP) %>% list
+
+# dat_evt_2016 = dat_evt_2016 %>% as.numeric
+
+# Besides the other reasons this doesn't work, a simple test also doesn't work:
+dat_evt_fake = dat_evt_2016
+dat_evt_fake %>% plot
+dat_evt_fake[dat_evt_fake == 615] <- NA
+dat_evt_fake %>% plot
+
+# dat_evt_2016[dat_evt_2016 != 614 & dat_evt_2016 != 615 & dat_evt_2016 != 625] <- 0 # Yields unknown categories in raster values.
+
+
 # 2024
 
 dat_evt_2024 = 
@@ -87,11 +88,5 @@ dat_evt_2024 =
   rast %>% 
   crop(dat_ext) %>% 
   project("EPSG:2992")
-
-# levels
-# cats
-# problem is application of logical operation to categories of a raster in terra
-
-# test whether pulling project() out of the pipeline helps with runtime (?!?!)
 
 # result is multiplication of simplified (0, 1) rasters for a single result, then extract notifications onto that
