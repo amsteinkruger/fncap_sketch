@@ -2,6 +2,25 @@
 
 # Note choice to drop spatial information from each "join" SpatVector after operations.
 
+# (!!!) Note that some "join" SpatVectors have incorrect names from numeric indexing in rename().
+
+# TOC:
+#  Packages
+#  Notifications
+#  (FIA Clone?)
+#  Elevation
+#  Slope
+#  Pyromes
+#  Fires
+#  Class
+#  EVT
+#  TCC
+#  Soil (LCC)
+#  Distances
+#  Ownership
+#  Prices
+#  Join
+
 # Packages
 
 library(tidyverse)
@@ -232,8 +251,19 @@ dat_join_mtbs =
 # Get FIA. Sketch interpolation.
 
 # EVT
+#  Note fncap_landfire.R.
 
 dat_evt = "output/dat_evt_binary.tif" %>% rast
+
+dat_join_evt = 
+  dat_notifications %>% 
+  extract(x = dat_evt,
+          y = .,
+          fun = mean,
+          ID = FALSE,
+          bind = TRUE) %>%
+  rename(EVT = EVT_NAME) %>%
+  as_tibble
 
 # TCC
 
@@ -319,12 +349,6 @@ dat_join_prices =
   left_join(dat_prices, 
             by = c("Year", "Region")) %>% 
   select(UID, Price)
-
-# Inflation Adjustment?
-
-# Soil Quality
-
-#  Note "Catastrophic Failure" message (!) from gNATSGO download.
 
 # Finale
 
