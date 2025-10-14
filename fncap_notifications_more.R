@@ -233,7 +233,7 @@ dat_join_mtbs =
 
 # EVT
 
-#  Get a binary raster of yes-fir / no-fir from fncap_landfire.R.
+dat_evt = "output/dat_evt_binary.tif" %>% rast
 
 # TCC
 

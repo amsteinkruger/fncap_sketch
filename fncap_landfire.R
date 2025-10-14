@@ -50,43 +50,78 @@ dat_evt_2016 =
   crop(dat_keep_detail, mask = TRUE) %>% 
   project("EPSG:2992")
 
-# Check frequencies.
+#   Check frequencies.
 
 dat_evt_2016 %>% 
   freq %>% 
   as.data.frame %>% 
   ggplot() +
   geom_col(aes(x = value %>% factor,
-               y = count))
+               y = count)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-# So, 
+#   Get categories. The vector of numeric values is handpicked from metadata (equivalent to categories).
 
-# Reduce LANDFIRE to just EVT_GP, which is a numeric code for existing vegetation type group. 
+dat_evt_2016_cats = 
+  dat_evt_2016 %>% 
+  cats %>% 
+  magrittr::extract2(1) %>% 
+  as_tibble
 
-activeCat(dat_evt_2016) <- "EVT_GP"
+vec_evt_2016_cats = 
+  dat_evt_2016_cats %>% 
+  select(Value, EVT_GP) %>% 
+  filter(EVT_GP %in% c(614, 615, 625)) %>% 
+  magrittr::extract2("Value")
 
-# Problem: "as.numeric" only keeps EVT_PHYS, which is unhelpful.
-# Try swapping out categories.
+#   Get a binary raster.
 
-# newcats = dat_evt_2016 %>% cats %>% magrittr::extract2(1) %>% select(EVT_GP) %>% list
+dat_evt_2016_binary <- dat_evt_2016 %in% vec_evt_2016_cats
 
-# dat_evt_2016 = dat_evt_2016 %>% as.numeric
+dat_evt_2016_binary %>% plot
 
-# Besides the other reasons this doesn't work, a simple test also doesn't work:
-dat_evt_fake = dat_evt_2016
-dat_evt_fake %>% plot
-dat_evt_fake[dat_evt_fake == 615] <- NA
-dat_evt_fake %>% plot
-
-# dat_evt_2016[dat_evt_2016 != 614 & dat_evt_2016 != 615 & dat_evt_2016 != 625] <- 0 # Yields unknown categories in raster values.
-
-
-# 2024
+#  2024
 
 dat_evt_2024 = 
   "data/LF2024_EVT_250_CONUS/Tif/LC24_EVT_250.tif" %>% 
   rast %>% 
-  crop(dat_ext) %>% 
+  crop(dat_keep_detail, mask = TRUE) %>% 
   project("EPSG:2992")
 
-# result is multiplication of simplified (0, 1) rasters for a single result, then extract notifications onto that
+#   Check frequencies.
+
+dat_evt_2024 %>% 
+  freq %>% 
+  as.data.frame %>% 
+  ggplot() +
+  geom_col(aes(x = value %>% factor,
+               y = count)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#   Get categories. The vector of numeric values is handpicked from metadata (equivalent to categories).
+
+dat_evt_2024_cats = 
+  dat_evt_2024 %>% 
+  cats %>% 
+  magrittr::extract2(1) %>% 
+  as_tibble
+
+vec_evt_2024_cats = 
+  dat_evt_2024_cats %>% 
+  select(Value, EVT_GP) %>% 
+  filter(EVT_GP %in% c(614, 615, 625)) %>% 
+  magrittr::extract2("Value")
+
+#   Get a binary raster.
+
+dat_evt_2024_binary <- dat_evt_2024 %in% vec_evt_2024_cats
+
+dat_evt_2024_binary %>% plot
+
+#  Get the product of the two binary rasters.
+
+dat_evt_binary = dat_evt_2016_binary * dat_evt_2024_binary
+
+# Export
+
+writeRaster(dat_evt_binary, "output/dat_evt_binary.tif")
