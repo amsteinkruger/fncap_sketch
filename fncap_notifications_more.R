@@ -6,6 +6,7 @@
 
 # TOC:
 #  Packages
+#  Bounds
 #  Notifications
 #  (FIA Clone?)
 #  Elevation
@@ -16,10 +17,12 @@
 #  EVT
 #  TCC
 #  Soil (LCC)
-#  Distances
+#  Distances (Mills, Cities, Roads)
 #  Ownership
 #  Prices
 #  Join
+
+time_start = Sys.time()
 
 # Packages
 
@@ -28,7 +31,37 @@ library(terra)
 library(tidyterra)
 library(readxl)
 
-time_start = Sys.time()
+# Bounds
+
+#  OR
+
+dat_bounds_or = 
+  "data/cb_2023_us_state_500k" %>% 
+  vect %>% 
+  filter(STUSPS == "OR") %>% 
+  project("EPSG:2992")
+
+#  Pyromes
+
+dat_bounds_pyromes = 
+  "data/USFS Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
+  vect %>% 
+  rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
+  filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
+  select(Pyrome = WHICH) %>% 
+  summarize(Pyrome = "All Pyromes") %>% # This is not great.
+  fillHoles %>% 
+  project("EPSG:2992")
+
+#  Intersection
+
+dat_bounds = 
+  intersect(dat_bounds_or, dat_bounds_pyromes) %>% 
+  # Handle island polygons. These are not real islands.
+  disagg %>% 
+  cbind(., expanse(., unit = "ha")) %>% 
+  filter(y == max(y)) %>% 
+  select(-y)
 
 # Notifications
 
@@ -250,8 +283,15 @@ dat_join_mtbs =
 
 # Get FIA. Sketch interpolation.
 
+# Get temperature.
+# Get precipitation.
+# Get CMI?
+
 # EVT
-#  Note fncap_landfire.R.
+#  Note fncap_landfire.R. Remember to fold that in if this all remains in one script.
+
+# After conversation on 10/15, remember to reverse polygon-raster interaction to get all EVT groups of interest.
+# And try out the "ceilling" raster that's now written to disk.
 
 dat_evt = "output/dat_evt_binary.tif" %>% rast
 
@@ -267,11 +307,35 @@ dat_join_evt =
 
 # TCC
 
-#  This might require separate processing for size.
+crs_tcc = 
+  "data/NLCD_TCC_2023/nlcd_tcc_conus_wgs84_v2023-5_20230101_20231231.tif" %>% 
+  rast %>% 
+  crs
+
+dat_tcc = 
+  "data/NLCD_TCC_2023/nlcd_tcc_conus_wgs84_v2023-5_20230101_20231231.tif" %>% 
+  rast %>% 
+  as.numeric %>% 
+  crop(dat_bounds %>% project(crs_tcc),
+       mask = TRUE) %>% 
+  project("EPSG:2992")
+
+dat_join_tcc = 
+  dat_join_tcc %>% 
+  extract(x = .,
+          y = dat_notifications,
+          fun = mean,
+          ID = FALSE,
+          bind = TRUE) %>% 
+  rename(TCC = category)
 
 # LCC (Soil)
 
-#  Grab smaller data import for OR.
+dat_lcc = 
+  "data/gSSURGO_OR.gdb" %>% 
+  rast
+
+# Problem: what's the tidiest approach to pulling in look-up tables without ESRI?
 
 # Distances to Mills
 

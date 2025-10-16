@@ -74,11 +74,25 @@ vec_evt_2016_cats =
   filter(EVT_GP %in% c(614, 615, 625)) %>% 
   magrittr::extract2("Value")
 
+# or
+
+vec_evt_2016_cats_more = 
+  dat_evt_2016_cats %>% 
+  select(Value, EVT_ORDER) %>% 
+  filter(EVT_ORDER == "Tree-dominated") %>% 
+  magrittr::extract2("Value")
+
 #   Get a binary raster.
 
 dat_evt_2016_binary <- dat_evt_2016 %in% vec_evt_2016_cats
 
 dat_evt_2016_binary %>% plot
+
+# or
+
+dat_evt_2016_binary_more <- dat_evt_2016 %in% vec_evt_2016_cats_more
+
+dat_evt_2016_binary_more %>% plot
 
 #  2024
 
@@ -112,16 +126,38 @@ vec_evt_2024_cats =
   filter(EVT_GP %in% c(614, 615, 625)) %>% 
   magrittr::extract2("Value")
 
+# or
+
+vec_evt_2024_cats_more = 
+  dat_evt_2024_cats %>% 
+  select(Value, EVT_ORDER) %>% 
+  filter(EVT_ORDER == "Tree-dominated") %>% 
+  magrittr::extract2("Value")
+
 #   Get a binary raster.
 
 dat_evt_2024_binary <- dat_evt_2024 %in% vec_evt_2024_cats
 
 dat_evt_2024_binary %>% plot
 
+# or
+
+dat_evt_2024_binary_more <- dat_evt_2024 %in% vec_evt_2024_cats_more
+
+dat_evt_2024_binary_more %>% plot
+
 #  Get the product of the two binary rasters.
 
 dat_evt_binary = dat_evt_2016_binary * dat_evt_2024_binary
 
+# or
+
+dat_evt_binary_more = dat_evt_2016_binary_more * dat_evt_2024_binary_more
+
 # Export
 
-writeRaster(dat_evt_binary, "output/dat_evt_binary.tif")
+writeRaster(dat_evt_binary, "output/dat_evt_binary.tif", overwrite = TRUE)
+
+# or
+
+writeRaster(dat_evt_binary_more, "output/dat_evt_binary_more.tif", overwrite = TRUE)
