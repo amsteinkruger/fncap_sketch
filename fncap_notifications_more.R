@@ -22,7 +22,7 @@
 #  Prices
 #  Join
 
-time_start = Sys.time()
+# time_start = Sys.time()
 
 # Packages
 
@@ -95,8 +95,10 @@ dat_notifications =
   select(-starts_with("Valid")) %>% 
   # Subset for testing.
   # slice_sample(n = 1000) %>%
+  # Crop.
+  crop(dat_bounds) %>% 
   # Swap unique ID assignment to this step for convenience.
-  mutate(UID = row_number())
+  mutate(UID = row_number()) 
 
 # Try filtering on counts of vertices.
 
@@ -115,6 +117,10 @@ dat_notifications =
 # dat_notifications =
 #   dat_notifications %>%
 #   semi_join(dat_vertices, by = c("UID" = "geom"))
+
+dat_notifications_mask = 
+  dat_notifications %>% 
+  summarize(ID = "Combined")
 
 # Elevation (Data)
 
@@ -288,16 +294,78 @@ dat_join_mtbs =
 # Get CMI?
 
 # EVT
-#  Note fncap_landfire.R. Remember to fold that in if this all remains in one script.
 
-# After conversation on 10/15, remember to reverse polygon-raster interaction to get all EVT groups of interest.
-# And try out the "ceilling" raster that's now written to disk.
+dat_evt_2016 = 
+  "data/LF2016_EVT_200_CONUS/Tif/LC16_EVT_200.tif" %>% 
+  rast %>% 
+  crop(dat_bounds %>% project("EPSG:5070"), mask = TRUE) %>% # Reprojecting to account for relative object sizes.
+  project("EPSG:2992") %>% 
+  crop(dat_notifications_mask, mask = TRUE) %>% 
+  droplevels
 
-dat_evt = "output/dat_evt_binary.tif" %>% rast
+dat_evt_2016_cats = 
+  dat_evt_2016 %>% 
+  cats %>% 
+  magrittr::extract2(1) %>% 
+  as_tibble
 
-dat_join_evt = 
-  dat_notifications %>% 
-  extract(x = dat_evt,
+# Repeat for 2024.
+
+dat_evt_2024 = 
+  "data/LF2024_EVT_250_CONUS/Tif/LC24_EVT_250.tif" %>% 
+  rast %>% 
+  crop(dat_bounds %>% project("EPSG:5070"), mask = TRUE) %>% # Reprojecting to account for relative object sizes.
+  project("EPSG:2992") %>% 
+  crop(dat_notifications_mask, mask = TRUE) %>% 
+  droplevels
+
+dat_evt_2024_cats = 
+  dat_evt_2024 %>% 
+  cats %>% 
+  magrittr::extract2(1) %>% 
+  as_tibble
+
+# Export categories.
+
+dat_evt_cats = 
+  bind_rows(dat_evt_2016_cats %>% select(Value, EVT_NAME, EVT_GP, EVT_GP_N, EVT_ORDER, EVT_CLASS), 
+            dat_evt_2024_cats %>% select(Value, EVT_NAME, EVT_GP, EVT_GP_N, EVT_ORDER, EVT_CLASS)) %>% 
+  distinct %>% 
+  write_csv("output/dat_evt_cats.csv")
+
+# Process categories.
+
+vec_evt_in_ceiling = 
+  dat_evt_cats %>% 
+  filter(EVT_ORDER == "Tree-dominated") %>% 
+  pull(Value)
+
+vec_evt_in_hand =
+  read_csv("output/dat_evt_cats_hand.csv") %>%
+  filter(Keep == 1) %>% # This is a choice.
+  pull(Value)
+
+# Pick an option.
+
+vec_evt_in = vec_evt_in_hand
+
+# Filter rasters.
+
+dat_evt_2016_binary <- dat_evt_2016 %in% vec_evt_in
+
+dat_evt_2016_binary %>% plot
+
+dat_evt_2024_binary <- dat_evt_2024 %in% vec_evt_in
+
+dat_evt_2024_binary %>% plot
+
+dat_evt_binary <- dat_evt_2016_binary * dat_evt_2024_binary
+
+# Extract means of binary results onto notifications.
+
+dat_join_evt =
+  dat_notifications %>%
+  extract(x = dat_evt_binary,
           y = .,
           fun = mean,
           ID = FALSE,
@@ -307,23 +375,40 @@ dat_join_evt =
 
 # TCC
 
+#  Get lag year range out of notifications.
+#  Build tibble with years, 
+#  notifications filtered by years,
+#  then map read TCC data in by year. This would be about 60 GB if all the data were in memory at once, so avoid that
+#  probably test with two years first
+#  get around memory constraint with crop at read, then keep cropped version
+
 crs_tcc = 
-  "data/NLCD_TCC_2023/nlcd_tcc_conus_wgs84_v2023-5_20230101_20231231.tif" %>% 
+  "data/TCC_Science_2022/science_tcc_conus_wgs84_v2023-5_20220101_20221231.tif" %>% # Correct.
   rast %>% 
   crs
 
-dat_tcc = 
-  "data/NLCD_TCC_2023/nlcd_tcc_conus_wgs84_v2023-5_20230101_20231231.tif" %>% 
+dat_tcc_2022 = 
+  "data/TCC_Science_2022/science_tcc_conus_wgs84_v2023-5_20220101_20221231.tif" %>% 
   rast %>% 
   as.numeric %>% 
   crop(dat_bounds %>% project(crs_tcc),
        mask = TRUE) %>% 
   project("EPSG:2992")
 
+dat_tcc_2021 = 
+  "data/TCC_Science_2021/science_tcc_conus_wgs84_v2023-5_20210101_20211231.tif" %>% 
+  rast %>% 
+  as.numeric %>% 
+  crop(dat_bounds %>% project(crs_tcc),
+       mask = TRUE) %>% 
+  project("EPSG:2992")
+
+dat_tcc_20222021 = dat_tcc_2022 - dat_tcc_2021
+
 dat_join_tcc = 
-  dat_join_tcc %>% 
+  dat_tcc_20222021 %>% 
   extract(x = .,
-          y = dat_notifications,
+          y = dat_notifications %>% filter(Year == 2021),
           fun = mean,
           ID = FALSE,
           bind = TRUE) %>% 
