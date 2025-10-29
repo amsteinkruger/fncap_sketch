@@ -66,7 +66,7 @@ dat_bounds =
 # Notifications
 
 dat_notifications = 
-  "output/dat_polygons_20250812.gdb" %>% 
+  "output/dat_notifications_polygons.gdb" %>% 
   vect %>% 
   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   filter(ActivityUnit == "MBF") %>% 
@@ -131,14 +131,14 @@ dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 # Slope (Data/Processing)
 
 if (file.exists("output/dat_slope.tif")) {
-
+  
   dat_slope = "output/dat_slope.tif" %>% rast
-
+  
 } else {
-
+  
   dat_slope = dat_elevation %>% terrain(v = "slope")
   writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
-
+  
 }
 
 # Elevation (Processing)
@@ -375,44 +375,98 @@ dat_join_evt =
 
 # TCC
 
-#  Get lag year range out of notifications.
-#  Build tibble with years, 
-#  notifications filtered by years,
-#  then map read TCC data in by year. This would be about 60 GB if all the data were in memory at once, so avoid that
-#  probably test with two years first
-#  get around memory constraint with crop at read, then keep cropped version
-
 crs_tcc = 
-  "data/TCC_Science_2022/science_tcc_conus_wgs84_v2023-5_20220101_20221231.tif" %>% # Correct.
+  "data/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
   rast %>% 
   crs
 
-dat_tcc_2022 = 
-  "data/TCC_Science_2022/science_tcc_conus_wgs84_v2023-5_20220101_20221231.tif" %>% 
-  rast %>% 
-  as.numeric %>% 
-  crop(dat_bounds %>% project(crs_tcc),
-       mask = TRUE) %>% 
-  project("EPSG:2992")
+dat_bounds_tcc = dat_bounds %>% project(crs_tcc)
 
-dat_tcc_2021 = 
-  "data/TCC_Science_2021/science_tcc_conus_wgs84_v2023-5_20210101_20211231.tif" %>% 
-  rast %>% 
-  as.numeric %>% 
-  crop(dat_bounds %>% project(crs_tcc),
-       mask = TRUE) %>% 
-  project("EPSG:2992")
-
-dat_tcc_20222021 = dat_tcc_2022 - dat_tcc_2021
+dat_tcc = 
+  list.files("data") %>% 
+  tibble(file = .) %>% 
+  filter(file %>% str_sub(1, 7) == "TCC_Sci") %>% 
+  mutate(year = file %>% str_sub(-4, -1) %>% as.numeric) %>% 
+  # filter(year %in% 2020:2022) %>% # Band-Aid.
+  rename(folder = file) %>% # Fiddling around.
+  mutate(file = paste0("data/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
+  mutate(data_0 = 
+           file %>% 
+           map(rast) %>% 
+           map(as.numeric) %>% 
+           map(crop,
+               dat_bounds_tcc,
+               mask = TRUE) %>% 
+           map(project,
+               "EPSG:2992"),
+         data_1 = data_0 %>% lag) %>% 
+  filter(year > min(year)) %>% # Avoid a frustrating problem with NULL.
+  mutate(data_difference = map2(data_0,
+                                data_1,
+                                ~ .x - .y)) %>% # ifelse(is.null(.y), "This is a null!", ~ .x - .y)
+  select(year, starts_with("data"))
 
 dat_join_tcc = 
-  dat_tcc_20222021 %>% 
-  extract(x = .,
-          y = dat_notifications %>% filter(Year == 2021),
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE) %>% 
-  rename(TCC = category)
+  dat_notifications %>% 
+  pull(Year) %>% 
+  unique %>% 
+  sort %>% 
+  tibble(year = .) %>% 
+  mutate(notifications = 
+           year %>% 
+           map(~ filter(dat_notifications, Year == .x))) %>% 
+  inner_join(dat_tcc) %>% 
+  mutate(notifications_0 = 
+           map2(data_0,
+                notifications,
+                extract,
+                fun = mean,
+                ID = FALSE,
+                bind = TRUE) %>% 
+           map(rename,
+               TCC_0 = category) %>% 
+           map(as_tibble) %>% 
+           map(select, UID, TCC_0),
+         notifications_1 = 
+           map2(data_1,
+                notifications,
+                extract,
+                fun = mean,
+                ID = FALSE,
+                bind = TRUE) %>% 
+           map(rename,
+               TCC_1 = category) %>% 
+           map(as_tibble) %>% 
+           map(select, UID, TCC_1),
+         notifications_d = 
+           map2(data_difference,
+                notifications,
+                extract,
+                fun = mean,
+                ID = FALSE,
+                bind = TRUE) %>% 
+           map(rename,
+               TCC_D = category) %>% 
+           map(as_tibble) %>% 
+           map(select, UID, TCC_D)) %>% 
+  select(year, starts_with("notifications_")) %>% 
+  mutate(notifications = map2(notifications_0, notifications_1, full_join),
+         notifications = map2(notifications, notifications_d, full_join)) %>% 
+  select(year, notifications) %>% 
+  unnest(notifications)
+
+# Ad hoc check
+
+dat_join_tcc %>% 
+  ggplot() +
+  geom_jitter(aes(x = year %>% factor,
+                 y = TCC_D),
+             alpha = 0.50)
+
+dat_join_tcc %>% 
+  mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
+  group_by(year) %>% 
+  summarize(TCC_Proportion = sum(TCC_Bin) / n())
 
 # LCC (Soil)
 
@@ -435,7 +489,7 @@ dat_mills =
 
 dat_join_mills = 
   dat_mills # %>% 
-  # distance calculation goes here.
+# distance calculation goes here.
 
 #  Remember to pull this into the "finale" section.
 
@@ -475,7 +529,7 @@ dat_prices_20192022 =
          Region = Region %>% as.numeric)
 
 dat_prices = bind_rows(dat_prices_19802018, dat_prices_20192022)
-  
+
 #  Get price regions.
 
 dat_prices_regions = 
@@ -488,7 +542,7 @@ dat_prices_regions =
                      TRUE ~ NA),
          .keep = "none") %>% 
   drop_na(Region)
-  
+
 #  Map regions to notifications, then add prices. 
 
 dat_join_prices = 
@@ -511,7 +565,7 @@ dat_notifications_out =
   left_join(dat_join_prices, by = "UID")
 
 # Check reason for additional observations from start to finish.
-  
+
 writeVector(dat_notifications_out, "output/data_notifications_demo_20250824.gdb", overwrite = TRUE)
 
 write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250824.csv")
