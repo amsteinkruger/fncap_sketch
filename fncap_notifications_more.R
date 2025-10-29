@@ -374,6 +374,7 @@ dat_join_evt =
   as_tibble
 
 # TCC
+#  Eats 62 GB for 2014-2023 as of 2025/10/29.
 
 crs_tcc = 
   "data/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
@@ -458,15 +459,46 @@ dat_join_tcc =
 # Ad hoc check
 
 dat_join_tcc %>% 
+  mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
   ggplot() +
   geom_jitter(aes(x = year %>% factor,
-                 y = TCC_D),
-             alpha = 0.50)
+                  y = TCC_D,
+                  color = TCC_Bin %>% factor(labels = c("+", "-"))),
+              alpha = 0.10) +
+  labs(x = NULL, y = "Difference in TCC",
+       color = "Sign") +
+  theme_minimal()
+
+ggsave("output/vis_counts_20251029.png",
+       dpi = 300,
+       width = 5,
+       height = 5)
 
 dat_join_tcc %>% 
   mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
   group_by(year) %>% 
   summarize(TCC_Proportion = sum(TCC_Bin) / n())
+
+# The following snippet is pretty bad.
+
+dat_notifications %>% 
+  as_tibble %>% 
+  group_by(Year) %>% 
+  summarize(count = n()) %>% 
+  rename(year = Year) %>% 
+  left_join(dat_join_tcc %>% 
+              mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
+              group_by(year) %>% 
+              summarize(TCC_Proportion = sum(TCC_Bin) / n())) %>% 
+  filter(!is.na(TCC_Proportion)) %>% 
+  mutate(Proportion_2 = 1 - TCC_Proportion) %>% 
+  mutate(Count_2 = count * (1 - TCC_Proportion)) %>% 
+  rename(Year = year,
+         Count_All = count,
+         Proportion_Negative = TCC_Proportion,
+         Proportion_Positive = Proportion_2,
+         Count_Positive = Count_2) %>% 
+  write_csv("output/data_counts_20251029.csv")
 
 # LCC (Soil)
 
