@@ -373,6 +373,35 @@ dat_join_evt =
   rename(EVT = EVT_NAME) %>%
   as_tibble
 
+# TreeMap (alternative source of species classification)
+
+crs_treemap = 
+  "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
+  rast %>% 
+  crs
+
+dat_bounds_treemap = dat_bounds %>% project(crs_treemap)
+
+dat_treemap = 
+  "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
+  rast %>% 
+  crop(dat_bounds_treemap, mask = TRUE) %>% 
+  project("EPSG:2992")
+
+# Extract FIA CN to notifications via TreeMap 2014
+#  First, check documentation to see what tl_id, CN, and Count (in TreeMap) actually mean.
+
+# dat_join_treemap = 
+
+# Match FIA attributes to notifications via CN
+
+# Species
+# Forest Type
+# Site Class
+# ???
+
+# dat_join_treemap_fia = 
+
 # TCC
 #  Eats 62 GB for 2014-2023 as of 2025/10/29.
 
@@ -458,6 +487,68 @@ dat_join_tcc =
 
 # Ad hoc check
 
+# Annual histograms of TCC change for each year for the full study area (inclusive of notifications)
+
+dat_tcc %>% 
+  # filter(year %in% 2015:2017) %>% 
+  mutate(data_difference_out = 
+           data_difference %>% 
+           map(as.vector) %>% 
+           map(as_tibble) %>% 
+           map(drop_na)) %>% 
+  select(year, data_difference_out) %>% 
+  unnest(data_difference_out) %>% 
+  rename(tcc = value) %>% 
+  group_by(year) %>% 
+  mutate(tcc_decile = tcc %>% ntile(100)) %>% 
+  ungroup %>% 
+  filter(tcc_decile %in% 6:96) %>% 
+  mutate(bin = cut_interval(tcc, n = 20)) %>% # cut_width(tcc, width = 25.5, boundary = -255)
+  group_by(year, bin) %>% 
+  summarize(count = n()) %>% 
+  ggplot() +
+  geom_col(aes(x = count,
+               y = bin)) +
+  facet_wrap(~ year) +
+  labs(x = "Pixels", 
+       y = "Binned Interannual Change in TCC") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+ggsave("output/vis_tcc_histogram_all_20251030.png",
+       dpi = 300,
+       width = 7.5,
+       height = 7.5)
+
+# Annual histograms of TCC change for each year for each notification
+
+dat_join_tcc %>% 
+  rename(tcc = TCC_D) %>% 
+  group_by(year) %>% 
+  mutate(tcc_decile = tcc %>% ntile(100)) %>% 
+  ungroup %>% 
+  filter(tcc_decile %in% 6:96) %>% 
+  mutate(bin = cut_interval(tcc, n = 20)) %>% # cut_width(tcc, width = 25.5, boundary = -255)
+  group_by(year, bin) %>% 
+  summarize(count = n()) %>% 
+  ggplot() +
+  geom_col(aes(x = count,
+               y = bin)) +
+  facet_wrap(~ year) +
+  labs(x = "Notifications", 
+       y = "Binned Interannual Change in TCC") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+ggsave("output/vis_tcc_histogram_not_20251030.png",
+       dpi = 300,
+       width = 7.5,
+       height = 7.5)
+
+# old
+
 dat_join_tcc %>% 
   mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
   ggplot() +
@@ -474,12 +565,12 @@ ggsave("output/vis_counts_20251029.png",
        width = 5,
        height = 5)
 
+# table
+
 dat_join_tcc %>% 
   mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
   group_by(year) %>% 
   summarize(TCC_Proportion = sum(TCC_Bin) / n())
-
-# The following snippet is pretty bad.
 
 dat_notifications %>% 
   as_tibble %>% 
