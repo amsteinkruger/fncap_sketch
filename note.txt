@@ -1,3 +1,9 @@
+2025/11/4
+
+- break /data/ into buckets (e.g. Notifications, TreeMap*, TCC)
+- * and get other TreeMap years for reference
+
+
 2025/08/18
 
 - expanding data joins to complete set of 2014-2025 notifications

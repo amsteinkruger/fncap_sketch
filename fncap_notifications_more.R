@@ -621,60 +621,44 @@ dat_join_mills =
 
 # Prices
 
-# Note that this is a placeholder, pending decisions around species, price bins, and regional definitions.
+#  Get prices, map quarters to months, and account for inflation.
 
-#  Get prices.
+dat_cpi = 
+  "data/data_cpi.csv" %>% 
+  read_csv %>% 
+  mutate(Year = observation_date %>% year,
+         Month = observation_date %>% month,
+         Factor_2025 = max(CPIAUCSL) / CPIAUCSL) %>% 
+  select(Year, Month, Factor_2025)
 
-dat_prices_19802018 = 
-  "data/Prices_ODF/Historic Timber Price Data.xlsx" %>% 
-  read_xlsx(sheet = 1) %>% 
-  filter(Quarter == 1) %>% 
-  select(Year, Region, Price = `DF 2S`)
+dat_prices_stumpage = 
+  "data/Prices_FastMarkets/data_stumpage.csv" %>% 
+  read_csv %>% 
+  rename(Stumpage_Nominal = 2) %>% 
+  mutate(Year = Quarter %>% str_sub(1, 4) %>% as.numeric,
+         Month = 
+           Quarter %>% 
+           str_sub(-1, -1) %>% 
+           map(~ case_when(.x == 1 ~ 1:3,
+                           .x == 2 ~ 4:6,
+                           .x == 3 ~ 7:9,
+                           .x == 4 ~ 10:12,
+                           TRUE ~ NA))) %>% 
+  unnest(Month) %>% 
+  left_join(dat_cpi) %>% 
+  mutate(Stumpage_Real = Stumpage_Nominal * Factor_2025) %>% 
+  select(Year, Month, Stumpage_Nominal, Stumpage_Real)
 
-dat_prices_20192022 =
-  "data/Prices_ODF/Historic Timber Price Data.xlsx" %>% 
-  read_xlsx(sheet = 2,
-            skip = 1) %>% 
-  select(YearQuarter = 1, 
-         Price_1 = 2, 
-         Price_2 = 4,
-         Price_3 = 6,
-         Price_4 = 8) %>% 
-  mutate(Year = YearQuarter %>% str_sub(1, 4),
-         Quarter = YearQuarter %>% str_sub(-1, -1)) %>% 
-  filter(Quarter == 1) %>% 
-  select(Year, starts_with("Price")) %>% 
-  pivot_longer(cols = starts_with("Price"),
-               names_to = "Region",
-               names_prefix = "Price_",
-               values_to = "Price") %>% 
-  mutate(Year = Year %>% as.numeric,
-         Region = Region %>% as.numeric)
-
-dat_prices = bind_rows(dat_prices_19802018, dat_prices_20192022)
-
-#  Get price regions.
-
-dat_prices_regions = 
-  "data/Boundaries_ODF/StateForestDistricts" %>% 
-  vect %>% 
-  mutate(Region = 
-           case_when(DISTRICT %in% c("Astoria", "Tillamook", "Forest Grove", "North Cascade", "West Oregon", "Western Lane") ~ 1,
-                     DISTRICT %in% c("Coos Bay") ~ 2,
-                     DISTRICT %in% c("Grants Pass") ~ 4,
-                     TRUE ~ NA),
-         .keep = "none") %>% 
-  drop_na(Region)
-
-#  Map regions to notifications, then add prices. 
-
-dat_join_prices = 
-  dat_notifications %>% 
-  intersect(dat_prices_regions) %>% 
-  as_tibble %>% 
-  left_join(dat_prices, 
-            by = c("Year", "Region")) %>% 
-  select(UID, Price)
+dat_prices_stumpage %>% 
+  # something with dates
+  # and pivot long to get a nice legend
+  ggplot() +
+  geom_line(aes(x = YearMonth,
+                y = Stumpage_Nominal),
+            color = "#000000") +
+  geom_line(aes(x = YearMonth,
+                y = Stumpage_Real),
+            color = "#D73F09")
 
 # Finale
 
