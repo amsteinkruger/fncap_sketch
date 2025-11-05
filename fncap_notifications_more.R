@@ -31,6 +31,10 @@ library(terra)
 library(tidyterra)
 library(readxl)
 
+# Ratio
+
+phi = (1 + 5 ^ (1 / 2)) / 2
+
 # Bounds
 
 #  OR
@@ -375,6 +379,18 @@ dat_join_evt =
 
 # TreeMap (alternative source of species classification)
 
+#  Get FIA data for reference.
+
+dat_fia_plot = 
+  "data/FIA/OR_PLOT.csv" %>% 
+  read_csv
+
+dat_fia_cond = 
+  "data/FIA/OR_COND.csv" %>% 
+  read_csv
+
+#  Get TreeMap metadata and data.
+
 crs_treemap = 
   "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
   rast %>% 
@@ -547,58 +563,6 @@ ggsave("output/vis_tcc_histogram_not_20251030.png",
        width = 7.5,
        height = 7.5)
 
-# old
-
-dat_join_tcc %>% 
-  mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
-  ggplot() +
-  geom_jitter(aes(x = year %>% factor,
-                  y = TCC_D,
-                  color = TCC_Bin %>% factor(labels = c("+", "-"))),
-              alpha = 0.10) +
-  labs(x = NULL, y = "Difference in TCC",
-       color = "Sign") +
-  theme_minimal()
-
-ggsave("output/vis_counts_20251029.png",
-       dpi = 300,
-       width = 5,
-       height = 5)
-
-# table
-
-dat_join_tcc %>% 
-  mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
-  group_by(year) %>% 
-  summarize(TCC_Proportion = sum(TCC_Bin) / n())
-
-dat_notifications %>% 
-  as_tibble %>% 
-  group_by(Year) %>% 
-  summarize(count = n()) %>% 
-  rename(year = Year) %>% 
-  left_join(dat_join_tcc %>% 
-              mutate(TCC_Bin = ifelse(TCC_D < 0, 1, 0)) %>% 
-              group_by(year) %>% 
-              summarize(TCC_Proportion = sum(TCC_Bin) / n())) %>% 
-  filter(!is.na(TCC_Proportion)) %>% 
-  mutate(Proportion_2 = 1 - TCC_Proportion) %>% 
-  mutate(Count_2 = count * (1 - TCC_Proportion)) %>% 
-  rename(Year = year,
-         Count_All = count,
-         Proportion_Negative = TCC_Proportion,
-         Proportion_Positive = Proportion_2,
-         Count_Positive = Count_2) %>% 
-  write_csv("output/data_counts_20251029.csv")
-
-# LCC (Soil)
-
-dat_lcc = 
-  "data/gSSURGO_OR.gdb" %>% 
-  rast
-
-# Problem: what's the tidiest approach to pulling in look-up tables without ESRI?
-
 # Distances to Mills
 
 #  Note that (1) this is a placeholder and (2) this dataset features mills across the western US.
@@ -613,8 +577,6 @@ dat_mills =
 dat_join_mills = 
   dat_mills # %>% 
 # distance calculation goes here.
-
-#  Remember to pull this into the "finale" section.
 
 # Distances to Cities
 # Distances to Major Roads
@@ -631,7 +593,7 @@ dat_cpi =
          Factor_2025 = max(CPIAUCSL) / CPIAUCSL) %>% 
   select(Year, Month, Factor_2025)
 
-dat_prices_stumpage = 
+dat_price_stumpage = 
   "data/Prices_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
   rename(Stumpage_Nominal = 2) %>% 
@@ -649,16 +611,33 @@ dat_prices_stumpage =
   mutate(Stumpage_Real = Stumpage_Nominal * Factor_2025) %>% 
   select(Year, Month, Stumpage_Nominal, Stumpage_Real)
 
-dat_prices_stumpage %>% 
-  # something with dates
-  # and pivot long to get a nice legend
-  ggplot() +
-  geom_line(aes(x = YearMonth,
-                y = Stumpage_Nominal),
-            color = "#000000") +
-  geom_line(aes(x = YearMonth,
-                y = Stumpage_Real),
-            color = "#D73F09")
+# dat_price_stumpage %>% 
+#   mutate(Date = as.Date(paste0(Year, "-", Month, "-", "01"))) %>% 
+#   pivot_longer(cols = starts_with("Stumpage")) %>% 
+#   mutate(name = name %>% str_remove("Stumpage_"),
+#          name = ifelse(name == "Real", "Real (2024/12)", name),
+#          name = name %>% factor %>% fct_rev) %>% 
+#   ggplot() +
+#   geom_line(aes(x = Date,
+#                 y = value,
+#                 color = name,
+#                 group = name),
+#             linewidth = 0.75) +
+#   labs(x = NULL, 
+#        y = "Price (US$/MBF)",
+#        color = NULL) +
+#   scale_color_manual(values = c("#000000", "#D73F09")) +
+#   theme_minimal()
+# 
+# ggsave("output/vis_price_series_20251104.png",
+#        dpi = 300,
+#        width = 6.5,
+#        height = 6.5 / phi)
+
+dat_join_price = 
+  dat_notifications %>% 
+  as_tibble %>% 
+  left_join(dat_price_stumpage)
 
 # Finale
 
@@ -673,9 +652,9 @@ dat_notifications_out =
 
 # Check reason for additional observations from start to finish.
 
-writeVector(dat_notifications_out, "output/data_notifications_demo_20250824.gdb", overwrite = TRUE)
+writeVector(dat_notifications_out, "output/dat_notifications_polygons_more.gdb", overwrite = TRUE)
 
-write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250824.csv")
+write_csv(dat_notifications_out %>% as_tibble, "output/dat_notifications_flat_more.csv")
 
 time_end = Sys.time()
 
