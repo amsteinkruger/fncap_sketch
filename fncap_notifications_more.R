@@ -65,6 +65,36 @@ dat_bounds =
 
 # Notifications
 
+dat_notifications_range = 
+  "output/dat_polygons_20250812.gdb" %>% 
+  vect %>% 
+  as_tibble %>% 
+  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  filter(ActivityUnit == "MBF") %>% 
+  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
+  select(starts_with("Date")) %>% 
+  mutate(Date_Check = DateEnd_Right - DateStart_Right) %>% 
+  # mutate(Date_Check = ifelse(!is.na(DateContinuationStart), DateEnd_Right - DateStart_Right, DateContinuationEnd - DateStart_Right)) %>% 
+  select(Date_Check) %>% 
+  mutate(Date_Check_Num = Date_Check %>% as.numeric %>% `/` (86400))
+
+vis_notifications_range = 
+  dat_notifications_range %>% 
+  filter(quantile(Date_Check_Num, 0.99) > Date_Check_Num) %>% 
+  group_by(Date_Check_Num) %>% 
+  summarize(Count = n()) %>% 
+  ungroup %>% 
+  ggplot() +
+  geom_col(aes(x = Date_Check_Num,
+               y = Count)) +
+  labs(x = "Days in Notification Period",
+       y = "Count of Notifications")
+
+ggsave("output/vis_notifications_range.png",
+       dpi = 300,
+       width = 5,
+       height = 5)
+
 dat_notifications = 
   "output/dat_polygons_20250812.gdb" %>% 
   vect %>% 
