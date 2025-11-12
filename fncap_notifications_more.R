@@ -102,7 +102,7 @@ dat_notifications =
   # Crop.
   crop(dat_bounds) %>% 
   # Swap unique ID assignment to this step for convenience.
-  mutate(UID = row_number()) 
+  mutate(UID = row_number())
 
 # Try filtering on counts of vertices.
 
@@ -403,6 +403,24 @@ dat_treemap =
   rast %>% 
   crop(dat_bounds_treemap, mask = TRUE) %>% 
   project("EPSG:2992")
+
+vec_treemap = dat_treemap %>% as.vector %>% na.omit %>% unique
+
+dat_treemap_check = 
+  vec_treemap %>% 
+  tibble(CN = .) %>% 
+  left_join(dat_fia_cond %>% select(CN = PLOT) %>% mutate(join = 1))
+
+# 2810 of 6655 TreeMap CN values match FIA PLOT CN values appearing in the COND table. 
+
+# Check TreeMap's active categorical var.
+# Turn TreeMap into a vector, then into a tibble, then join plots and conditions to figure out which CN works.
+#  Or just read Riley et al. 2021.
+# Check number of (non)matches on both sides of joins for CN check.
+# Check years of matches from FIA side -- what does 2014 mean?!
+# Reduce joined tibble (or cond table?) to columns of interest (pick!).
+# Figure out the simplest (modal?) extraction of TreeMap onto 
+#  Just search for examples of vector-raster extraction with cats!
 
 # Extract FIA CN to notifications via TreeMap 2014
 #  First, check documentation to see what tl_id, CN, and Count (in TreeMap) actually mean.
