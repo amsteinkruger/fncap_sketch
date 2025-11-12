@@ -22,7 +22,7 @@
 #  Prices
 #  Join
 
-time_start = Sys.time()
+# time_start = Sys.time()
 
 # Packages
 
@@ -30,6 +30,10 @@ library(tidyverse)
 library(terra)
 library(tidyterra)
 library(readxl)
+
+# Ratio
+
+phi = (1 + 5 ^ (1 / 2)) / 2
 
 # Bounds
 
@@ -96,7 +100,7 @@ ggsave("output/vis_notifications_range.png",
        height = 5)
 
 dat_notifications = 
-  "output/dat_polygons_20250812.gdb" %>% 
+  "output/dat_notifications_polygons.gdb" %>% 
   vect %>% 
   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   filter(ActivityUnit == "MBF") %>% 
@@ -125,8 +129,10 @@ dat_notifications =
   select(-starts_with("Valid")) %>% 
   # Subset for testing.
   # slice_sample(n = 1000) %>%
+  # Crop.
+  crop(dat_bounds) %>% 
   # Swap unique ID assignment to this step for convenience.
-  mutate(UID = row_number())
+  mutate(UID = row_number()) 
 
 # Try filtering on counts of vertices.
 
@@ -146,6 +152,10 @@ dat_notifications =
 #   dat_notifications %>%
 #   semi_join(dat_vertices, by = c("UID" = "geom"))
 
+dat_notifications_mask = 
+  dat_notifications %>% 
+  summarize(ID = "Combined")
+
 # Elevation (Data)
 
 # Remember to swap in alternative OR DEM.
@@ -155,14 +165,14 @@ dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
 # Slope (Data/Processing)
 
 if (file.exists("output/dat_slope.tif")) {
-
+  
   dat_slope = "output/dat_slope.tif" %>% rast
-
+  
 } else {
-
+  
   dat_slope = dat_elevation %>% terrain(v = "slope")
   writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
-
+  
 }
 
 # Elevation (Processing)
@@ -318,16 +328,78 @@ dat_join_mtbs =
 # Get CMI?
 
 # EVT
-#  Note fncap_landfire.R. Remember to fold that in if this all remains in one script.
 
-# After conversation on 10/15, remember to reverse polygon-raster interaction to get all EVT groups of interest.
-# And try out the "ceilling" raster that's now written to disk.
+dat_evt_2016 = 
+  "data/LF2016_EVT_200_CONUS/Tif/LC16_EVT_200.tif" %>% 
+  rast %>% 
+  crop(dat_bounds %>% project("EPSG:5070"), mask = TRUE) %>% # Reprojecting to account for relative object sizes.
+  project("EPSG:2992") %>% 
+  crop(dat_notifications_mask, mask = TRUE) %>% 
+  droplevels
 
-dat_evt = "output/dat_evt_binary.tif" %>% rast
+dat_evt_2016_cats = 
+  dat_evt_2016 %>% 
+  cats %>% 
+  magrittr::extract2(1) %>% 
+  as_tibble
 
-dat_join_evt = 
-  dat_notifications %>% 
-  extract(x = dat_evt,
+# Repeat for 2024.
+
+dat_evt_2024 = 
+  "data/LF2024_EVT_250_CONUS/Tif/LC24_EVT_250.tif" %>% 
+  rast %>% 
+  crop(dat_bounds %>% project("EPSG:5070"), mask = TRUE) %>% # Reprojecting to account for relative object sizes.
+  project("EPSG:2992") %>% 
+  crop(dat_notifications_mask, mask = TRUE) %>% 
+  droplevels
+
+dat_evt_2024_cats = 
+  dat_evt_2024 %>% 
+  cats %>% 
+  magrittr::extract2(1) %>% 
+  as_tibble
+
+# Export categories.
+
+dat_evt_cats = 
+  bind_rows(dat_evt_2016_cats %>% select(Value, EVT_NAME, EVT_GP, EVT_GP_N, EVT_ORDER, EVT_CLASS), 
+            dat_evt_2024_cats %>% select(Value, EVT_NAME, EVT_GP, EVT_GP_N, EVT_ORDER, EVT_CLASS)) %>% 
+  distinct %>% 
+  write_csv("output/dat_evt_cats.csv")
+
+# Process categories.
+
+vec_evt_in_ceiling = 
+  dat_evt_cats %>% 
+  filter(EVT_ORDER == "Tree-dominated") %>% 
+  pull(Value)
+
+vec_evt_in_hand =
+  read_csv("output/dat_evt_cats_hand.csv") %>%
+  filter(Keep == 1) %>% # This is a choice.
+  pull(Value)
+
+# Pick an option.
+
+vec_evt_in = vec_evt_in_hand
+
+# Filter rasters.
+
+dat_evt_2016_binary <- dat_evt_2016 %in% vec_evt_in
+
+dat_evt_2016_binary %>% plot
+
+dat_evt_2024_binary <- dat_evt_2024 %in% vec_evt_in
+
+dat_evt_2024_binary %>% plot
+
+dat_evt_binary <- dat_evt_2016_binary * dat_evt_2024_binary
+
+# Extract means of binary results onto notifications.
+
+dat_join_evt =
+  dat_notifications %>%
+  extract(x = dat_evt_binary,
           y = .,
           fun = mean,
           ID = FALSE,
@@ -335,37 +407,191 @@ dat_join_evt =
   rename(EVT = EVT_NAME) %>%
   as_tibble
 
-# TCC
+# TreeMap (alternative source of species classification)
 
-crs_tcc = 
-  "data/NLCD_TCC_2023/nlcd_tcc_conus_wgs84_v2023-5_20230101_20231231.tif" %>% 
+#  Get FIA data for reference.
+
+dat_fia_plot = 
+  "data/FIA/OR_PLOT.csv" %>% 
+  read_csv
+
+dat_fia_cond = 
+  "data/FIA/OR_COND.csv" %>% 
+  read_csv
+
+#  Get TreeMap metadata and data.
+
+crs_treemap = 
+  "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
   rast %>% 
   crs
 
-dat_tcc = 
-  "data/NLCD_TCC_2023/nlcd_tcc_conus_wgs84_v2023-5_20230101_20231231.tif" %>% 
+dat_bounds_treemap = dat_bounds %>% project(crs_treemap)
+
+dat_treemap = 
+  "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
   rast %>% 
-  as.numeric %>% 
-  crop(dat_bounds %>% project(crs_tcc),
-       mask = TRUE) %>% 
+  crop(dat_bounds_treemap, mask = TRUE) %>% 
   project("EPSG:2992")
 
+# Extract FIA CN to notifications via TreeMap 2014
+#  First, check documentation to see what tl_id, CN, and Count (in TreeMap) actually mean.
+
+# dat_join_treemap = 
+
+# Match FIA attributes to notifications via CN
+
+# Species
+# Forest Type
+# Site Class
+# ???
+
+# dat_join_treemap_fia = 
+
+# TCC
+#  Eats 62 GB for 2014-2023 as of 2025/10/29.
+
+crs_tcc = 
+  "data/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
+  rast %>% 
+  crs
+
+dat_bounds_tcc = dat_bounds %>% project(crs_tcc)
+
+dat_tcc = 
+  list.files("data") %>% 
+  tibble(file = .) %>% 
+  filter(file %>% str_sub(1, 7) == "TCC_Sci") %>% 
+  mutate(year = file %>% str_sub(-4, -1) %>% as.numeric) %>% 
+  # filter(year %in% 2020:2022) %>% # Band-Aid.
+  rename(folder = file) %>% # Fiddling around.
+  mutate(file = paste0("data/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
+  mutate(data_0 = 
+           file %>% 
+           map(rast) %>% 
+           map(as.numeric) %>% 
+           map(crop,
+               dat_bounds_tcc,
+               mask = TRUE) %>% 
+           map(project,
+               "EPSG:2992"),
+         data_1 = data_0 %>% lag) %>% 
+  filter(year > min(year)) %>% # Avoid a frustrating problem with NULL.
+  mutate(data_difference = map2(data_0,
+                                data_1,
+                                ~ .x - .y)) %>% # ifelse(is.null(.y), "This is a null!", ~ .x - .y)
+  select(year, starts_with("data"))
+
 dat_join_tcc = 
-  dat_join_tcc %>% 
-  extract(x = .,
-          y = dat_notifications,
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE) %>% 
-  rename(TCC = category)
+  dat_notifications %>% 
+  pull(Year) %>% 
+  unique %>% 
+  sort %>% 
+  tibble(year = .) %>% 
+  mutate(notifications = 
+           year %>% 
+           map(~ filter(dat_notifications, Year == .x))) %>% 
+  inner_join(dat_tcc) %>% 
+  mutate(notifications_0 = 
+           map2(data_0,
+                notifications,
+                extract,
+                fun = mean,
+                ID = FALSE,
+                bind = TRUE) %>% 
+           map(rename,
+               TCC_0 = category) %>% 
+           map(as_tibble) %>% 
+           map(select, UID, TCC_0),
+         notifications_1 = 
+           map2(data_1,
+                notifications,
+                extract,
+                fun = mean,
+                ID = FALSE,
+                bind = TRUE) %>% 
+           map(rename,
+               TCC_1 = category) %>% 
+           map(as_tibble) %>% 
+           map(select, UID, TCC_1),
+         notifications_d = 
+           map2(data_difference,
+                notifications,
+                extract,
+                fun = mean,
+                ID = FALSE,
+                bind = TRUE) %>% 
+           map(rename,
+               TCC_D = category) %>% 
+           map(as_tibble) %>% 
+           map(select, UID, TCC_D)) %>% 
+  select(year, starts_with("notifications_")) %>% 
+  mutate(notifications = map2(notifications_0, notifications_1, full_join),
+         notifications = map2(notifications, notifications_d, full_join)) %>% 
+  select(year, notifications) %>% 
+  unnest(notifications)
 
-# LCC (Soil)
+# Ad hoc check
 
-dat_lcc = 
-  "data/gSSURGO_OR.gdb" %>% 
-  rast
+# Annual histograms of TCC change for each year for the full study area (inclusive of notifications)
 
-# Problem: what's the tidiest approach to pulling in look-up tables without ESRI?
+dat_tcc %>% 
+  # filter(year %in% 2015:2017) %>% 
+  mutate(data_difference_out = 
+           data_difference %>% 
+           map(as.vector) %>% 
+           map(as_tibble) %>% 
+           map(drop_na)) %>% 
+  select(year, data_difference_out) %>% 
+  unnest(data_difference_out) %>% 
+  rename(tcc = value) %>% 
+  group_by(year) %>% 
+  mutate(tcc_decile = tcc %>% ntile(100)) %>% 
+  ungroup %>% 
+  filter(tcc_decile %in% 6:96) %>% 
+  mutate(bin = cut_interval(tcc, n = 20)) %>% # cut_width(tcc, width = 25.5, boundary = -255)
+  group_by(year, bin) %>% 
+  summarize(count = n()) %>% 
+  ggplot() +
+  geom_col(aes(x = count,
+               y = bin)) +
+  facet_wrap(~ year) +
+  labs(x = "Pixels", 
+       y = "Binned Interannual Change in TCC") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+ggsave("output/vis_tcc_histogram_all_20251030.png",
+       dpi = 300,
+       width = 7.5,
+       height = 7.5)
+
+# Annual histograms of TCC change for each year for each notification
+
+dat_join_tcc %>% 
+  rename(tcc = TCC_D) %>% 
+  group_by(year) %>% 
+  mutate(tcc_decile = tcc %>% ntile(100)) %>% 
+  ungroup %>% 
+  filter(tcc_decile %in% 6:96) %>% 
+  mutate(bin = cut_interval(tcc, n = 20)) %>% # cut_width(tcc, width = 25.5, boundary = -255)
+  group_by(year, bin) %>% 
+  summarize(count = n()) %>% 
+  ggplot() +
+  geom_col(aes(x = count,
+               y = bin)) +
+  facet_wrap(~ year) +
+  labs(x = "Notifications", 
+       y = "Binned Interannual Change in TCC") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+ggsave("output/vis_tcc_histogram_not_20251030.png",
+       dpi = 300,
+       width = 7.5,
+       height = 7.5)
 
 # Distances to Mills
 
@@ -380,69 +606,68 @@ dat_mills =
 
 dat_join_mills = 
   dat_mills # %>% 
-  # distance calculation goes here.
-
-#  Remember to pull this into the "finale" section.
+# distance calculation goes here.
 
 # Distances to Cities
 # Distances to Major Roads
 
 # Prices
 
-# Note that this is a placeholder, pending decisions around species, price bins, and regional definitions.
+#  Get prices, map quarters to months, and account for inflation.
 
-#  Get prices.
+dat_cpi = 
+  "data/data_cpi.csv" %>% 
+  read_csv %>% 
+  mutate(Year = observation_date %>% year,
+         Month = observation_date %>% month,
+         Factor_2025 = max(CPIAUCSL) / CPIAUCSL) %>% 
+  select(Year, Month, Factor_2025)
 
-dat_prices_19802018 = 
-  "data/Prices_ODF/Historic Timber Price Data.xlsx" %>% 
-  read_xlsx(sheet = 1) %>% 
-  filter(Quarter == 1) %>% 
-  select(Year, Region, Price = `DF 2S`)
+dat_price_stumpage = 
+  "data/Prices_FastMarkets/data_stumpage.csv" %>% 
+  read_csv %>% 
+  rename(Stumpage_Nominal = 2) %>% 
+  mutate(Year = Quarter %>% str_sub(1, 4) %>% as.numeric,
+         Month = 
+           Quarter %>% 
+           str_sub(-1, -1) %>% 
+           map(~ case_when(.x == 1 ~ 1:3,
+                           .x == 2 ~ 4:6,
+                           .x == 3 ~ 7:9,
+                           .x == 4 ~ 10:12,
+                           TRUE ~ NA))) %>% 
+  unnest(Month) %>% 
+  left_join(dat_cpi) %>% 
+  mutate(Stumpage_Real = Stumpage_Nominal * Factor_2025) %>% 
+  select(Year, Month, Stumpage_Nominal, Stumpage_Real)
 
-dat_prices_20192022 =
-  "data/Prices_ODF/Historic Timber Price Data.xlsx" %>% 
-  read_xlsx(sheet = 2,
-            skip = 1) %>% 
-  select(YearQuarter = 1, 
-         Price_1 = 2, 
-         Price_2 = 4,
-         Price_3 = 6,
-         Price_4 = 8) %>% 
-  mutate(Year = YearQuarter %>% str_sub(1, 4),
-         Quarter = YearQuarter %>% str_sub(-1, -1)) %>% 
-  filter(Quarter == 1) %>% 
-  select(Year, starts_with("Price")) %>% 
-  pivot_longer(cols = starts_with("Price"),
-               names_to = "Region",
-               names_prefix = "Price_",
-               values_to = "Price") %>% 
-  mutate(Year = Year %>% as.numeric,
-         Region = Region %>% as.numeric)
+# dat_price_stumpage %>% 
+#   mutate(Date = as.Date(paste0(Year, "-", Month, "-", "01"))) %>% 
+#   pivot_longer(cols = starts_with("Stumpage")) %>% 
+#   mutate(name = name %>% str_remove("Stumpage_"),
+#          name = ifelse(name == "Real", "Real (2024/12)", name),
+#          name = name %>% factor %>% fct_rev) %>% 
+#   ggplot() +
+#   geom_line(aes(x = Date,
+#                 y = value,
+#                 color = name,
+#                 group = name),
+#             linewidth = 0.75) +
+#   labs(x = NULL, 
+#        y = "Price (US$/MBF)",
+#        color = NULL) +
+#   scale_color_manual(values = c("#000000", "#D73F09")) +
+#   theme_minimal()
+# 
+# ggsave("output/vis_price_series_20251104.png",
+#        dpi = 300,
+#        width = 6.5,
+#        height = 6.5 / phi)
 
-dat_prices = bind_rows(dat_prices_19802018, dat_prices_20192022)
-  
-#  Get price regions.
-
-dat_prices_regions = 
-  "data/Boundaries_ODF/StateForestDistricts" %>% 
-  vect %>% 
-  mutate(Region = 
-           case_when(DISTRICT %in% c("Astoria", "Tillamook", "Forest Grove", "North Cascade", "West Oregon", "Western Lane") ~ 1,
-                     DISTRICT %in% c("Coos Bay") ~ 2,
-                     DISTRICT %in% c("Grants Pass") ~ 4,
-                     TRUE ~ NA),
-         .keep = "none") %>% 
-  drop_na(Region)
-  
-#  Map regions to notifications, then add prices. 
-
-dat_join_prices = 
+dat_join_price = 
   dat_notifications %>% 
-  intersect(dat_prices_regions) %>% 
   as_tibble %>% 
-  left_join(dat_prices, 
-            by = c("Year", "Region")) %>% 
-  select(UID, Price)
+  left_join(dat_price_stumpage)
 
 # Finale
 
@@ -456,10 +681,10 @@ dat_notifications_out =
   left_join(dat_join_prices, by = "UID")
 
 # Check reason for additional observations from start to finish.
-  
-writeVector(dat_notifications_out, "output/data_notifications_demo_20250824.gdb", overwrite = TRUE)
 
-write_csv(dat_notifications_out %>% as_tibble, "output/data_notifications_demo_20250824.csv")
+writeVector(dat_notifications_out, "output/dat_notifications_polygons_more.gdb", overwrite = TRUE)
+
+write_csv(dat_notifications_out %>% as_tibble, "output/dat_notifications_flat_more.csv")
 
 time_end = Sys.time()
 
