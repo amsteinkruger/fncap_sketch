@@ -13,10 +13,8 @@
 #  Slope
 #  Pyromes
 #  Fires
-#  Class
-#  EVT
+#  TreeMap (Species, Site Class, . . .)
 #  TCC
-#  Soil (LCC)
 #  Distances (Mills, Cities, Roads)
 #  Ownership
 #  Prices
