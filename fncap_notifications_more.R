@@ -67,35 +67,35 @@ dat_bounds =
 
 # Notifications
 
-dat_notifications_range = 
-  "output/dat_polygons_20250812.gdb" %>% 
-  vect %>% 
-  as_tibble %>% 
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-  filter(ActivityUnit == "MBF") %>% 
-  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  select(starts_with("Date")) %>% 
-  mutate(Date_Check = DateEnd_Right - DateStart_Right) %>% 
-  # mutate(Date_Check = ifelse(!is.na(DateContinuationStart), DateEnd_Right - DateStart_Right, DateContinuationEnd - DateStart_Right)) %>% 
-  select(Date_Check) %>% 
-  mutate(Date_Check_Num = Date_Check %>% as.numeric %>% `/` (86400))
-
-vis_notifications_range = 
-  dat_notifications_range %>% 
-  filter(quantile(Date_Check_Num, 0.99) > Date_Check_Num) %>% 
-  group_by(Date_Check_Num) %>% 
-  summarize(Count = n()) %>% 
-  ungroup %>% 
-  ggplot() +
-  geom_col(aes(x = Date_Check_Num,
-               y = Count)) +
-  labs(x = "Days in Notification Period",
-       y = "Count of Notifications")
-
-ggsave("output/vis_notifications_range.png",
-       dpi = 300,
-       width = 5,
-       height = 5)
+# dat_notifications_range = 
+#   "output/dat_notifications_polygons.gdb" %>% 
+#   vect %>% 
+#   as_tibble %>% 
+#   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+#   filter(ActivityUnit == "MBF") %>% 
+#   filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
+#   select(starts_with("Date")) %>% 
+#   mutate(Date_Check = DateEnd_Right - DateStart_Right) %>% 
+#   # mutate(Date_Check = ifelse(!is.na(DateContinuationStart), DateEnd_Right - DateStart_Right, DateContinuationEnd - DateStart_Right)) %>% 
+#   select(Date_Check) %>% 
+#   mutate(Date_Check_Num = Date_Check %>% as.numeric %>% `/` (86400))
+# 
+# vis_notifications_range = 
+#   dat_notifications_range %>% 
+#   filter(quantile(Date_Check_Num, 0.99) > Date_Check_Num) %>% 
+#   group_by(Date_Check_Num) %>% 
+#   summarize(Count = n()) %>% 
+#   ungroup %>% 
+#   ggplot() +
+#   geom_col(aes(x = Date_Check_Num,
+#                y = Count)) +
+#   labs(x = "Days in Notification Period",
+#        y = "Count of Notifications")
+# 
+# ggsave("output/vis_notifications_range.png",
+#        dpi = 300,
+#        width = 5,
+#        height = 5)
 
 dat_notifications = 
   "output/dat_notifications_polygons.gdb" %>% 
@@ -130,7 +130,7 @@ dat_notifications =
   # Crop.
   crop(dat_bounds) %>% 
   # Swap unique ID assignment to this step for convenience.
-  mutate(UID = row_number()) 
+  mutate(UID = row_number())
 
 # Try filtering on counts of vertices.
 
@@ -409,8 +409,8 @@ dat_join_evt =
 
 #  Get FIA data for reference.
 
-dat_fia_plot = 
-  "data/FIA/OR_PLOT.csv" %>% 
+dat_fia_plot =
+  "data/FIA/OR_PLOT.csv" %>%
   read_csv
 
 dat_fia_cond = 
@@ -418,6 +418,8 @@ dat_fia_cond =
   read_csv
 
 #  Get TreeMap metadata and data.
+
+#   Handle initial data.
 
 crs_treemap = 
   "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
@@ -430,21 +432,43 @@ dat_treemap =
   "data/TreeMap_2014/national_c2014_tree_list.tif" %>% 
   rast %>% 
   crop(dat_bounds_treemap, mask = TRUE) %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %>% 
+  as.numeric # This is important.
 
-# Extract FIA CN to notifications via TreeMap 2014
-#  First, check documentation to see what tl_id, CN, and Count (in TreeMap) actually mean.
+dat_treemap_lookup = 
+  "data/TreeMap_2014/TL_CN_Lookup.txt" %>% 
+  read_delim %>% 
+  rename(TL_ID = tl_id) %>% 
+  select(TL_ID, CN)
 
-# dat_join_treemap = 
+vec_treemap = dat_treemap %>% as.vector %>% na.omit %>% unique
 
-# Match FIA attributes to notifications via CN
+#  Get FIA data by way of TreeMap's look-up table. This avoids a confusing raster operation.
 
-# Species
-# Forest Type
-# Site Class
-# ???
+dat_treemap_join =
+  vec_treemap %>%
+  tibble(TL_ID = .) %>%
+  left_join(dat_treemap_lookup) %>% 
+  left_join(dat_fia_cond %>% select(CN = PLT_CN, INVYR, FORTYPCD, SITECLCD) %>% mutate(Join = 1))
 
-# dat_join_treemap_fia = 
+#  Reclassify Treemap into (1) binary forest types (Douglas Fir / Not) and (2) site class (1-7).
+
+dat_treemap_fortypcd = 
+  dat_treemap_join %>% 
+  mutate(FORTYPCD_BIN = ifelse(FORTYPCD %in% 201:203, 1, ifelse(!is.na(Join) | !is.na(FORTYPCD), 0, NA))) %>% 
+  select(tl_id = TL_ID, FORTYPCD_BIN) %>% 
+  as.matrix %>% 
+  classify(dat_treemap, .)
+
+dat_treemap_siteclcd = 
+  dat_treemap_join %>% 
+  select(tl_id = TL_ID, SITECLCD) %>% 
+  as.matrix %>% 
+  classify(dat_treemap, .)
+
+#  Extract both results onto notifications for later joins.
+
+?terra::extract
 
 # TCC
 #  Eats 62 GB for 2014-2023 as of 2025/10/29.
@@ -618,8 +642,16 @@ dat_cpi =
   read_csv %>% 
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,
-         Factor_2025 = max(CPIAUCSL) / CPIAUCSL) %>% 
-  select(Year, Month, Factor_2025)
+         Factor_CPI_2024 = max(CPIAUCSL) / CPIAUCSL) %>% 
+  select(Year, Month, Factor_CPI_2024)
+
+dat_ppi = 
+  "data/data_ppi.csv" %>% 
+  read_csv %>% 
+  mutate(Year = observation_date %>% year,
+         Month = observation_date %>% month,
+         Factor_PPI_2024 = max(PPIACO) / PPIACO) %>% 
+  select(Year, Month, Factor_PPI_2024)
 
 dat_price_stumpage = 
   "data/Prices_FastMarkets/data_stumpage.csv" %>% 
@@ -636,36 +668,38 @@ dat_price_stumpage =
                            TRUE ~ NA))) %>% 
   unnest(Month) %>% 
   left_join(dat_cpi) %>% 
-  mutate(Stumpage_Real = Stumpage_Nominal * Factor_2025) %>% 
-  select(Year, Month, Stumpage_Nominal, Stumpage_Real)
+  left_join(dat_ppi) %>% 
+  mutate(Stumpage_Real_CPI = Stumpage_Nominal * Factor_CPI_2024,
+         Stumpage_Real_PPI = Stumpage_Nominal * Factor_PPI_2024) %>% 
+  select(Year, Month, starts_with("Stumpage"))
 
-# dat_price_stumpage %>% 
-#   mutate(Date = as.Date(paste0(Year, "-", Month, "-", "01"))) %>% 
-#   pivot_longer(cols = starts_with("Stumpage")) %>% 
+dat_join_price = 
+  dat_notifications %>% 
+  as_tibble %>% 
+  left_join(dat_price_stumpage)
+
+# dat_price_stumpage %>%
+#   mutate(Date = as.Date(paste0(Year, "-", Month, "-", "01"))) %>%
+#   pivot_longer(cols = starts_with("Stumpage")) %>%
 #   mutate(name = name %>% str_remove("Stumpage_"),
 #          name = ifelse(name == "Real", "Real (2024/12)", name),
-#          name = name %>% factor %>% fct_rev) %>% 
+#          name = name %>% factor %>% fct_rev) %>%
 #   ggplot() +
 #   geom_line(aes(x = Date,
 #                 y = value,
 #                 color = name,
 #                 group = name),
 #             linewidth = 0.75) +
-#   labs(x = NULL, 
+#   labs(x = NULL,
 #        y = "Price (US$/MBF)",
 #        color = NULL) +
-#   scale_color_manual(values = c("#000000", "#D73F09")) +
+#   scale_color_manual(values = c("orange", "blue", "#000000")) +
 #   theme_minimal()
 # 
-# ggsave("output/vis_price_series_20251104.png",
+# ggsave("output/vis_price_series_20251112.png",
 #        dpi = 300,
 #        width = 6.5,
 #        height = 6.5 / phi)
-
-dat_join_price = 
-  dat_notifications %>% 
-  as_tibble %>% 
-  left_join(dat_price_stumpage)
 
 # Finale
 
