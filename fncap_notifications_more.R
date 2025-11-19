@@ -11,11 +11,13 @@
 #  (FIA Clone?)
 #  Elevation
 #  Slope
+#  (PRISM?)
 #  Pyromes
 #  Fires
+#  (EVT)
 #  TreeMap (Species, Site Class, . . .)
 #  TCC
-#  Distances (Mills, Cities, Roads)
+#  Distances (Mills, Cities, Roads, Rivers/Riparian Zones)
 #  Ownership
 #  Prices
 #  Join
@@ -468,7 +470,7 @@ dat_treemap_siteclcd =
 
 #  Extract both results onto notifications for later joins.
 
-?terra::extract
+# ?terra::extract
 
 # TCC
 #  Eats 62 GB for 2014-2023 as of 2025/10/29.
@@ -635,28 +637,65 @@ dat_join_mills =
 
 # Prices
 
-#  Get prices, map quarters to months, and account for inflation.
+#  Get index and prices, map quarters to months, and join..
 
-dat_cpi = 
-  "data/data_cpi.csv" %>% 
-  read_csv %>% 
-  mutate(Year = observation_date %>% year,
-         Month = observation_date %>% month,
-         Factor_CPI_2024 = max(CPIAUCSL) / CPIAUCSL) %>% 
-  select(Year, Month, Factor_CPI_2024)
+#  Indexes
+
+#   CPI
+
+# dat_cpi =
+#   "data/BLS/data_cpi.csv" %>%
+#   read_csv %>%
+#   mutate(Year = observation_date %>% year,
+#          Month = observation_date %>% month,
+#          Factor_CPI_2024 = max(CPIAUCSL) / CPIAUCSL) %>%
+#   select(Year, Month, Factor_CPI_2024)
+
+#   PPI (All)
 
 dat_ppi = 
-  "data/data_ppi.csv" %>% 
+  "data/BLS/data_ppi.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,
          Factor_PPI_2024 = max(PPIACO) / PPIACO) %>% 
   select(Year, Month, Factor_PPI_2024)
 
+#   PPI (Timber)
+
+dat_ppi_timber = 
+  "data/BLS/data_ppi_timber.csv" %>% 
+  read_csv %>% 
+  mutate(Year = observation_date %>% year,
+         Month = observation_date %>% month,
+         Factor_PPI_Timber_2024 = max(WPU085) / WPU085) %>% 
+  select(Year, Month, Factor_PPI_Timber_2024)
+
+#   PPI (Lumber)
+
+dat_ppi_lumber = 
+  "data/BLS/data_ppi_lumber.csv" %>% 
+  read_csv %>% 
+  mutate(Year = observation_date %>% year,
+         Month = observation_date %>% month,
+         Factor_PPI_Lumber_2024 = max(WPU081) / WPU081) %>% 
+  select(Year, Month, Factor_PPI_Lumber_2024)
+
+#   Join indexes.
+
+dat_price_index = 
+  dat_ppi %>% 
+  left_join(dat_ppi_timber) %>% 
+  left_join(dat_ppi_lumber)
+
+#   Prices
+
+#    Stumpage, LogLines/FastMarkets
+
 dat_price_stumpage = 
   "data/Prices_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
-  rename(Stumpage_Nominal = 2) %>% 
+  rename(Stumpage_FastMarkets_Nominal = 2) %>% 
   mutate(Year = Quarter %>% str_sub(1, 4) %>% as.numeric,
          Month = 
            Quarter %>% 
@@ -667,11 +706,108 @@ dat_price_stumpage =
                            .x == 4 ~ 10:12,
                            TRUE ~ NA))) %>% 
   unnest(Month) %>% 
-  left_join(dat_cpi) %>% 
-  left_join(dat_ppi) %>% 
-  mutate(Stumpage_Real_CPI = Stumpage_Nominal * Factor_CPI_2024,
-         Stumpage_Real_PPI = Stumpage_Nominal * Factor_PPI_2024) %>% 
+  left_join(dat_price_index) %>% 
+  mutate(Stumpage_FastMarkets_Real_PPI = Stumpage_FastMarkets_Nominal * Factor_PPI_2024,
+         Stumpage_FastMarkets_Real_PPI_Timber = Stumpage_FastMarkets_Nominal * Factor_PPI_Timber_2024,
+         Stumpage_FastMarkets_Real_PPI_Lumber = Stumpage_FastMarkets_Nominal * Factor_PPI_Lumber_2024) %>% 
   select(Year, Month, starts_with("Stumpage"))
+
+#   Stumpage, Howard and Jones (2016)
+
+dat_price_stumpage_usfs = 
+  "data/Prices_USFS/data_stumpage_usfs.csv" %>% 
+  read_csv %>% 
+  rename(Stumpage_Federal_Nominal = 2) %>% 
+  filter(Year %in% 1995:2025) %>% 
+  # mutate(Month = list(1:12)) %>% 
+  # unnest(Month) %>% 
+  left_join(dat_price_index %>% filter(Month == 12) %>% select(-Month)) %>% 
+  mutate(Stumpage_Federal_Real_PPI = Stumpage_Federal_Nominal * Factor_PPI_2024,
+         Stumpage_Federal_Real_PPI_Timber = Stumpage_Federal_Nominal * Factor_PPI_Timber_2024,
+         Stumpage_Federal_Real_PPI_Lumber = Stumpage_Federal_Nominal * Factor_PPI_Lumber_2024) %>% 
+  select(Year, starts_with("Stumpage"))
+
+#   Delivered Logs, FastMarkets
+
+dat_price_delivered = 
+  "data/Prices_FastMarkets/data_pull_filter.csv" %>% 
+  read_csv %>% 
+  select(1:3) %>% 
+  rename(Delivered_FastMarkets_Nominal = 3) %>% 
+  left_join(dat_price_index) %>% 
+  mutate(Delivered_FastMarkets_Real_PPI = Delivered_FastMarkets_Nominal * Factor_PPI_2024,
+         Delivered_FastMarkets_Real_PPI_Timber = Delivered_FastMarkets_Nominal * Factor_PPI_Timber_2024,
+         Delivered_FastMarkets_Real_PPI_Lumber = Delivered_FastMarkets_Nominal * Factor_PPI_Lumber_2024) %>% 
+  select(Year, Month, starts_with("Delivered"))
+
+#   Delivered Logs, ODF
+
+#    Note arbitrary choice of Region 2, Quarter 4, Grade 3S.
+
+dat_price_delivered_odf = 
+  "data/Prices_ODF/data_delivered_odf.csv" %>% 
+  read_csv %>% 
+  filter(Region == 2 & Quarter == 4) %>% 
+  filter(Year %in% 1995:2025) %>% 
+  select(Year, Delivered_ODF_Nominal = Price) %>% 
+  left_join(dat_price_index %>% filter(Month == 12) %>% select(-Month)) %>% 
+  mutate(Delivered_ODF_Real_PPI = Delivered_ODF_Nominal * Factor_PPI_2024,
+         Delivered_ODF_Real_PPI_Timber = Delivered_ODF_Nominal * Factor_PPI_Timber_2024,
+         Delivered_ODF_Real_PPI_Lumber = Delivered_ODF_Nominal * Factor_PPI_Lumber_2024) %>% 
+  select(Year, starts_with("Delivered"))
+
+#   Dimensional Lumber
+
+dat_price_dimensional = 
+  "data/Prices_FastMarkets/data_pull_filter.csv" %>% 
+  read_csv %>% 
+  select(1:2, 4) %>% 
+  rename(Dimensional_FastMarkets_Nominal = 3) %>% 
+  left_join(dat_price_index) %>% 
+  mutate(Dimensional_FastMarkets_Real_PPI = Dimensional_FastMarkets_Nominal * Factor_PPI_2024,
+         Dimensional_FastMarkets_Real_PPI_Timber = Dimensional_FastMarkets_Nominal * Factor_PPI_Timber_2024,
+         Dimensional_FastMarkets_Real_PPI_Lumber = Dimensional_FastMarkets_Nominal * Factor_PPI_Lumber_2024) %>% 
+  select(Year, Month, starts_with("Dimensional"))
+
+#  Visualize
+
+vis_prices =
+  dat_price_stumpage %>% 
+  filter(Month == 12) %>% 
+  select(-Month) %>% 
+  left_join(dat_price_stumpage_usfs) %>% 
+  left_join(dat_price_delivered %>% filter(Month == 12) %>% select(-Month)) %>% 
+  left_join(dat_price_delivered_odf) %>% 
+  left_join(dat_price_dimensional %>% filter(Month == 12) %>% select(-Month)) %>% 
+  pivot_longer(cols = -Year,
+               values_to = "Price") %>% 
+  separate_wider_delim(name, 
+                       delim = "_", 
+                       names = c("Product", "Source", "Index"),
+                       too_many = "merge") %>% 
+  mutate(Product = Product %>% factor %>% fct_relevel("Stumpage", "Delivered", "Dimensional")) %>% 
+  ggplot() +
+  geom_line(aes(x = Year,
+                y = Price,
+                group = Index,
+                color = Index)) +
+  labs(x = NULL, 
+       y = "Price (USD-MBF)",
+       color = "Price Index") +
+  scale_color_brewer(palette = "Dark2") +
+  facet_wrap(Product ~ Source,
+             nrow = 3,
+             ncol = 2) +
+  theme_minimal()
+  
+ggsave("output/vis_prices_20251119.png",
+       vis_prices,
+       dpi = 300,
+       width = 6.5,
+       height = 9)
+  
+
+#  Join
 
 dat_join_price = 
   dat_notifications %>% 
