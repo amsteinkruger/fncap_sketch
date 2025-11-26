@@ -11,14 +11,14 @@
 #  (FIA Clone?)
 #  Elevation
 #  Slope
+#  (Roughness?)
 #  (PRISM?)
 #  Pyromes
 #  Fires
-#  (EVT)
-#  TreeMap (Species, Site Class, . . .)
+#  TreeMap
 #  TCC
 #  Distances (Mills, Cities, Roads, Rivers/Riparian Zones)
-#  Ownership
+#  Protected Areas
 #  Prices
 #  Join
 
@@ -319,95 +319,7 @@ dat_join_mtbs =
          Fire_15_Union = MTBS_4,
          Fire_30_Union = MTBS_5)
 
-# Site Class (Latta)
-
-# Get FIA. Sketch interpolation.
-
-# Get temperature.
-# Get precipitation.
-# Get CMI?
-
-# EVT
-
-dat_evt_2016 = 
-  "data/LF2016_EVT_200_CONUS/Tif/LC16_EVT_200.tif" %>% 
-  rast %>% 
-  crop(dat_bounds %>% project("EPSG:5070"), mask = TRUE) %>% # Reprojecting to account for relative object sizes.
-  project("EPSG:2992") %>% 
-  crop(dat_notifications_mask, mask = TRUE) %>% 
-  droplevels
-
-dat_evt_2016_cats = 
-  dat_evt_2016 %>% 
-  cats %>% 
-  magrittr::extract2(1) %>% 
-  as_tibble
-
-# Repeat for 2024.
-
-dat_evt_2024 = 
-  "data/LF2024_EVT_250_CONUS/Tif/LC24_EVT_250.tif" %>% 
-  rast %>% 
-  crop(dat_bounds %>% project("EPSG:5070"), mask = TRUE) %>% # Reprojecting to account for relative object sizes.
-  project("EPSG:2992") %>% 
-  crop(dat_notifications_mask, mask = TRUE) %>% 
-  droplevels
-
-dat_evt_2024_cats = 
-  dat_evt_2024 %>% 
-  cats %>% 
-  magrittr::extract2(1) %>% 
-  as_tibble
-
-# Export categories.
-
-dat_evt_cats = 
-  bind_rows(dat_evt_2016_cats %>% select(Value, EVT_NAME, EVT_GP, EVT_GP_N, EVT_ORDER, EVT_CLASS), 
-            dat_evt_2024_cats %>% select(Value, EVT_NAME, EVT_GP, EVT_GP_N, EVT_ORDER, EVT_CLASS)) %>% 
-  distinct %>% 
-  write_csv("output/dat_evt_cats.csv")
-
-# Process categories.
-
-vec_evt_in_ceiling = 
-  dat_evt_cats %>% 
-  filter(EVT_ORDER == "Tree-dominated") %>% 
-  pull(Value)
-
-vec_evt_in_hand =
-  read_csv("output/dat_evt_cats_hand.csv") %>%
-  filter(Keep == 1) %>% # This is a choice.
-  pull(Value)
-
-# Pick an option.
-
-vec_evt_in = vec_evt_in_hand
-
-# Filter rasters.
-
-dat_evt_2016_binary <- dat_evt_2016 %in% vec_evt_in
-
-dat_evt_2016_binary %>% plot
-
-dat_evt_2024_binary <- dat_evt_2024 %in% vec_evt_in
-
-dat_evt_2024_binary %>% plot
-
-dat_evt_binary <- dat_evt_2016_binary * dat_evt_2024_binary
-
-# Extract means of binary results onto notifications.
-
-dat_join_evt =
-  dat_notifications %>%
-  extract(x = dat_evt_binary,
-          y = .,
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE) %>%
-  rename(EVT = EVT_NAME) %>%
-  as_tibble
-
-# TreeMap (alternative source of species classification)
+# TreeMap
 
 #  Get FIA data for reference.
 
@@ -435,17 +347,17 @@ dat_treemap =
   rast %>% 
   crop(dat_bounds_treemap, mask = TRUE) %>% 
   project("EPSG:2992") %>% 
-  as.numeric # This is important.
+  as.numeric # This matters, but it runs for ~20 minutes (2025/11/25).
+
+vec_treemap = dat_treemap %>% as.vector %>% na.omit %>% unique
+
+#  Get FIA data by way of TreeMap's look-up table. This avoids a confusing raster operation.
 
 dat_treemap_lookup = 
   "data/TreeMap_2014/TL_CN_Lookup.txt" %>% 
   read_delim %>% 
   rename(TL_ID = tl_id) %>% 
   select(TL_ID, CN)
-
-vec_treemap = dat_treemap %>% as.vector %>% na.omit %>% unique
-
-#  Get FIA data by way of TreeMap's look-up table. This avoids a confusing raster operation.
 
 dat_treemap_join =
   vec_treemap %>%
@@ -465,12 +377,38 @@ dat_treemap_fortypcd =
 dat_treemap_siteclcd = 
   dat_treemap_join %>% 
   select(tl_id = TL_ID, SITECLCD) %>% 
+  rename(from = 1, to = 2) %>% 
   as.matrix %>% 
   classify(dat_treemap, .)
 
 #  Extract both results onto notifications for later joins.
 
-# ?terra::extract
+dat_join_treemap_fortypcd = 
+  dat_notifications %>% 
+  extract(dat_treemap_fortypcd, ., fun = "mean", na.rm = TRUE) %>% 
+  select(UID = ID, ProportionDouglasFir = tl_id) %>% 
+  left_join(dat_notifications, .)
+
+dat_join_treemap_siteclcd_min = 
+  dat_notifications %>% 
+  extract(dat_treemap_siteclcd, ., fun = "min", na.rm = TRUE) %>% 
+  select(UID = ID, SiteClass_Min = tl_id)
+
+dat_join_treemap_siteclcd_max = 
+  dat_notifications %>% 
+  extract(dat_treemap_siteclcd, ., fun = "max", na.rm = TRUE) %>% 
+  select(UID = ID, SiteClass_Max = tl_id)
+
+dat_join_treemap_siteclcd_med = 
+  dat_notifications %>% 
+  extract(dat_treemap_siteclcd, ., fun = "median", na.rm = TRUE) %>% 
+  select(UID = ID, SiteClass_Med = tl_id)
+
+dat_join_treemap_siteclcd = 
+  dat_join_treemap_fortypcd %>% 
+  left_join(dat_join_treemap_siteclcd_min) %>% 
+  left_join(dat_join_treemap_siteclcd_max) %>% 
+  left_join(dat_join_treemap_siteclcd_med)
 
 # TCC
 #  Eats 62 GB for 2014-2023 as of 2025/10/29.
@@ -617,9 +555,13 @@ ggsave("output/vis_tcc_histogram_not_20251030.png",
        width = 7.5,
        height = 7.5)
 
-# Distances to Mills
+# Distances
 
-#  Note that (1) this is a placeholder and (2) this dataset features mills across the western US.
+#  Mills
+
+dat_notifications_less = 
+  dat_notifications %>% 
+  slice_sample(n = 10)
 
 dat_mills = 
   "data/Data_Mills_MS_20250916.xlsx" %>% 
@@ -629,27 +571,42 @@ dat_mills =
   project("EPSG:2992")
 
 dat_join_mills = 
-  dat_mills # %>% 
-# distance calculation goes here.
+  dat_notifications_less %>% 
+  centroids %>% 
+  distance(dat_mills) %>% 
+  as.data.frame %>% 
+  bind_cols(dat_notifications_less %>% as_tibble %>% select(UID), .) %>% 
+  pivot_longer(cols = starts_with("V")) %>% 
+  group_by(UID) %>% 
+  filter(value == min(value)) %>% 
+  ungroup %>% 
+  select(UID, Distance_Mill = value)
 
-# Distances to Cities
-# Distances to Major Roads
+# Cities
+# Roads
+# Riparian Zones
+
+# Protected Areas
+
+dat_join_pad = 
+  "data/PADUS4_1_State_OR_GDB_KMZ/PADUS4_1_StateOR.gdb" %>% 
+  vect %>% 
+  filter(GAP_Sts %in% c("1", "2")) %>% 
+  select(Shape_Area) %>% 
+  aggregate %>% 
+  project("EPSG:2992") %>% 
+  intersect(dat_notifications, .) %>% 
+  select(UID) %>% 
+  as_tibble %>% 
+  mutate(PAD = 1) %>% 
+  left_join(dat_notifications, .) %>% 
+  mutate(PAD = PAD %>% replace_na(0))
 
 # Prices
 
-#  Get index and prices, map quarters to months, and join..
+#  Get index and prices, map quarters to months, and join.
 
 #  Indexes
-
-#   CPI
-
-# dat_cpi =
-#   "data/BLS/data_cpi.csv" %>%
-#   read_csv %>%
-#   mutate(Year = observation_date %>% year,
-#          Month = observation_date %>% month,
-#          Factor_CPI_2024 = max(CPIAUCSL) / CPIAUCSL) %>%
-#   select(Year, Month, Factor_CPI_2024)
 
 #   PPI (All)
 
@@ -671,22 +628,9 @@ dat_ppi_timber =
          Factor_PPI_Timber_2024 = max(WPU085) / WPU085) %>% 
   select(Year, Month, Factor_PPI_Timber_2024)
 
-#   PPI (Lumber)
+#   Join.
 
-dat_ppi_lumber = 
-  "data/BLS/data_ppi_lumber.csv" %>% 
-  read_csv %>% 
-  mutate(Year = observation_date %>% year,
-         Month = observation_date %>% month,
-         Factor_PPI_Lumber_2024 = max(WPU081) / WPU081) %>% 
-  select(Year, Month, Factor_PPI_Lumber_2024)
-
-#   Join indexes.
-
-dat_price_index = 
-  dat_ppi %>% 
-  left_join(dat_ppi_timber) %>% 
-  left_join(dat_ppi_lumber)
+dat_price_index = dat_ppi %>% left_join(dat_ppi_timber)
 
 #   Prices
 
@@ -695,7 +639,7 @@ dat_price_index =
 dat_price_stumpage = 
   "data/Prices_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
-  rename(Stumpage_FastMarkets_Nominal = 2) %>% 
+  rename(Stumpage_Nominal = 2) %>% 
   mutate(Year = Quarter %>% str_sub(1, 4) %>% as.numeric,
          Month = 
            Quarter %>% 
@@ -707,25 +651,9 @@ dat_price_stumpage =
                            TRUE ~ NA))) %>% 
   unnest(Month) %>% 
   left_join(dat_price_index) %>% 
-  mutate(Stumpage_FastMarkets_Real_PPI = Stumpage_FastMarkets_Nominal * Factor_PPI_2024,
-         Stumpage_FastMarkets_Real_PPI_Timber = Stumpage_FastMarkets_Nominal * Factor_PPI_Timber_2024,
-         Stumpage_FastMarkets_Real_PPI_Lumber = Stumpage_FastMarkets_Nominal * Factor_PPI_Lumber_2024) %>% 
+  mutate(Stumpage_Real_PPI = Stumpage_Nominal * Factor_PPI_2024,
+         Stumpage_Real_PPI_Timber = Stumpage_Nominal * Factor_PPI_Timber_2024) %>% 
   select(Year, Month, starts_with("Stumpage"))
-
-#   Stumpage, Howard and Jones (2016)
-
-dat_price_stumpage_usfs = 
-  "data/Prices_USFS/data_stumpage_usfs.csv" %>% 
-  read_csv %>% 
-  rename(Stumpage_Federal_Nominal = 2) %>% 
-  filter(Year %in% 1995:2025) %>% 
-  # mutate(Month = list(1:12)) %>% 
-  # unnest(Month) %>% 
-  left_join(dat_price_index %>% filter(Month == 12) %>% select(-Month)) %>% 
-  mutate(Stumpage_Federal_Real_PPI = Stumpage_Federal_Nominal * Factor_PPI_2024,
-         Stumpage_Federal_Real_PPI_Timber = Stumpage_Federal_Nominal * Factor_PPI_Timber_2024,
-         Stumpage_Federal_Real_PPI_Lumber = Stumpage_Federal_Nominal * Factor_PPI_Lumber_2024) %>% 
-  select(Year, starts_with("Stumpage"))
 
 #   Delivered Logs, FastMarkets
 
@@ -733,109 +661,19 @@ dat_price_delivered =
   "data/Prices_FastMarkets/data_pull_filter.csv" %>% 
   read_csv %>% 
   select(1:3) %>% 
-  rename(Delivered_FastMarkets_Nominal = 3) %>% 
+  rename(Delivered_Nominal = 3) %>% 
   left_join(dat_price_index) %>% 
-  mutate(Delivered_FastMarkets_Real_PPI = Delivered_FastMarkets_Nominal * Factor_PPI_2024,
-         Delivered_FastMarkets_Real_PPI_Timber = Delivered_FastMarkets_Nominal * Factor_PPI_Timber_2024,
-         Delivered_FastMarkets_Real_PPI_Lumber = Delivered_FastMarkets_Nominal * Factor_PPI_Lumber_2024) %>% 
+  mutate(Delivered_Real_PPI = Delivered_Nominal * Factor_PPI_2024,
+         Delivered_Real_PPI_Timber = Delivered_Nominal * Factor_PPI_Timber_2024) %>% 
   select(Year, Month, starts_with("Delivered"))
-
-#   Delivered Logs, ODF
-
-#    Note arbitrary choice of Region 2, Quarter 4, Grade 3S.
-
-dat_price_delivered_odf = 
-  "data/Prices_ODF/data_delivered_odf.csv" %>% 
-  read_csv %>% 
-  filter(Region == 2 & Quarter == 4) %>% 
-  filter(Year %in% 1995:2025) %>% 
-  select(Year, Delivered_ODF_Nominal = Price) %>% 
-  left_join(dat_price_index %>% filter(Month == 12) %>% select(-Month)) %>% 
-  mutate(Delivered_ODF_Real_PPI = Delivered_ODF_Nominal * Factor_PPI_2024,
-         Delivered_ODF_Real_PPI_Timber = Delivered_ODF_Nominal * Factor_PPI_Timber_2024,
-         Delivered_ODF_Real_PPI_Lumber = Delivered_ODF_Nominal * Factor_PPI_Lumber_2024) %>% 
-  select(Year, starts_with("Delivered"))
-
-#   Dimensional Lumber
-
-dat_price_dimensional = 
-  "data/Prices_FastMarkets/data_pull_filter.csv" %>% 
-  read_csv %>% 
-  select(1:2, 4) %>% 
-  rename(Dimensional_FastMarkets_Nominal = 3) %>% 
-  left_join(dat_price_index) %>% 
-  mutate(Dimensional_FastMarkets_Real_PPI = Dimensional_FastMarkets_Nominal * Factor_PPI_2024,
-         Dimensional_FastMarkets_Real_PPI_Timber = Dimensional_FastMarkets_Nominal * Factor_PPI_Timber_2024,
-         Dimensional_FastMarkets_Real_PPI_Lumber = Dimensional_FastMarkets_Nominal * Factor_PPI_Lumber_2024) %>% 
-  select(Year, Month, starts_with("Dimensional"))
-
-#  Visualize
-
-vis_prices =
-  dat_price_stumpage %>% 
-  filter(Month == 12) %>% 
-  select(-Month) %>% 
-  left_join(dat_price_stumpage_usfs) %>% 
-  left_join(dat_price_delivered %>% filter(Month == 12) %>% select(-Month)) %>% 
-  left_join(dat_price_delivered_odf) %>% 
-  left_join(dat_price_dimensional %>% filter(Month == 12) %>% select(-Month)) %>% 
-  pivot_longer(cols = -Year,
-               values_to = "Price") %>% 
-  separate_wider_delim(name, 
-                       delim = "_", 
-                       names = c("Product", "Source", "Index"),
-                       too_many = "merge") %>% 
-  mutate(Product = Product %>% factor %>% fct_relevel("Stumpage", "Delivered", "Dimensional")) %>% 
-  ggplot() +
-  geom_line(aes(x = Year,
-                y = Price,
-                group = Index,
-                color = Index)) +
-  labs(x = NULL, 
-       y = "Price (USD-MBF)",
-       color = "Price Index") +
-  scale_color_brewer(palette = "Dark2") +
-  facet_wrap(Product ~ Source,
-             nrow = 3,
-             ncol = 2) +
-  theme_minimal()
-  
-ggsave("output/vis_prices_20251119.png",
-       vis_prices,
-       dpi = 300,
-       width = 6.5,
-       height = 9)
-  
 
 #  Join
 
 dat_join_price = 
   dat_notifications %>% 
   as_tibble %>% 
-  left_join(dat_price_stumpage)
-
-# dat_price_stumpage %>%
-#   mutate(Date = as.Date(paste0(Year, "-", Month, "-", "01"))) %>%
-#   pivot_longer(cols = starts_with("Stumpage")) %>%
-#   mutate(name = name %>% str_remove("Stumpage_"),
-#          name = ifelse(name == "Real", "Real (2024/12)", name),
-#          name = name %>% factor %>% fct_rev) %>%
-#   ggplot() +
-#   geom_line(aes(x = Date,
-#                 y = value,
-#                 color = name,
-#                 group = name),
-#             linewidth = 0.75) +
-#   labs(x = NULL,
-#        y = "Price (US$/MBF)",
-#        color = NULL) +
-#   scale_color_manual(values = c("orange", "blue", "#000000")) +
-#   theme_minimal()
-# 
-# ggsave("output/vis_price_series_20251112.png",
-#        dpi = 300,
-#        width = 6.5,
-#        height = 6.5 / phi)
+  left_join(dat_price_stumpage) %>% 
+  left_join(dat_price_delivered)
 
 # Finale
 
@@ -844,8 +682,13 @@ dat_notifications_out =
   left_join(dat_join_pyrome, by = "UID") %>% 
   left_join(dat_join_elevation %>% select(UID, Elevation = OR_DEM_10M.gdb), by = "UID") %>% # Kick this up to the elevation block.
   left_join(dat_join_slope %>% select(UID, Slope = slope), by = "UID") %>% # Ditto.
+  # PRISM
   left_join(dat_join_mtbs, by = "UID") %>% 
   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
+  left_join(dat_join_treemap) %>% 
+  # TCC
+  left_join(dat_join_distances) %>% 
+  left_join(dat_join_pad) %>% 
   left_join(dat_join_prices, by = "UID")
 
 # Check reason for additional observations from start to finish.
