@@ -11,14 +11,17 @@
 #  (FIA Clone?)
 #  Elevation
 #  Slope
-#  (Roughness?)
+#  Roughness
 #  (PRISM?)
+#  (VPD?)
 #  Pyromes
 #  Fires
 #  TreeMap
 #  TCC
-#  Distances (Mills, Cities, Roads, Rivers/Riparian Zones)
+#  (Landsat?)
+#  Distances (Mills, Cities, Roads)
 #  Protected Areas
+#  (Slopes, Riparian Zones)
 #  Prices
 #  Join
 
@@ -69,36 +72,6 @@ dat_bounds =
 
 # Notifications
 
-# dat_notifications_range = 
-#   "output/dat_notifications_polygons.gdb" %>% 
-#   vect %>% 
-#   as_tibble %>% 
-#   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-#   filter(ActivityUnit == "MBF") %>% 
-#   filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-#   select(starts_with("Date")) %>% 
-#   mutate(Date_Check = DateEnd_Right - DateStart_Right) %>% 
-#   # mutate(Date_Check = ifelse(!is.na(DateContinuationStart), DateEnd_Right - DateStart_Right, DateContinuationEnd - DateStart_Right)) %>% 
-#   select(Date_Check) %>% 
-#   mutate(Date_Check_Num = Date_Check %>% as.numeric %>% `/` (86400))
-# 
-# vis_notifications_range = 
-#   dat_notifications_range %>% 
-#   filter(quantile(Date_Check_Num, 0.99) > Date_Check_Num) %>% 
-#   group_by(Date_Check_Num) %>% 
-#   summarize(Count = n()) %>% 
-#   ungroup %>% 
-#   ggplot() +
-#   geom_col(aes(x = Date_Check_Num,
-#                y = Count)) +
-#   labs(x = "Days in Notification Period",
-#        y = "Count of Notifications")
-# 
-# ggsave("output/vis_notifications_range.png",
-#        dpi = 300,
-#        width = 5,
-#        height = 5)
-
 dat_notifications = 
   "output/dat_notifications_polygons.gdb" %>% 
   vect %>% 
@@ -134,48 +107,19 @@ dat_notifications =
   # Swap unique ID assignment to this step for convenience.
   mutate(UID = row_number())
 
-# Try filtering on counts of vertices.
-
-# dat_vertices = 
-#   dat_notifications %>% 
-#   geom %>% 
-#   as_tibble %>% 
-#   group_by(geom) %>% 
-#   summarize(count = n()) %>% 
-#   arrange(count) %>% 
-#   mutate(rank = percent_rank(count)) %>% 
-#   filter(rank < 0.5)
-
-# Use the subset of spatial objects with fewer vertices for a filtering join on notifications.
-
-# dat_notifications =
-#   dat_notifications %>%
-#   semi_join(dat_vertices, by = c("UID" = "geom"))
-
 dat_notifications_mask = 
   dat_notifications %>% 
   summarize(ID = "Combined")
 
-# Elevation (Data)
+# Elevation
 
-# Remember to swap in alternative OR DEM.
-
-dat_elevation = "data/OR_DEM_10M.gdb.zip" %>% rast
-
-# Slope (Data/Processing)
-
-if (file.exists("output/dat_slope.tif")) {
-  
-  dat_slope = "output/dat_slope.tif" %>% rast
-  
-} else {
-  
-  dat_slope = dat_elevation %>% terrain(v = "slope")
-  writeRaster(dat_slope, "output/dat_slope.tif", overwrite = TRUE)
-  
-}
-
-# Elevation (Processing)
+dat_elevation = 
+  "data/Elevation_USGS.tif" %>% 
+  rast %>% 
+  crop(dat_bounds %>% project("EPSG:4269"),
+       mask = TRUE) %>% 
+  mutate(Elevation_USGS = Elevation_USGS * 3.2808399) %>% 
+  project("EPSG:2992")
 
 dat_join_elevation =
   dat_notifications %>%
@@ -187,7 +131,9 @@ dat_join_elevation =
   rename(Elevation = 2) %>%
   as_tibble
 
-# Slope (Processing)
+# Slope
+  
+dat_slope = dat_elevation %>% terrain(v = "slope")
 
 dat_join_slope =
   dat_notifications %>%
@@ -200,7 +146,20 @@ dat_join_slope =
   rename(Slope = 2) %>%
   as_tibble
 
-#  Note warning about units and projection in terra documentation.
+# Roughness
+
+dat_roughness = dat_elevation %>% terrain(v = "roughness")
+
+dat_join_roughness = 
+  dat_notifications %>% 
+  extract(x = dat_slope,
+          y = .,
+          fun = mean,
+          ID = FALSE,
+          bind = TRUE,
+          na.rm = TRUE) %>%
+  rename(Roughness = 2) %>%
+  as_tibble
 
 # Pyromes
 
@@ -229,13 +188,6 @@ dat_mtbs =
   vect %>% 
   filter(substr(Event_ID, 1, 2) == "OR") %>% 
   project("EPSG:2992")
-
-# ggplot() +
-#   geom_spatvector(data = dat_mtbs, fill = "red", color = NA, alpha = 0.50) + 
-#   geom_spatvector(data = dat_notifications, fill = "blue", color = NA, alpha = 0.50) +
-#   theme_void()
-# 
-# ggsave("figures/vis_mtbs.png", dpi = 300, height = 8.5, width = 11)
 
 # 1. No Buffer
 
@@ -559,10 +511,6 @@ ggsave("output/vis_tcc_histogram_not_20251030.png",
 
 #  Mills
 
-dat_notifications_less = 
-  dat_notifications %>% 
-  slice_sample(n = 10)
-
 dat_mills = 
   "data/Data_Mills_MS_20250916.xlsx" %>% 
   read_xlsx %>% 
@@ -571,20 +519,69 @@ dat_mills =
   project("EPSG:2992")
 
 dat_join_mills = 
-  dat_notifications_less %>% 
+  dat_notifications %>% 
   centroids %>% 
   distance(dat_mills) %>% 
   as.data.frame %>% 
-  bind_cols(dat_notifications_less %>% as_tibble %>% select(UID), .) %>% 
+  bind_cols(dat_notifications %>% as_tibble %>% select(UID), .) %>% 
   pivot_longer(cols = starts_with("V")) %>% 
   group_by(UID) %>% 
   filter(value == min(value)) %>% 
   ungroup %>% 
+  distinct(UID, value) %>% 
+  mutate(value = value / 5280) %>% 
   select(UID, Distance_Mill = value)
 
-# Cities
-# Roads
-# Riparian Zones
+#  Roads
+
+dat_roads = 
+  "data/NAR.gdb" %>% 
+  vect %>% 
+  crop(dat_bounds %>% project("EPSG:4326")) %>% 
+  project("EPSG:2992")
+
+dat_join_roads = 
+  dat_notifications %>% 
+  centroids %>% 
+  distance(dat_roads) %>% 
+  as.data.frame %>% 
+  bind_cols(dat_notifications %>% as_tibble %>% select(UID), .) %>% 
+  pivot_longer(cols = starts_with("V")) %>% 
+  group_by(UID) %>% 
+  filter(value == min(value)) %>% 
+  ungroup %>% 
+  distinct(UID, value) %>% 
+  mutate(value = value / 5280) %>% 
+  select(UID, Distance_Road = value)
+
+#  Cities
+
+dat_cities = 
+  "data/TIGER.gdb" %>% 
+  vect %>% 
+  crop(dat_bounds %>% project("EPSG:4269")) %>% 
+  project("EPSG:2992")
+
+dat_join_cities = 
+  dat_notifications %>% 
+  centroids %>% 
+  distance(dat_cities) %>% 
+  as.data.frame %>% 
+  bind_cols(dat_notifications %>% as_tibble %>% select(UID), .) %>% 
+  pivot_longer(cols = starts_with("V")) %>% 
+  group_by(UID) %>% 
+  filter(value == min(value)) %>% 
+  ungroup %>% 
+  distinct(UID, value) %>% # For multiple occurrences of a minimum value. 
+  mutate(value = value / 5280) %>% 
+  select(UID, Distance_Place = value)
+
+#  Combined
+
+dat_join_distance = 
+  dat_join_roads %>% 
+  left_join(dat_join_mills) %>% 
+  left_join(dat_join_cities)
 
 # Protected Areas
 
@@ -603,8 +600,6 @@ dat_join_pad =
   mutate(PAD = PAD %>% replace_na(0))
 
 # Prices
-
-#  Get index and prices, map quarters to months, and join.
 
 #  Indexes
 
@@ -683,6 +678,7 @@ dat_notifications_out =
   left_join(dat_join_elevation %>% select(UID, Elevation = OR_DEM_10M.gdb), by = "UID") %>% # Kick this up to the elevation block.
   left_join(dat_join_slope %>% select(UID, Slope = slope), by = "UID") %>% # Ditto.
   # PRISM
+  # VPD
   left_join(dat_join_mtbs, by = "UID") %>% 
   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
   left_join(dat_join_treemap) %>% 
