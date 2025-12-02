@@ -1,0 +1,110 @@
+# Add other geodata to processed notification data.
+
+# Note choice to drop spatial information from each "join" SpatVector after operations.
+
+# (!!!) Note that some "join" SpatVectors have incorrect names from numeric indexing in rename().
+
+# TOC:
+#  Packages
+#  Bounds
+#  Notifications
+#  (FIA Clone?)
+#  Elevation
+#  Slope
+#  (PRISM?)
+#  Pyromes
+#  Fires
+#  (EVT)
+#  TreeMap (Species, Site Class, . . .)
+#  TCC
+#  Distances (Mills, Cities, Roads, Rivers/Riparian Zones)
+#  Ownership
+#  Prices
+#  Join
+
+# time_start = Sys.time()
+
+# Packages
+
+library(tidyverse)
+library(terra)
+library(tidyterra)
+library(readxl)
+
+# Ratio
+
+phi = (1 + 5 ^ (1 / 2)) / 2
+
+# Bounds
+
+#  OR
+
+dat_bounds_or = 
+  "data/cb_2023_us_state_500k" %>% 
+  vect %>% 
+  filter(STUSPS == "OR") %>% 
+  project("EPSG:2992")
+
+#  Pyromes
+
+dat_bounds_pyromes = 
+  "data/USFS Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
+  vect %>% 
+  rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
+  filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
+  select(Pyrome = WHICH) %>% 
+  summarize(Pyrome = "All Pyromes") %>% # This is not great.
+  fillHoles %>% 
+  project("EPSG:2992")
+
+#  Intersection
+
+dat_bounds = 
+  intersect(dat_bounds_or, dat_bounds_pyromes) %>% 
+  # Handle island polygons. These are not real islands.
+  disagg %>% 
+  cbind(., expanse(., unit = "ha")) %>% 
+  filter(y == max(y)) %>% 
+  select(-y)
+
+# Notifications
+
+dat_notifications = 
+  "output/dat_notifications_polygons.gdb" %>% 
+  vect %>% 
+  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  filter(ActivityUnit == "MBF") %>% 
+  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
+  mutate(Year = year(DateStart_Left),
+         Month = month(DateStart_Left),
+         YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
+         MBF = ActivityQuantity %>% as.numeric) %>%
+  arrange(desc(Year), desc(Month), LandOwnerType, LandOwnerName_Right, desc(MBF), desc(Acres)) %>% 
+  select(Landowner = LandOwnerName_Right,
+         Year, 
+         Month, 
+         YearMonth, 
+         MBF, 
+         Acres) %>% 
+  project("EPSG:2992") %>% 
+  # Check whether polygons are valid.
+  cbind(., is.valid(.)) %>% 
+  rename(Valid_0 = y) %>% 
+  # Try fixing any invalid polygons.
+  makeValid %>% 
+  # Check again.
+  cbind(., is.valid(.)) %>% 
+  rename(Valid_1 = y) %>%
+  # Drop columns. This would be a nice spot to return counts of valid, invalid, and fixed polygons as a side effect.
+  select(-starts_with("Valid")) %>% 
+  # Subset for testing.
+  slice_sample(n = 1000) %>%
+  # Crop.
+  crop(dat_bounds) %>% 
+  # Swap unique ID assignment to this step for convenience.
+  mutate(UID = row_number())
+
+dat_notifications_mask = 
+  dat_notifications %>% 
+  summarize(ID = "Combined")
+
