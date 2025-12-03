@@ -70,7 +70,7 @@ dat_bounds =
 # Notifications
 
 dat_notifications = 
-  "output/dat_notifications_polygons.gdb" %>% 
+  "data/dat_notifications_polygons.gdb" %>% # Note that the folder is wrong.
   vect %>% 
   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   filter(ActivityUnit == "MBF") %>% 
@@ -98,7 +98,7 @@ dat_notifications =
   # Drop columns. This would be a nice spot to return counts of valid, invalid, and fixed polygons as a side effect.
   select(-starts_with("Valid")) %>% 
   # Subset for testing.
-  slice_sample(n = 1000) %>%
+  # slice_sample(n = 1000) %>%
   # Crop.
   crop(dat_bounds) %>% 
   # Swap unique ID assignment to this step for convenience.
@@ -108,3 +108,82 @@ dat_notifications_mask =
   dat_notifications %>% 
   summarize(ID = "Combined")
 
+# Visualize region.
+
+vis_quick_1 = 
+  ggplot() + 
+  geom_spatvector(data = dat_bounds_or, fill = NA) +
+  theme_void()
+
+ggsave("output/vis_quick_1.png",
+       vis_quick_1,
+       dpi = 300,
+       width = 8)
+
+vis_quick_2 = 
+  ggplot() + 
+  geom_spatvector(data = dat_bounds_or, fill = NA) +
+  geom_spatvector(data = dat_bounds, color = NA, fill = "#4A773C") +
+  theme_void()
+
+ggsave("output/vis_quick_2.png",
+       vis_quick_2,
+       dpi = 300,
+       width = 8)
+
+dat_notifications_less = dat_notifications %>% filter(Year %in% 2015:2024) %>% mutate(Year = Year %>% factor)
+
+library(ggpubr)
+library(RColorBrewer)
+
+pal = colorRampPalette(brewer.pal('Greys', n = 9))(10)
+
+vis_quick_3 = 
+  ggplot() + 
+  geom_spatvector(data = dat_bounds_or, fill = NA) +
+  geom_spatvector(data = dat_bounds, color = NA, fill = "#4A773C") +
+  geom_spatvector(data = dat_notifications_less, color = NA, aes(fill = Year)) +
+  scale_fill_manual(values = pal, guide = guide_legend(reverse = TRUE)) +
+  theme_void() +
+  theme(legend.position = "right",
+        legend.direction = "vertical",
+        legend.key.width = unit(0.5, "lines"),
+        legend.key.height = unit(2, "lines"),
+        legend.title = element_blank())
+
+ggsave("output/vis_quick_3.png",
+       vis_quick_3,
+       dpi = 300,
+       width = 9)
+
+# Wildfire!
+
+dat_mtbs = 
+  "data/mtbs_perimeter_data" %>% 
+  vect %>% 
+  filter(substr(Event_ID, 1, 2) == "OR") %>% 
+  mutate(Year = year(Ig_Date)) %>% 
+  filter(Year %in% 2015:2024) %>% 
+  mutate(Year = Year %>% factor) %>% 
+  project("EPSG:2992") %>% 
+  crop(dat_bounds)
+
+pal = colorRampPalette(brewer.pal('Reds', n = 9))(10)
+
+vis_quick_4 = 
+  ggplot() + 
+  geom_spatvector(data = dat_bounds_or, fill = NA) +
+  geom_spatvector(data = dat_bounds, color = NA, fill = "#4A773C") +
+  geom_spatvector(data = dat_mtbs, color = NA, aes(fill = Year)) +
+  scale_fill_manual(values = pal, guide = guide_legend(reverse = TRUE)) +
+  theme_void() +
+  theme(legend.position = "right",
+        legend.direction = "vertical",
+        legend.key.width = unit(0.5, "lines"),
+        legend.key.height = unit(2, "lines"),
+        legend.title = element_blank())
+
+ggsave("output/vis_quick_4.png",
+       vis_quick_4,
+       dpi = 300,
+       width = 7.25)
