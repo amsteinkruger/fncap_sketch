@@ -366,20 +366,20 @@ dat_join_treemap_siteclcd =
 #  Eats 62 GB for 2014-2023 as of 2025/10/29.
 
 crs_tcc = 
-  "data/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
+  "data/TCC/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
   rast %>% 
   crs
 
 dat_bounds_tcc = dat_bounds %>% project(crs_tcc)
 
 dat_tcc = 
-  list.files("data") %>% 
+  list.files("data/TCC") %>% 
   tibble(file = .) %>% 
   filter(file %>% str_sub(1, 7) == "TCC_Sci") %>% 
   mutate(year = file %>% str_sub(-4, -1) %>% as.numeric) %>% 
-  # filter(year %in% 2020:2022) %>% # Band-Aid.
+  filter(year %in% 2015:2018) %>% # Band-Aid.
   rename(folder = file) %>% # Fiddling around.
-  mutate(file = paste0("data/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
+  mutate(file = paste0("data/TCC/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
   mutate(data_0 = 
            file %>% 
            map(rast) %>% 
@@ -669,6 +669,42 @@ dat_join_price =
   as_tibble %>% 
   left_join(dat_price_stumpage) %>% 
   left_join(dat_price_delivered)
+
+# Wrangle prices a little more.
+
+library(gt)
+
+dat_price_check = 
+  dat_price_stumpage %>% 
+  left_join(dat_price_delivered) %>% 
+  select(Year, 
+         Month, 
+         Stumpage = Stumpage_Real_PPI_Timber, 
+         Delivered = Delivered_Real_PPI_Timber) %>% 
+  filter(Month %in% c(1, 4, 7, 9)) %>% 
+  mutate(Delivered_1 = lag(Delivered, 1)) %>% 
+  mutate(Delivered_2 = lag(Delivered, 2)) %>% 
+  mutate(Delivered_3 = lag(Delivered, 3)) %>% 
+  mutate(Delivered_4 = lag(Delivered, 4)) %>% 
+  mutate(Delivered_5 = lag(Delivered, 5)) %>% 
+  mutate(Delivered_6 = lag(Delivered, 6)) %>% 
+  mutate(Delivered_7 = lag(Delivered, 7)) %>% 
+  mutate(Delivered_8 = lag(Delivered, 8)) %>% 
+  mutate(Cor_0 = cor(Stumpage, Delivered, use = "complete.obs")) %>% 
+  mutate(Cor_1 = cor(Stumpage, Delivered_1, use = "complete.obs")) %>% 
+  mutate(Cor_2 = cor(Stumpage, Delivered_2, use = "complete.obs")) %>% 
+  mutate(Cor_3 = cor(Stumpage, Delivered_3, use = "complete.obs")) %>% 
+  mutate(Cor_4 = cor(Stumpage, Delivered_4, use = "complete.obs")) %>% 
+  mutate(Cor_5 = cor(Stumpage, Delivered_5, use = "complete.obs")) %>% 
+  mutate(Cor_6 = cor(Stumpage, Delivered_6, use = "complete.obs")) %>% 
+  mutate(Cor_7 = cor(Stumpage, Delivered_7, use = "complete.obs")) %>% 
+  mutate(Cor_8 = cor(Stumpage, Delivered_8, use = "complete.obs")) %>% 
+  select(starts_with("Cor")) %>% 
+  distinct %>% 
+  pivot_longer(cols = everything()) %>% 
+  rename(Lag = name, PCC = value) %>% 
+  mutate(Lag = Lag %>% str_sub(-1, -1)) %>% 
+  gt()
 
 # Finale
 
