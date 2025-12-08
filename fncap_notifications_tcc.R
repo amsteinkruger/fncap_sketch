@@ -1,36 +1,47 @@
 # TCC
-#  Eats 62 GB for 2014-2023 as of 2025/10/29.
+#  Eats up to 76 GB in memory as of 2025/12/08.
 
 crs_tcc = 
   "data/TCC/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
   rast %>% 
   crs
 
-dat_bounds_tcc = dat_bounds %>% project(crs_tcc)
+dat_bounds_tcc = dat_bounds %>% project(crs_tcc) # Note busted dependency on notifications_more.
 
 dat_tcc = 
   list.files("data/TCC") %>% 
   tibble(file = .) %>% 
   filter(file %>% str_sub(1, 7) == "TCC_Sci") %>% 
   mutate(year = file %>% str_sub(-4, -1) %>% as.numeric) %>% 
-  filter(year %in% 2015:2018) %>% # Band-Aid.
+  arrange(year) %>% 
+  # filter(year %in% 2015:2016) %>% # Band-Aid for testing.
   rename(folder = file) %>% # Fiddling around.
   mutate(file = paste0("data/TCC/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
   mutate(data_0 = 
            file %>% 
            map(rast) %>% 
            map(as.numeric) %>% 
-           map(crop,
-               dat_bounds_tcc,
-               mask = TRUE) %>% 
-           map(project,
-               "EPSG:2992"),
-         data_1 = data_0 %>% lag) %>% 
-  filter(year > min(year)) %>% # Avoid a frustrating problem with NULL.
-  mutate(data_difference = map2(data_0,
-                                data_1,
-                                ~ .x - .y)) %>% # ifelse(is.null(.y), "This is a null!", ~ .x - .y)
+           map(crop, dat_bounds_tcc, mask = TRUE) %>% 
+           map(project, "EPSG:2992")) %>% 
   select(year, starts_with("data"))
+
+# A monument to shame.
+
+c(dat_tcc$data_0[[1]] %>% rename(TCC_2014 = category), 
+  dat_tcc$data_0[[2]] %>% rename(TCC_2015 = category), 
+  dat_tcc$data_0[[3]] %>% rename(TCC_2016 = category), 
+  dat_tcc$data_0[[4]] %>% rename(TCC_2017 = category), 
+  dat_tcc$data_0[[5]] %>% rename(TCC_2018 = category), 
+  dat_tcc$data_0[[6]] %>% rename(TCC_2019 = category), 
+  dat_tcc$data_0[[7]] %>% rename(TCC_2020 = category), 
+  dat_tcc$data_0[[8]] %>% rename(TCC_2021 = category), 
+  dat_tcc$data_0[[9]] %>% rename(TCC_2022 = category), 
+  dat_tcc$data_0[[10]] %>% rename(TCC_2023 = category)) %>% 
+  writeRaster("output/test.tif", filetype = "GTiff", overwrite = TRUE)
+
+dat_check = "output/test.tif" %>% rast
+
+# End current code.
 
 dat_join_tcc = 
   dat_notifications %>% 
