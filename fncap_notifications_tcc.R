@@ -1,12 +1,18 @@
 # TCC
 #  Eats up to 76 GB in memory as of 2025/12/08.
 
+# Get CRS.
+
 crs_tcc = 
   "data/TCC/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
   rast %>% 
   crs
 
+# Get bounds.
+
 dat_bounds_tcc = dat_bounds %>% project(crs_tcc) # Note busted dependency on notifications_more.
+
+# Get data.
 
 dat_tcc = 
   list.files("data/TCC") %>% 
@@ -25,7 +31,7 @@ dat_tcc =
            map(project, "EPSG:2992")) %>% 
   select(year, starts_with("data"))
 
-# A monument to shame.
+# Export data. This could be rewritten programatically.
 
 c(dat_tcc$data_0[[1]] %>% rename(TCC_2014 = category), 
   dat_tcc$data_0[[2]] %>% rename(TCC_2015 = category), 
@@ -39,9 +45,37 @@ c(dat_tcc$data_0[[1]] %>% rename(TCC_2014 = category),
   dat_tcc$data_0[[10]] %>% rename(TCC_2023 = category)) %>% 
   writeRaster("output/test.tif", filetype = "GTiff", overwrite = TRUE)
 
+# Check export.
+
 dat_check = "output/test.tif" %>% rast
 
+
+
 # End current code.
+
+dat_tcc =
+  list.files("data/TCC") %>%
+  tibble(file = .) %>%
+  filter(file %>% str_sub(1, 7) == "TCC_Sci") %>%
+  mutate(year = file %>% str_sub(-4, -1) %>% as.numeric) %>%
+  filter(year %in% 2015:2018) %>% # Band-Aid.
+  rename(folder = file) %>% # Fiddling around.
+  mutate(file = paste0("data/TCC/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
+  mutate(data_0 =
+           file %>%
+           map(rast) %>%
+           map(as.numeric) %>%
+           map(crop,
+               dat_bounds_tcc,
+               mask = TRUE) %>%
+           map(project,
+               "EPSG:2992"),
+         data_1 = data_0 %>% lag) %>%
+  filter(year > min(year)) %>% # Avoid a frustrating problem with NULL.
+  mutate(data_difference = map2(data_0,
+                                data_1,
+                                ~ .x - .y)) %>% # ifelse(is.null(.y), "This is a null!", ~ .x - .y)
+  select(year, starts_with("data"))
 
 dat_join_tcc = 
   dat_notifications %>% 
