@@ -78,15 +78,20 @@ dat_notifications =
   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   filter(ActivityUnit == "MBF") %>% 
   filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  mutate(Year = year(DateStart_Left),
-         Month = month(DateStart_Left),
-         YearMonth = paste0(Year, ifelse(str_length(Month) < 2, "0", ""), Month),
+  rename(LandOwner = LandOwnerName_Right) %>% 
+  select(-ends_with("Right")) %>% 
+  rename_with(~ sub("_Left$", "", .x), everything()) %>% 
+  mutate(Year_Start = year(DateStart),
+         Month_Start = month(DateStart),
+         YearMonth_Start = paste0(Year_Start, ifelse(str_length(Month_Start) < 2, "0", ""), Month_Start),
+         Year_End = ifelse(is.na(DateContinuationEnd), year(DateEnd), year(DateContinuationEnd)),
+         Month_End = ifelse(is.na(DateContinuationEnd), month(DateEnd), month(DateContinuationEnd)),
+         YearMonth_End = paste0(Year_End, ifelse(str_length(Month_End) < 2, "0", ""), Month_End),
          MBF = ActivityQuantity %>% as.numeric) %>%
-  arrange(desc(Year), desc(Month), LandOwnerType, LandOwnerName_Right, desc(MBF), desc(Acres)) %>% 
-  select(Landowner = LandOwnerName_Right,
-         Year, 
-         Month, 
-         YearMonth, 
+  arrange(desc(Year_Start), desc(Month_Start), LandOwnerType, LandOwner, desc(MBF), desc(Acres)) %>% 
+  select(LandOwner,
+         ends_with("_Start"), 
+         ends_with("_End"), 
          MBF, 
          Acres) %>% 
   project("EPSG:2992") %>% 
@@ -363,150 +368,86 @@ dat_join_treemap_siteclcd =
   left_join(dat_join_treemap_siteclcd_med)
 
 # TCC
-#  Eats 62 GB for 2014-2023 as of 2025/10/29.
+#  9 minutes as of 2025/12/10.
 
-crs_tcc = 
-  "data/TCC_Science_2014/science_tcc_conus_wgs84_v2023-5_20140101_20141231.tif" %>% # Replace w/ 2024.
-  rast %>% 
-  crs
+#  Set up notifications to support comparisons between pre- and post-years.
 
-dat_bounds_tcc = dat_bounds %>% project(crs_tcc)
+dat_notifications_tcc = 
+  dat_notifications %>% 
+  filter(Year_End < 2023) %>% 
+  as_tibble %>% 
+  mutate(Year_Before = Year_Start - 1,
+         Year_After = Year_End + 1) %>% 
+  select(UID, Year_Before, Year_After) %>% 
+  pivot_longer(starts_with("Year"),
+               names_prefix = "Year_",
+               names_to = "Period",
+               values_to = "Year")
 
-dat_tcc = 
-  list.files("data") %>% 
-  tibble(file = .) %>% 
-  filter(file %>% str_sub(1, 7) == "TCC_Sci") %>% 
-  mutate(year = file %>% str_sub(-4, -1) %>% as.numeric) %>% 
-  # filter(year %in% 2020:2022) %>% # Band-Aid.
-  rename(folder = file) %>% # Fiddling around.
-  mutate(file = paste0("data/", folder, "/science_tcc_conus_wgs84_v2023-5_", year, "0101_", year, "1231.tif")) %>% # Fragile!
-  mutate(data_0 = 
-           file %>% 
-           map(rast) %>% 
-           map(as.numeric) %>% 
-           map(crop,
-               dat_bounds_tcc,
-               mask = TRUE) %>% 
-           map(project,
-               "EPSG:2992"),
-         data_1 = data_0 %>% lag) %>% 
-  filter(year > min(year)) %>% # Avoid a frustrating problem with NULL.
-  mutate(data_difference = map2(data_0,
-                                data_1,
-                                ~ .x - .y)) %>% # ifelse(is.null(.y), "This is a null!", ~ .x - .y)
-  select(year, starts_with("data"))
+#  Extract TCC to notifications, then subset results for comparisons of interest.
 
 dat_join_tcc = 
-  dat_notifications %>% 
-  pull(Year) %>% 
-  unique %>% 
-  sort %>% 
-  tibble(year = .) %>% 
-  mutate(notifications = 
-           year %>% 
-           map(~ filter(dat_notifications, Year == .x))) %>% 
-  inner_join(dat_tcc) %>% 
-  mutate(notifications_0 = 
-           map2(data_0,
-                notifications,
-                extract,
-                fun = mean,
-                ID = FALSE,
-                bind = TRUE) %>% 
-           map(rename,
-               TCC_0 = category) %>% 
-           map(as_tibble) %>% 
-           map(select, UID, TCC_0),
-         notifications_1 = 
-           map2(data_1,
-                notifications,
-                extract,
-                fun = mean,
-                ID = FALSE,
-                bind = TRUE) %>% 
-           map(rename,
-               TCC_1 = category) %>% 
-           map(as_tibble) %>% 
-           map(select, UID, TCC_1),
-         notifications_d = 
-           map2(data_difference,
-                notifications,
-                extract,
-                fun = mean,
-                ID = FALSE,
-                bind = TRUE) %>% 
-           map(rename,
-               TCC_D = category) %>% 
-           map(as_tibble) %>% 
-           map(select, UID, TCC_D)) %>% 
-  select(year, starts_with("notifications_")) %>% 
-  mutate(notifications = map2(notifications_0, notifications_1, full_join),
-         notifications = map2(notifications, notifications_d, full_join)) %>% 
-  select(year, notifications) %>% 
-  unnest(notifications)
-
-# Ad hoc check
-
-# Annual histograms of TCC change for each year for the full study area (inclusive of notifications)
-
-dat_tcc %>% 
-  # filter(year %in% 2015:2017) %>% 
-  mutate(data_difference_out = 
-           data_difference %>% 
-           map(as.vector) %>% 
-           map(as_tibble) %>% 
-           map(drop_na)) %>% 
-  select(year, data_difference_out) %>% 
-  unnest(data_difference_out) %>% 
-  rename(tcc = value) %>% 
-  group_by(year) %>% 
-  mutate(tcc_decile = tcc %>% ntile(100)) %>% 
+  "output/TCC.tif" %>% 
+  rast %>% 
+  extract(., 
+          dat_notifications, 
+          mean, 
+          na.rm = TRUE) %>% 
+  bind_cols((dat_notifications$UID %>% tibble(UID = .))) %>% 
+  select(-ID) %>% 
+  as_tibble %>% 
+  left_join((dat_notifications %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("TCC"),
+               names_prefix = "TCC_",
+               names_to = "Year",
+               values_to = "TCC") %>% 
+  group_by(UID) %>% 
+  nest(data = c(Year, TCC)) %>% 
   ungroup %>% 
-  filter(tcc_decile %in% 6:96) %>% 
-  mutate(bin = cut_interval(tcc, n = 20)) %>% # cut_width(tcc, width = 25.5, boundary = -255)
-  group_by(year, bin) %>% 
-  summarize(count = n()) %>% 
-  ggplot() +
-  geom_col(aes(x = count,
-               y = bin)) +
-  facet_wrap(~ year) +
-  labs(x = "Pixels", 
-       y = "Binned Interannual Change in TCC") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+  left_join(dat_notifications_tcc, .) %>% 
+  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
+  select(-Year) %>% 
+  unnest(data) %>% 
+  mutate(TCC_Change = TCC - lag(TCC)) %>% 
+  filter(Period == "After") %>% 
+  select(UID, TCC_Change)
 
-ggsave("output/vis_tcc_histogram_all_20251030.png",
-       dpi = 300,
-       width = 7.5,
-       height = 7.5)
+#  Check the distribution of pre-to-post-notification changes in TCC.
 
-# Annual histograms of TCC change for each year for each notification
+# library(ggpubr)
+# library(RColorBrewer)
+# 
+# pal_tcc_lower = brewer.pal('Reds', n = 8) %>% rev
+# pal_tcc_upper = brewer.pal('Greys', n = 7)
+# pal_tcc = c(pal_tcc_lower, pal_tcc_upper)
 
-dat_join_tcc %>% 
-  rename(tcc = TCC_D) %>% 
-  group_by(year) %>% 
-  mutate(tcc_decile = tcc %>% ntile(100)) %>% 
-  ungroup %>% 
-  filter(tcc_decile %in% 6:96) %>% 
-  mutate(bin = cut_interval(tcc, n = 20)) %>% # cut_width(tcc, width = 25.5, boundary = -255)
-  group_by(year, bin) %>% 
-  summarize(count = n()) %>% 
-  ggplot() +
-  geom_col(aes(x = count,
-               y = bin)) +
-  facet_wrap(~ year) +
-  labs(x = "Notifications", 
-       y = "Binned Interannual Change in TCC") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+# vis_tcc = 
+#   dat_join_tcc %>% 
+#   mutate(bin = cut_interval(TCC_Change, length = 10)) %>% 
+#   group_by(bin) %>% 
+#   summarize(count = n()) %>% 
+#   ungroup %>% 
+#   ggplot() +
+#   geom_col(aes(x = bin,
+#                y = count,
+#                fill = bin),
+#            color = "#000000") +
+#   labs(x = "Change in TCC (Pre- to Post-Notification)",
+#        y = "Notification Count") +
+#   scale_fill_manual(values = pal_tcc) +
+#   scale_y_continuous(expand = c(0, 0)) +
+#   theme_pubr() +
+#   theme(legend.position = "none",
+#         axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+#   
+# ggsave("output/vis_tcc_20251210.png",
+#        dpi = 300,
+#        width = 6.5)
 
-ggsave("output/vis_tcc_histogram_not_20251030.png",
-       dpi = 300,
-       width = 7.5,
-       height = 7.5)
+# Landsat
+  
 
+  
 # Distances
 
 #  Mills
@@ -670,6 +611,42 @@ dat_join_price =
   left_join(dat_price_stumpage) %>% 
   left_join(dat_price_delivered)
 
+# Wrangle prices a little more.
+
+library(gt)
+
+dat_price_check = 
+  dat_price_stumpage %>% 
+  left_join(dat_price_delivered) %>% 
+  select(Year, 
+         Month, 
+         Stumpage = Stumpage_Real_PPI_Timber, 
+         Delivered = Delivered_Real_PPI_Timber) %>% 
+  filter(Month %in% c(1, 4, 7, 9)) %>% 
+  mutate(Delivered_1 = lag(Delivered, 1)) %>% 
+  mutate(Delivered_2 = lag(Delivered, 2)) %>% 
+  mutate(Delivered_3 = lag(Delivered, 3)) %>% 
+  mutate(Delivered_4 = lag(Delivered, 4)) %>% 
+  mutate(Delivered_5 = lag(Delivered, 5)) %>% 
+  mutate(Delivered_6 = lag(Delivered, 6)) %>% 
+  mutate(Delivered_7 = lag(Delivered, 7)) %>% 
+  mutate(Delivered_8 = lag(Delivered, 8)) %>% 
+  mutate(Cor_0 = cor(Stumpage, Delivered, use = "complete.obs")) %>% 
+  mutate(Cor_1 = cor(Stumpage, Delivered_1, use = "complete.obs")) %>% 
+  mutate(Cor_2 = cor(Stumpage, Delivered_2, use = "complete.obs")) %>% 
+  mutate(Cor_3 = cor(Stumpage, Delivered_3, use = "complete.obs")) %>% 
+  mutate(Cor_4 = cor(Stumpage, Delivered_4, use = "complete.obs")) %>% 
+  mutate(Cor_5 = cor(Stumpage, Delivered_5, use = "complete.obs")) %>% 
+  mutate(Cor_6 = cor(Stumpage, Delivered_6, use = "complete.obs")) %>% 
+  mutate(Cor_7 = cor(Stumpage, Delivered_7, use = "complete.obs")) %>% 
+  mutate(Cor_8 = cor(Stumpage, Delivered_8, use = "complete.obs")) %>% 
+  select(starts_with("Cor")) %>% 
+  distinct %>% 
+  pivot_longer(cols = everything()) %>% 
+  rename(Lag = name, PCC = value) %>% 
+  mutate(Lag = Lag %>% str_sub(-1, -1)) %>% 
+  gt()
+
 # Finale
 
 dat_notifications_out = 
@@ -682,9 +659,11 @@ dat_notifications_out =
   left_join(dat_join_mtbs, by = "UID") %>% 
   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
   left_join(dat_join_treemap) %>% 
-  # TCC
+  left_join(dat_join_tcc) %>% 
+  # Landsat
   left_join(dat_join_distances) %>% 
   left_join(dat_join_pad) %>% 
+  # ODF Waterways/Slopes
   left_join(dat_join_prices, by = "UID")
 
 # Check reason for additional observations from start to finish.

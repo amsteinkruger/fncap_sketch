@@ -75,7 +75,7 @@ dat_bounds =
 # Notifications
 
 dat_notifications = 
-  "data/dat_notifications_polygons.gdb" %>% # Note that the folder is wrong.
+  "output/dat_notifications_polygons.gdb" %>% 
   vect %>% 
   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   filter(ActivityUnit == "MBF") %>% 
@@ -196,3 +196,17 @@ ggsave("output/vis_quick_4.png",
        vis_quick_4,
        dpi = 300,
        height = 7)
+
+# Statistics
+
+stat_n_notifications = dat_notifications %>% as_tibble %>% nrow
+
+stat_area_notifications = dat_notifications %>% as_tibble %>% pull(Acres) %>% mean
+
+stat_prod_notifications = dat_notifications %>% as_tibble %>% mutate(out = MBF / Acres) %>% pull(out) %>% mean
+
+stat_n_fires = dat_mtbs %>% as_tibble %>% nrow
+
+stat_area_fires = dat_mtbs %>% as_tibble %>% pull(BurnBndAc) %>% mean
+
+# stat_price = Kidding, go do this in _more.
