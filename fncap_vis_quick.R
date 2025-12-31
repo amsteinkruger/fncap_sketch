@@ -45,6 +45,11 @@ dat_bounds_or =
   filter(STUSPS == "OR") %>% 
   project("EPSG:2992")
 
+dat_bounds_box = dat_bounds_or %>% ext
+dat_bounds_box[2] = 1100000
+
+dat_bounds_or = dat_bounds_or %>% crop(dat_bounds_box)
+
 #  Pyromes
 
 dat_bounds_pyromes = 
@@ -129,9 +134,11 @@ vis_quick_2 =
 ggsave("output/vis_quick_2.png",
        vis_quick_2,
        dpi = 300,
-       width = 8)
+       height = 7)
 
 dat_notifications_less = dat_notifications %>% filter(Year %in% 2015:2024) %>% mutate(Year = Year %>% factor)
+
+dat_notifications_less_centroids = dat_notifications_less %>% centroids
 
 library(ggpubr)
 library(RColorBrewer)
@@ -142,8 +149,10 @@ vis_quick_3 =
   ggplot() + 
   geom_spatvector(data = dat_bounds_or, fill = NA) +
   geom_spatvector(data = dat_bounds, color = NA, fill = "#4A773C") +
-  geom_spatvector(data = dat_notifications_less, color = NA, aes(fill = Year)) +
-  scale_fill_manual(values = pal, guide = guide_legend(reverse = TRUE)) +
+  # geom_spatvector(data = dat_notifications_less, color = NA, aes(fill = Year)) +
+  geom_spatvector(data = dat_notifications_less_centroids, aes(color = Year), fill = NA, shape = 21, size = 0.75) +
+  # scale_fill_manual(values = pal, guide = guide_legend(reverse = TRUE)) +
+  scale_color_manual(values = pal, guide = guide_legend(reverse = TRUE)) +
   theme_void() +
   theme(legend.position = "right",
         legend.direction = "vertical",
@@ -154,7 +163,7 @@ vis_quick_3 =
 ggsave("output/vis_quick_3.png",
        vis_quick_3,
        dpi = 300,
-       width = 9)
+       height = 7)
 
 # Wildfire!
 
@@ -186,7 +195,7 @@ vis_quick_4 =
 ggsave("output/vis_quick_4.png",
        vis_quick_4,
        dpi = 300,
-       width = 7.25)
+       height = 7)
 
 # Statistics
 
