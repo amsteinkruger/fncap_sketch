@@ -1,5 +1,5 @@
 # TCC
-#  ## minutes and 76? GB in memory for 2014-2024 (2026/01/02).
+#  30 minutes and 105 GB in memory for 2014-2024 (2026/01/02).
 
 # Get CRS.
 
@@ -38,9 +38,9 @@ dat_tcc =
 # Export data. 
 
 dat_tcc_stack = 
-  dat_ndvi$data %>% 
+  dat_tcc$data %>% 
   reduce(c) %>% 
-  map(project, "EPSG:2992") %T>% 
+  project("EPSG:2992") %T>% 
   writeRaster("output/data_tcc.tif", filetype = "GTiff", overwrite = TRUE)
 
 # Check export.
