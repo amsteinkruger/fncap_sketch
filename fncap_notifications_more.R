@@ -18,7 +18,7 @@
 #  Fires
 #  TreeMap
 #  TCC
-#  (Landsat?)
+#  (NDVI)
 #  Distances (Mills, Cities, Roads)
 #  Protected Areas
 #  (Slopes, Riparian Zones)
@@ -30,6 +30,7 @@
 # Packages
 
 library(tidyverse)
+library(magrittr)
 library(terra)
 library(tidyterra)
 library(readxl)
@@ -387,7 +388,7 @@ dat_notifications_tcc =
 #  Extract TCC to notifications, then subset results for comparisons of interest.
 
 dat_join_tcc = 
-  "output/TCC.tif" %>% 
+  "output/data_tcc.tif" %>% 
   rast %>% 
   extract(., 
           dat_notifications, 
@@ -444,7 +445,7 @@ dat_join_tcc =
 #        dpi = 300,
 #        width = 6.5)
 
-# Landsat
+# NDVI
   
 
   
