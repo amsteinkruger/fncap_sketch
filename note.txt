@@ -2,8 +2,14 @@
 
 - finish annual stuff
 - housekeeping for annual stuff
-- add quarterly stuff
+- documentation for annual stuff
+- add quarterly stuff in another script
 - ML
+- add FIA clone
+- make a cool flowchart
+
+problem: coarseness around ignition dates and years in MTBS
+ - i.e. we might care a lot about ignition dates close to and during notification periods
 
 2025/11/4
 

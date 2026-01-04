@@ -10,7 +10,6 @@
 #  Packages
 #  Bounds
 #  Notifications
-#  (FIA Clone?)
 #  Elevation
 #  Slope
 #  Roughness
@@ -27,7 +26,7 @@
 #  Prices
 #  Join
 
-# time_start = Sys.time()
+time_start = Sys.time()
 
 # Packages
 
@@ -115,9 +114,10 @@ dat_notifications =
   # Swap unique ID assignment to this step for convenience.
   mutate(UID = row_number())
 
-dat_notifications_mask = 
-  dat_notifications %>% 
-  summarize(ID = "Combined")
+dat_notifications_less_1 = dat_notifications %>% select(UID)
+dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start)
+
+dat_notifications_mask = dat_notifications %>% summarize(ID = "Combined")
 
 # Elevation
 
@@ -126,11 +126,11 @@ dat_elevation =
   rast %>% 
   crop(dat_bounds %>% project("EPSG:4269"),
        mask = TRUE) %>% 
-  mutate(Elevation_USGS = Elevation_USGS * 3.2808399) %>% 
+  mutate(Elevation_USGS = Elevation_USGS * 3.2808399) %>% # Meters to feet for consistency with the CRS.
   project("EPSG:2992")
 
 dat_join_elevation =
-  dat_notifications %>%
+  dat_notifications_less_1 %>%
   extract(x = dat_elevation,
           y = .,
           fun = mean,
@@ -144,7 +144,7 @@ dat_join_elevation =
 dat_slope = dat_elevation %>% terrain(v = "slope")
 
 dat_join_slope =
-  dat_notifications %>%
+  dat_notifications_less_1 %>%
   extract(x = dat_slope,
           y = .,
           fun = mean,
@@ -159,7 +159,7 @@ dat_join_slope =
 dat_roughness = dat_elevation %>% terrain(v = "roughness")
 
 dat_join_roughness = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   extract(x = dat_slope,
           y = .,
           fun = mean,
@@ -180,104 +180,73 @@ dat_pyrome =
   project("EPSG:2992")
 
 dat_join_pyrome = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   intersect(dat_pyrome) %>% 
   as_tibble %>% 
-  select(UID, Pyrome)
-
-# Note that this does not account for notifications falling across pyromes.
+  group_by(UID) %>% 
+  filter(row_number() == 1) %>% # Keep only the first pyrome intersecting with a notification. This is arbitrary.
+  ungroup
 
 # MTBS
-
-# Consider reorganizing for (1) better memory management around buffers (2) better memory management around which MTBS perimeters are worth intersecting
 
 dat_mtbs = 
   "data/mtbs_perimeter_data" %>% 
   vect %>% 
   filter(substr(Event_ID, 1, 2) == "OR") %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %>% 
+  mutate(Year_MTBS = Ig_Date %>% year, 
+         .keep = "none") %>% 
+  filter(Year_MTBS %in% 1994:2024) %>% 
+  crop(dat_bounds)
 
 # 1. No Buffer
 
-dat_join_mtbs_1 = 
-  dat_notifications %>% 
+dat_join_mtbs_0 = 
+  dat_notifications_less_2 %>% 
+  intersect(dat_mtbs) %>% 
+  as_tibble %>% 
+  filter(Year_Start > Year_MTBS & Year_Start - 20 < Year_MTBS) %>% 
+  group_by(UID) %>% 
+  summarize(Fire_0 = n()) %>% 
+  ungroup
+
+# 2. 15km Buffer
+
+dat_join_mtbs_15 = 
+  dat_notifications_less_2 %>% 
+  buffer(width = 15 * 3280.84) %>% # Kilometers to feet.
+  intersect(dat_mtbs) %>% 
+  as_tibble %>% 
+  filter(Year_Start > Year_MTBS & Year_Start - 20 < Year_MTBS) %>% 
+  group_by(UID) %>% 
+  summarize(Fire_15 = n()) %>% 
+  ungroup
+
+# 3. 30km Buffer
+
+dat_join_mtbs_30 = 
+  dat_notifications_less_2 %>% 
+  buffer(width = 30 * 3280.84) %>% # Kilometers to feet.
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
   mutate(Year_MTBS = Ig_Date %>% year) %>% 
-  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
+  filter(Year_Start >= Year_MTBS & Year_Start - 20 < Year_MTBS) %>% 
   group_by(UID) %>% 
-  summarize(MTBS_1 = n()) %>% 
+  summarize(Fire_30 = n()) %>% 
   ungroup
 
-# 2. 15km Buffer, Difference
-#  Note switch back to subset of notifications.
-
-dat_join_mtbs_2 = 
-  dat_notifications %>% 
-  buffer(width = 15 * 3280.84) %>% # Oregon GIC Lambert is in feet, so convert kilometer buffer width into feet.
-  erase(dat_notifications) %>% 
-  intersect(dat_mtbs) %>% 
-  as_tibble %>% 
-  mutate(Year_MTBS = Ig_Date %>% year) %>% 
-  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
-  group_by(UID) %>% 
-  summarize(MTBS_2 = n()) %>% 
-  ungroup
-
-# 3. 30km Buffer, Difference
-
-dat_join_mtbs_3 = 
-  dat_notifications %>% 
-  buffer(width = 30 * 3280.84) %>% 
-  erase(dat_notifications %>% buffer(width = 15 * 3280.84)) %>% 
-  intersect(dat_mtbs) %>% 
-  as_tibble %>% 
-  mutate(Year_MTBS = Ig_Date %>% year) %>% 
-  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
-  group_by(UID) %>% 
-  summarize(MTBS_3 = n()) %>% 
-  ungroup
-
-# 4. 15km Buffer, Union
-
-dat_join_mtbs_4 = 
-  dat_notifications %>% 
-  buffer(width = 15 * 3280.84) %>% 
-  intersect(dat_mtbs) %>% 
-  as_tibble %>% 
-  mutate(Year_MTBS = Ig_Date %>% year) %>% 
-  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
-  group_by(UID) %>% 
-  summarize(MTBS_4 = n()) %>% 
-  ungroup
-
-# 5. 30km Buffer, Union
-
-dat_join_mtbs_5 = 
-  dat_notifications %>% 
-  buffer(width = 30 * 3280.84) %>% 
-  intersect(dat_mtbs) %>% 
-  as_tibble %>% 
-  mutate(Year_MTBS = Ig_Date %>% year) %>% 
-  filter(Year >= Year_MTBS & Year - 20 < Year_MTBS) %>% 
-  group_by(UID) %>% 
-  summarize(MTBS_5 = n()) %>% 
-  ungroup
-
-# 6. Combine
+# 4. Combine
 
 dat_join_mtbs = 
-  dat_join_mtbs_1 %>% 
-  full_join(dat_join_mtbs_2, by = "UID") %>% 
-  full_join(dat_join_mtbs_3, by = "UID") %>% 
-  full_join(dat_join_mtbs_4, by = "UID") %>% 
-  full_join(dat_join_mtbs_5, by = "UID") %>%
-  select(UID,
-         Fire_0 = MTBS_1,
-         Fire_15_Difference = MTBS_2,
-         Fire_30_Difference = MTBS_3,
-         Fire_15_Union = MTBS_4,
-         Fire_30_Union = MTBS_5)
+  dat_notifications_less_1 %>% 
+  left_join(dat_join_mtbs_0) %>% 
+  left_join(dat_join_mtbs_15) %>% 
+  left_join(dat_join_mtbs_30) %>% 
+  mutate(Fire_0 = Fire_0 %>% replace_na(0),
+         Fire_15 = Fire_15 %>% replace_na(0),
+         Fire_30 = Fire_30 %>% replace_na(0),
+         Fire_15_Doughnut = Fire_15 - Fire_0,
+         Fire_30_Doughnut = Fire_30 - Fire_15)
 
 # TreeMap
 
