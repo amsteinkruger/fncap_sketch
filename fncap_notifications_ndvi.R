@@ -1,6 +1,5 @@
 # NDVI
-
-# Get data.
+#  93 minutes and 63 GB in memory for 2014-2024 (2026/01/02).
 
 dat_ndvi = 
   list.files("data/NDVI") %>% 
@@ -21,19 +20,8 @@ dat_ndvi =
                   names(.x) <- as.character(.y)
                   .x
                 })) %>% 
-  select(year, quarter, data)
-
-# Export data. 
-
-#  14 minutes and 12 GB in memory for 2015-2016 (2026/01/02).
-#  93 minutes and 63 GB in memory for 2014-2024 (2026/01/02).
-
-dat_ndvi_stack = 
-  dat_ndvi$data %>% 
+  select(year, quarter, data) %>% 
+  magrittr::extract2("data") %>% # Equivalent to .$data.
   reduce(c) %>% 
   project("EPSG:2992") %T>% 
   writeRaster("output/data_ndvi.tif", filetype = "GTiff", overwrite = TRUE)
-
-# Check export. Delete this after checking once. 
-
-dat_check = "output/data_ndvi.tif" %>% rast

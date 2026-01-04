@@ -1,8 +1,14 @@
+2026/01/03
+
+- finish annual stuff
+- housekeeping for annual stuff
+- add quarterly stuff
+- ML
+
 2025/11/4
 
 - break /data/ into buckets (e.g. Notifications, TreeMap*, TCC)
 - * and get other TreeMap years for reference
-
 
 2025/08/18
 

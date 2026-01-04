@@ -1,5 +1,7 @@
 # Add other geodata to processed notification data.
 
+#  ## minutes as of . . .
+
 # Note choice to drop spatial information from each "join" SpatVector after operations.
 
 # (!!!) Note that some "join" SpatVectors have incorrect names from numeric indexing in rename().
@@ -18,7 +20,7 @@
 #  Fires
 #  TreeMap
 #  TCC
-#  (NDVI)
+#  NDVI
 #  Distances (Mills, Cities, Roads)
 #  Protected Areas
 #  (Slopes, Riparian Zones)
@@ -446,8 +448,103 @@ dat_join_tcc =
 #        width = 6.5)
 
 # NDVI
-  
 
+#  Altogether, ## minutes and ## GB as of 2026/01/03.
+
+dat_join_ndvi_read = "output/data_ndvi.tif" %>% rast
+
+#  Annual
+
+#  Set up notifications to support comparisons between pre- and post-years.
+
+dat_notifications_ndvi_annual =
+  dat_notifications %>%
+  filter(Year_End < 2024) %>%
+  as_tibble %>%
+  mutate(Year_Before = Year_Start - 1,
+         Year_After = Year_End + 1) %>%
+  select(UID, Year_Before, Year_After) %>%
+  pivot_longer(starts_with("Year"),
+               names_prefix = "Year_",
+               names_to = "Period",
+               values_to = "Year")
+
+#  Extract NDVI to notifications, then subset results for comparisons of interest.
+
+# 510 minutes for 2014-2024 as of 2026/01/03.
+
+# Remember to add a switch here to read output if output exists and otherwise annualize data.
+
+# dat_join_ndvi_annual = "output/data_ndvi_annual.tif" %>% rast
+
+dat_join_ndvi_annual = 
+  tibble(year = 2014:2024) %>% 
+  mutate(string = paste0("NDVI_", year)) %>% 
+  mutate(data = string %>% map( ~ { dat_join_ndvi_read %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
+  mutate(data = 
+           data %>% 
+           map2(.x = ., 
+                .y = string, 
+                ~ {
+                  names(.x) <- as.character(.y)
+                  .x
+                })) %>% # Restore names.
+  magrittr::extract2("data") %>% # Equivalent to .$data.
+  reduce(c) %>% 
+  extract(., 
+          dat_notifications, 
+          mean, 
+          na.rm = TRUE) %>% 
+  bind_cols((dat_notifications$UID %>% tibble(UID = .))) %>% 
+  select(-ID) %>% 
+  as_tibble %>% 
+  left_join((dat_notifications %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("NDVI"),
+               names_prefix = "NDVI_",
+               names_to = "Year",
+               values_to = "NDVI") %>% 
+  group_by(UID) %>% 
+  nest(data = c(Year, NDVI)) %>% 
+  ungroup %>% 
+  left_join(dat_notifications_ndvi_annual, .) %>% 
+  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
+  select(-Year) %>% 
+  unnest(data) %>% 
+  mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
+  filter(Period == "After") %>% 
+  select(UID, NDVI_Change)  
+
+# Two problems with quarters:
+#  (1) Storing absolute names of quarters (1-44) in names of rasters in a raster stack. This is not a big problem.
+#  (2) Accounting for seasonal change between quarters. This is a big problem. This requires the ML thing for change to be interpretable.
+#        Well, not ML, but something statistical, and in practice it will come with the ML stuff for harvest detection.
+#  (3) Accounting for during- quarters by expanding notifications to multiple rows (notification-quarters). This is a big but clean problem.
+
+#  Quarterly (Pre- and Post-)
+#   Set up notifications to support comparisons between pre- and post-quarters, excluding during- quarters.
+
+# dat_notifications_ndvi_quarterly_less = 
+#   dat_notifications %>%
+#   mutate(Quarter_Start = Month_Start %>% `/` (3) %>% ceiling,
+#          Quarter_End = Month_End %>% `/` (3) %>% ceiling,
+#          Quarter_Start_Running = Quarter_Start + (Year_Start - min(Year_Start)) * 4,
+#          Quarter_End_Running = Quarter_End + (Year_End - min(Year_End)) * 4) %>% 
+#   filter(Quarter_End_Running < 44) %>%
+#   as_tibble %>%
+#   mutate(Quarter_Before = Quarter_Start_Running - 1,
+#          Quarter_After = Quarter_End_Running + 1) %>%
+#   select(UID, Quarter_Before, Quarter_After) %>%
+#   pivot_longer(starts_with("Quarter"),
+#                names_prefix = "Quarter_",
+#                names_to = "Period",
+#                values_to = "Quarter")  
+
+# dat_join_ndvi_quarterly_less = 
+
+#  Quarterly (Pre-, During-, Post-)
+
+# dat_notifications_ndvi_quarterly_more
+# dat_join_ndvi_quarterly_more
   
 # Distances
 
