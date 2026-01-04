@@ -11,6 +11,10 @@
 problem: coarseness around ignition dates and years in MTBS
  - i.e. we might care a lot about ignition dates close to and during notification periods
 
+? filter notifications to 2015:2024 right off the bat?
+
+fixed treemap join!
+
 2025/11/4
 
 - break /data/ into buckets (e.g. Notifications, TreeMap*, TCC)

@@ -229,7 +229,6 @@ dat_join_mtbs_30 =
   buffer(width = 30 * 3280.84) %>% # Kilometers to feet.
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  mutate(Year_MTBS = Ig_Date %>% year) %>% 
   filter(Year_Start >= Year_MTBS & Year_Start - 20 < Year_MTBS) %>% 
   group_by(UID) %>% 
   summarize(Fire_30 = n()) %>% 
@@ -239,6 +238,7 @@ dat_join_mtbs_30 =
 
 dat_join_mtbs = 
   dat_notifications_less_1 %>% 
+  as_tibble %>% 
   left_join(dat_join_mtbs_0) %>% 
   left_join(dat_join_mtbs_15) %>% 
   left_join(dat_join_mtbs_30) %>% 
@@ -250,17 +250,17 @@ dat_join_mtbs =
 
 # TreeMap
 
-#  Get FIA data for reference.
-
-dat_fia_plot =
-  "data/FIA/OR_PLOT.csv" %>%
-  read_csv
+#  Get FIA data.
 
 dat_fia_cond = 
-  "data/FIA/OR_COND.csv" %>% 
-  read_csv
+  bind_rows("data/FIA/CA_COND.csv" %>% read_csv %>% select(CN = PLT_CN, INVYR, FORTYPCD, SITECLCD),
+            "data/FIA/OR_COND.csv" %>% read_csv %>% select(CN = PLT_CN, INVYR, FORTYPCD, SITECLCD),
+            "data/FIA/WA_COND.csv" %>% read_csv %>% select(CN = PLT_CN, INVYR, FORTYPCD, SITECLCD)) %>% 
+  distinct %>% 
+  drop_na %>% # For FORTYPCD and SITECLCD.
+  mutate(Join = 1)
 
-#  Get TreeMap metadata and data.
+#  Get TreeMap data.
 
 #   Handle initial data.
 
@@ -292,7 +292,7 @@ dat_treemap_join =
   vec_treemap %>%
   tibble(TL_ID = .) %>%
   left_join(dat_treemap_lookup) %>% 
-  left_join(dat_fia_cond %>% select(CN = PLT_CN, INVYR, FORTYPCD, SITECLCD) %>% mutate(Join = 1))
+  left_join(dat_fia_cond)
 
 #  Reclassify Treemap into (1) binary forest types (Douglas Fir / Not) and (2) site class (1-7).
 
@@ -313,27 +313,30 @@ dat_treemap_siteclcd =
 #  Extract both results onto notifications for later joins.
 
 dat_join_treemap_fortypcd = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   extract(dat_treemap_fortypcd, ., fun = "mean", na.rm = TRUE) %>% 
-  select(UID = ID, ProportionDouglasFir = tl_id) %>% 
-  left_join(dat_notifications, .)
+  select(ProportionDouglasFir = tl_id) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .)
 
 dat_join_treemap_siteclcd_min = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   extract(dat_treemap_siteclcd, ., fun = "min", na.rm = TRUE) %>% 
-  select(UID = ID, SiteClass_Min = tl_id)
+  select(SiteClass_Min = tl_id) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .)
 
 dat_join_treemap_siteclcd_max = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   extract(dat_treemap_siteclcd, ., fun = "max", na.rm = TRUE) %>% 
-  select(UID = ID, SiteClass_Max = tl_id)
+  select(SiteClass_Max = tl_id) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .)
 
 dat_join_treemap_siteclcd_med = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   extract(dat_treemap_siteclcd, ., fun = "median", na.rm = TRUE) %>% 
-  select(UID = ID, SiteClass_Med = tl_id)
+  select(SiteClass_Med = tl_id) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .)
 
-dat_join_treemap_siteclcd = 
+dat_join_treemap = 
   dat_join_treemap_fortypcd %>% 
   left_join(dat_join_treemap_siteclcd_min) %>% 
   left_join(dat_join_treemap_siteclcd_max) %>% 
@@ -460,6 +463,7 @@ dat_join_ndvi_annual =
                 })) %>% # Restore names.
   magrittr::extract2("data") %>% # Equivalent to .$data.
   reduce(c) %>% 
+  # switch goes here
   extract(., 
           dat_notifications, 
           mean, 
@@ -483,7 +487,7 @@ dat_join_ndvi_annual =
   filter(Period == "After") %>% 
   select(UID, NDVI_Change)  
 
-# Two problems with quarters:
+# Problems with quarters:
 #  (1) Storing absolute names of quarters (1-44) in names of rasters in a raster stack. This is not a big problem.
 #  (2) Accounting for seasonal change between quarters. This is a big problem. This requires the ML thing for change to be interpretable.
 #        Well, not ML, but something statistical, and in practice it will come with the ML stuff for harvest detection.
@@ -680,54 +684,55 @@ dat_join_price =
 
 # Wrangle prices a little more.
 
-library(gt)
-
-dat_price_check = 
-  dat_price_stumpage %>% 
-  left_join(dat_price_delivered) %>% 
-  select(Year, 
-         Month, 
-         Stumpage = Stumpage_Real_PPI_Timber, 
-         Delivered = Delivered_Real_PPI_Timber) %>% 
-  filter(Month %in% c(1, 4, 7, 9)) %>% 
-  mutate(Delivered_1 = lag(Delivered, 1)) %>% 
-  mutate(Delivered_2 = lag(Delivered, 2)) %>% 
-  mutate(Delivered_3 = lag(Delivered, 3)) %>% 
-  mutate(Delivered_4 = lag(Delivered, 4)) %>% 
-  mutate(Delivered_5 = lag(Delivered, 5)) %>% 
-  mutate(Delivered_6 = lag(Delivered, 6)) %>% 
-  mutate(Delivered_7 = lag(Delivered, 7)) %>% 
-  mutate(Delivered_8 = lag(Delivered, 8)) %>% 
-  mutate(Cor_0 = cor(Stumpage, Delivered, use = "complete.obs")) %>% 
-  mutate(Cor_1 = cor(Stumpage, Delivered_1, use = "complete.obs")) %>% 
-  mutate(Cor_2 = cor(Stumpage, Delivered_2, use = "complete.obs")) %>% 
-  mutate(Cor_3 = cor(Stumpage, Delivered_3, use = "complete.obs")) %>% 
-  mutate(Cor_4 = cor(Stumpage, Delivered_4, use = "complete.obs")) %>% 
-  mutate(Cor_5 = cor(Stumpage, Delivered_5, use = "complete.obs")) %>% 
-  mutate(Cor_6 = cor(Stumpage, Delivered_6, use = "complete.obs")) %>% 
-  mutate(Cor_7 = cor(Stumpage, Delivered_7, use = "complete.obs")) %>% 
-  mutate(Cor_8 = cor(Stumpage, Delivered_8, use = "complete.obs")) %>% 
-  select(starts_with("Cor")) %>% 
-  distinct %>% 
-  pivot_longer(cols = everything()) %>% 
-  rename(Lag = name, PCC = value) %>% 
-  mutate(Lag = Lag %>% str_sub(-1, -1)) %>% 
-  gt()
+# library(gt)
+# 
+# dat_price_check = 
+#   dat_price_stumpage %>% 
+#   left_join(dat_price_delivered) %>% 
+#   select(Year, 
+#          Month, 
+#          Stumpage = Stumpage_Real_PPI_Timber, 
+#          Delivered = Delivered_Real_PPI_Timber) %>% 
+#   filter(Month %in% c(1, 4, 7, 9)) %>% 
+#   mutate(Delivered_1 = lag(Delivered, 1)) %>% 
+#   mutate(Delivered_2 = lag(Delivered, 2)) %>% 
+#   mutate(Delivered_3 = lag(Delivered, 3)) %>% 
+#   mutate(Delivered_4 = lag(Delivered, 4)) %>% 
+#   mutate(Delivered_5 = lag(Delivered, 5)) %>% 
+#   mutate(Delivered_6 = lag(Delivered, 6)) %>% 
+#   mutate(Delivered_7 = lag(Delivered, 7)) %>% 
+#   mutate(Delivered_8 = lag(Delivered, 8)) %>% 
+#   mutate(Cor_0 = cor(Stumpage, Delivered, use = "complete.obs")) %>% 
+#   mutate(Cor_1 = cor(Stumpage, Delivered_1, use = "complete.obs")) %>% 
+#   mutate(Cor_2 = cor(Stumpage, Delivered_2, use = "complete.obs")) %>% 
+#   mutate(Cor_3 = cor(Stumpage, Delivered_3, use = "complete.obs")) %>% 
+#   mutate(Cor_4 = cor(Stumpage, Delivered_4, use = "complete.obs")) %>% 
+#   mutate(Cor_5 = cor(Stumpage, Delivered_5, use = "complete.obs")) %>% 
+#   mutate(Cor_6 = cor(Stumpage, Delivered_6, use = "complete.obs")) %>% 
+#   mutate(Cor_7 = cor(Stumpage, Delivered_7, use = "complete.obs")) %>% 
+#   mutate(Cor_8 = cor(Stumpage, Delivered_8, use = "complete.obs")) %>% 
+#   select(starts_with("Cor")) %>% 
+#   distinct %>% 
+#   pivot_longer(cols = everything()) %>% 
+#   rename(Lag = name, PCC = value) %>% 
+#   mutate(Lag = Lag %>% str_sub(-1, -1)) %>% 
+#   gt()
 
 # Finale
 
 dat_notifications_out = 
   dat_notifications %>% 
-  left_join(dat_join_pyrome, by = "UID") %>% 
   left_join(dat_join_elevation %>% select(UID, Elevation = OR_DEM_10M.gdb), by = "UID") %>% # Kick this up to the elevation block.
   left_join(dat_join_slope %>% select(UID, Slope = slope), by = "UID") %>% # Ditto.
+  # Roughness
+  left_join(dat_join_pyrome, by = "UID") %>% 
   # PRISM
   # VPD
   left_join(dat_join_mtbs, by = "UID") %>% 
-  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
+  # mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
   left_join(dat_join_treemap) %>% 
   left_join(dat_join_tcc) %>% 
-  # Landsat
+  # NDVI
   left_join(dat_join_distances) %>% 
   left_join(dat_join_pad) %>% 
   # ODF Waterways/Slopes
