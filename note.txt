@@ -8,6 +8,8 @@
 - add FIA clone
 - make a cool flowchart
 
+annualize prices for annual stuff? (yes)
+
 problem: coarseness around ignition dates and years in MTBS
  - i.e. we might care a lot about ignition dates close to and during notification periods
 

@@ -1,30 +1,29 @@
-# Add other geodata to processed notification data.
+# Join additional data to processed notifications.
 
 #  ## minutes as of . . .
 
-# Note choice to drop spatial information from each "join" SpatVector after operations.
-
-# (!!!) Note that some "join" SpatVectors have incorrect names from numeric indexing in rename().
-
 # TOC:
+#  Stopwatch
 #  Packages
 #  Bounds
 #  Notifications
 #  Elevation
 #  Slope
 #  Roughness
-#  (PRISM?)
-#  (VPD?)
+#  VPD
 #  Pyromes
 #  Fires
 #  TreeMap
 #  TCC
 #  NDVI
-#  Distances (Mills, Cities, Roads)
+#  Distances
 #  Protected Areas
-#  (Slopes, Riparian Zones)
+#  Riparian Zones and Slopes
 #  Prices
-#  Join
+#  Finale
+#  Stopwatch
+
+# Stopwatch
 
 time_start = Sys.time()
 
@@ -35,10 +34,6 @@ library(magrittr)
 library(terra)
 library(tidyterra)
 library(readxl)
-
-# Ratio
-
-phi = (1 + 5 ^ (1 / 2)) / 2
 
 # Bounds
 
@@ -186,6 +181,8 @@ dat_join_pyrome =
   group_by(UID) %>% 
   filter(row_number() == 1) %>% # Keep only the first pyrome intersecting with a notification. This is arbitrary.
   ungroup
+
+# VPD
 
 # MTBS
 
@@ -343,7 +340,6 @@ dat_join_treemap =
   left_join(dat_join_treemap_siteclcd_med)
 
 # TCC
-#  9 minutes as of 2025/12/10.
 
 #  Set up notifications to support comparisons between pre- and post-years.
 
@@ -421,8 +417,6 @@ dat_join_tcc =
 
 # NDVI
 
-#  Altogether, ## minutes and ## GB as of 2026/01/03.
-
 dat_join_ndvi_read = "output/data_ndvi.tif" %>% rast
 
 #  Annual
@@ -443,27 +437,26 @@ dat_notifications_ndvi_annual =
 
 #  Extract NDVI to notifications, then subset results for comparisons of interest.
 
-# 510 minutes for 2014-2024 as of 2026/01/03.
+# Remember to add an export and a switch here to read output if output exists and otherwise annualize data.
 
-# Remember to add a switch here to read output if output exists and otherwise annualize data.
-
-# dat_join_ndvi_annual = "output/data_ndvi_annual.tif" %>% rast
+dat_join_ndvi_annual = "output/data_ndvi_annual.tif" %>% rast
 
 dat_join_ndvi_annual = 
-  tibble(year = 2014:2024) %>% 
-  mutate(string = paste0("NDVI_", year)) %>% 
-  mutate(data = string %>% map( ~ { dat_join_ndvi_read %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
-  mutate(data = 
-           data %>% 
-           map2(.x = ., 
-                .y = string, 
-                ~ {
-                  names(.x) <- as.character(.y)
-                  .x
-                })) %>% # Restore names.
-  magrittr::extract2("data") %>% # Equivalent to .$data.
-  reduce(c) %>% 
-  # switch goes here
+  # tibble(year = 2014:2024) %>% 
+  # mutate(string = paste0("NDVI_", year)) %>% 
+  # mutate(data = string %>% map( ~ { dat_join_ndvi_read %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
+  # mutate(data = 
+  #          data %>% 
+  #          map2(.x = ., 
+  #               .y = string, 
+  #               ~ {
+  #                 names(.x) <- as.character(.y)
+  #                 .x
+  #               })) %>% # Restore names.
+  # magrittr::extract2("data") %>% # Equivalent to .$data.
+  # reduce(c) %>% 
+  # export and switch goes here
+  dat_join_ndvi_annual %>% 
   extract(., 
           dat_notifications, 
           mean, 
@@ -531,11 +524,11 @@ dat_mills =
   project("EPSG:2992")
 
 dat_join_mills = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   centroids %>% 
   distance(dat_mills) %>% 
   as.data.frame %>% 
-  bind_cols(dat_notifications %>% as_tibble %>% select(UID), .) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .) %>% 
   pivot_longer(cols = starts_with("V")) %>% 
   group_by(UID) %>% 
   filter(value == min(value)) %>% 
@@ -553,11 +546,11 @@ dat_roads =
   project("EPSG:2992")
 
 dat_join_roads = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   centroids %>% 
   distance(dat_roads) %>% 
   as.data.frame %>% 
-  bind_cols(dat_notifications %>% as_tibble %>% select(UID), .) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .) %>% 
   pivot_longer(cols = starts_with("V")) %>% 
   group_by(UID) %>% 
   filter(value == min(value)) %>% 
@@ -575,11 +568,11 @@ dat_cities =
   project("EPSG:2992")
 
 dat_join_cities = 
-  dat_notifications %>% 
+  dat_notifications_less_1 %>% 
   centroids %>% 
   distance(dat_cities) %>% 
   as.data.frame %>% 
-  bind_cols(dat_notifications %>% as_tibble %>% select(UID), .) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .) %>% 
   pivot_longer(cols = starts_with("V")) %>% 
   group_by(UID) %>% 
   filter(value == min(value)) %>% 
@@ -604,12 +597,77 @@ dat_join_pad =
   select(Shape_Area) %>% 
   aggregate %>% 
   project("EPSG:2992") %>% 
-  intersect(dat_notifications, .) %>% 
+  crop(dat_bounds) %>% 
+  intersect(dat_notifications_less_1, .) %>% 
   select(UID) %>% 
   as_tibble %>% 
   mutate(PAD = 1) %>% 
-  left_join(dat_notifications, .) %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
   mutate(PAD = PAD %>% replace_na(0))
+
+# Riparian Zones and Slopes
+
+# The flow line geodatabase crashes R. Haven't replicated that in Arc yet.
+
+# dat_fpa_1 =
+#   "data/FPA/Hydrography_Flow_Line.gdb" %>%
+#   vect %>%
+#   aggregate %>%
+#   crop(dat_bounds %>% project("EPSG:3857")) %>%
+#   project("EPSG:2992") %>%
+#   intersect(dat_notifications_less_1, .) %>%
+#   select(UID) %>%
+#   as_tibble %>%
+#   mutate(FPA_1 = 1) %>%
+#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
+#   mutate(FPA_1 = FPA_1 %>% replace_na(0))
+
+# The sediment source, flow area, and flow subbasin files do not crash R, but they're pretty slow to process.
+
+# dat_fpa_2 = 
+#   "data/FPA/Topography_Designated_Sediment_Source_Area.gdb" %>% 
+#   vect %>% 
+#   aggregate %>% 
+#   crop(dat_bounds %>% project("EPSG:3857")) %>% 
+#   project("EPSG:2992") %>% 
+#   intersect(dat_notifications_less_1, .) %>% 
+#   select(UID) %>% 
+#   as_tibble %>% 
+#   mutate(FPA_2 = 1) %>% 
+#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
+#   mutate(FPA_2 = FPA_2 %>% replace_na(0))
+
+# dat_fpa_3 = 
+#   "data/FPA/Topography_Debris_Flow_Traversal_Area.gdb" %>% 
+#   vect %>% 
+#   aggregate %>% 
+#   crop(dat_bounds %>% project("EPSG:3857")) %>% 
+#   project("EPSG:2992") %>% 
+#   intersect(dat_notifications_less_1, .) %>% 
+#   select(UID) %>% 
+#   as_tibble %>% 
+#   mutate(FPA_3 = 1) %>% 
+#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
+#   mutate(FPA_3 = FPA_3 %>% replace_na(0))
+
+# dat_fpa_4 = 
+#   "data/FPA/Topography_Debris_Flow_Traversal_Subbasin.gdb" %>% 
+#   vect %>% 
+#   aggregate %>% 
+#   crop(dat_bounds %>% project("EPSG:3857")) %>% 
+#   project("EPSG:2992") %>% 
+#   intersect(dat_notifications_less_1, .) %>% 
+#   select(UID) %>% 
+#   as_tibble %>% 
+#   mutate(FPA_4 = 1) %>% 
+#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
+#   mutate(FPA_4 = FPA_4 %>% replace_na(0))
+
+# dat_join_fpa = 
+#   dat_fpa_1 %>% 
+#   dat_fpa_2 %>% 
+#   left_join(dat_fpa_3) %>% 
+#   left_join(dat_fpa_4)
 
 # Prices
 
@@ -682,67 +740,33 @@ dat_join_price =
   left_join(dat_price_stumpage) %>% 
   left_join(dat_price_delivered)
 
-# Wrangle prices a little more.
-
-# library(gt)
-# 
-# dat_price_check = 
-#   dat_price_stumpage %>% 
-#   left_join(dat_price_delivered) %>% 
-#   select(Year, 
-#          Month, 
-#          Stumpage = Stumpage_Real_PPI_Timber, 
-#          Delivered = Delivered_Real_PPI_Timber) %>% 
-#   filter(Month %in% c(1, 4, 7, 9)) %>% 
-#   mutate(Delivered_1 = lag(Delivered, 1)) %>% 
-#   mutate(Delivered_2 = lag(Delivered, 2)) %>% 
-#   mutate(Delivered_3 = lag(Delivered, 3)) %>% 
-#   mutate(Delivered_4 = lag(Delivered, 4)) %>% 
-#   mutate(Delivered_5 = lag(Delivered, 5)) %>% 
-#   mutate(Delivered_6 = lag(Delivered, 6)) %>% 
-#   mutate(Delivered_7 = lag(Delivered, 7)) %>% 
-#   mutate(Delivered_8 = lag(Delivered, 8)) %>% 
-#   mutate(Cor_0 = cor(Stumpage, Delivered, use = "complete.obs")) %>% 
-#   mutate(Cor_1 = cor(Stumpage, Delivered_1, use = "complete.obs")) %>% 
-#   mutate(Cor_2 = cor(Stumpage, Delivered_2, use = "complete.obs")) %>% 
-#   mutate(Cor_3 = cor(Stumpage, Delivered_3, use = "complete.obs")) %>% 
-#   mutate(Cor_4 = cor(Stumpage, Delivered_4, use = "complete.obs")) %>% 
-#   mutate(Cor_5 = cor(Stumpage, Delivered_5, use = "complete.obs")) %>% 
-#   mutate(Cor_6 = cor(Stumpage, Delivered_6, use = "complete.obs")) %>% 
-#   mutate(Cor_7 = cor(Stumpage, Delivered_7, use = "complete.obs")) %>% 
-#   mutate(Cor_8 = cor(Stumpage, Delivered_8, use = "complete.obs")) %>% 
-#   select(starts_with("Cor")) %>% 
-#   distinct %>% 
-#   pivot_longer(cols = everything()) %>% 
-#   rename(Lag = name, PCC = value) %>% 
-#   mutate(Lag = Lag %>% str_sub(-1, -1)) %>% 
-#   gt()
-
 # Finale
+
+#  Joins
 
 dat_notifications_out = 
   dat_notifications %>% 
-  left_join(dat_join_elevation %>% select(UID, Elevation = OR_DEM_10M.gdb), by = "UID") %>% # Kick this up to the elevation block.
-  left_join(dat_join_slope %>% select(UID, Slope = slope), by = "UID") %>% # Ditto.
-  # Roughness
-  left_join(dat_join_pyrome, by = "UID") %>% 
-  # PRISM
-  # VPD
-  left_join(dat_join_mtbs, by = "UID") %>% 
-  # mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% # (Fix!) Accounting for observations dropped in MTBS intersect/filter steps.
+  left_join(dat_join_elevation) %>% 
+  left_join(dat_join_slope) %>% 
+  left_join(dat_join_roughness) %>% 
+  left_join(dat_join_pyrome) %>% 
+  # left_join(dat_join_vpd) %>% 
+  left_join(dat_join_mtbs) %>% 
   left_join(dat_join_treemap) %>% 
   left_join(dat_join_tcc) %>% 
-  # NDVI
+  left_join(dat_join_ndvi_annual) %>% 
   left_join(dat_join_distances) %>% 
   left_join(dat_join_pad) %>% 
-  # ODF Waterways/Slopes
+  # left_join(dat_join_fpa) %>% 
   left_join(dat_join_prices, by = "UID")
 
-# Check reason for additional observations from start to finish.
+#  Export
 
-writeVector(dat_notifications_out, "output/dat_notifications_polygons_more.gdb", overwrite = TRUE)
+writeVector(dat_notifications_out, "output/dat_notifications_more_polygons.gdb", overwrite = TRUE)
 
-write_csv(dat_notifications_out %>% as_tibble, "output/dat_notifications_flat_more.csv")
+write_csv(dat_notifications_out %>% as_tibble, "output/dat_notifications_more_flat.csv")
+
+# Stopwatch
 
 time_end = Sys.time()
 
