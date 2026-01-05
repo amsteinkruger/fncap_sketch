@@ -1,6 +1,6 @@
 # Join additional data to processed notifications.
 
-#  ## minutes as of . . .
+#  60 minutes as of 2026/01/04, excluding VPD and FPA.
 
 # TOC:
 #  Stopwatch
@@ -10,7 +10,7 @@
 #  Elevation
 #  Slope
 #  Roughness
-#  VPD
+#  VPD *
 #  Pyromes
 #  Fires
 #  TreeMap
@@ -18,7 +18,7 @@
 #  NDVI
 #  Distances
 #  Protected Areas
-#  Riparian Zones and Slopes
+#  Riparian Zones and Slopes *
 #  Prices
 #  Finale
 #  Stopwatch
@@ -53,7 +53,7 @@ dat_bounds_pyromes =
   rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
   filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
   select(Pyrome = WHICH) %>% 
-  summarize(Pyrome = "All Pyromes") %>% # This is not great.
+  summarize(Pyrome = "All Pyromes") %>% 
   fillHoles %>% 
   project("EPSG:2992")
 
@@ -80,39 +80,29 @@ dat_notifications =
   rename_with(~ sub("_Left$", "", .x), everything()) %>% 
   mutate(Year_Start = year(DateStart),
          Month_Start = month(DateStart),
-         YearMonth_Start = paste0(Year_Start, ifelse(str_length(Month_Start) < 2, "0", ""), Month_Start),
          Year_End = ifelse(is.na(DateContinuationEnd), year(DateEnd), year(DateContinuationEnd)),
          Month_End = ifelse(is.na(DateContinuationEnd), month(DateEnd), month(DateContinuationEnd)),
-         YearMonth_End = paste0(Year_End, ifelse(str_length(Month_End) < 2, "0", ""), Month_End),
          MBF = ActivityQuantity %>% as.numeric) %>%
   arrange(desc(Year_Start), desc(Month_Start), LandOwnerType, LandOwner, desc(MBF), desc(Acres)) %>% 
+  filter(Year_Start > 2014 & Year_End < 2025) %>% 
   select(LandOwner,
          ends_with("_Start"), 
          ends_with("_End"), 
          MBF, 
          Acres) %>% 
   project("EPSG:2992") %>% 
-  # Check whether polygons are valid.
-  cbind(., is.valid(.)) %>% 
-  rename(Valid_0 = y) %>% 
-  # Try fixing any invalid polygons.
+  # Fix invalid polygons.
   makeValid %>% 
-  # Check again.
-  cbind(., is.valid(.)) %>% 
-  rename(Valid_1 = y) %>%
-  # Drop columns. This would be a nice spot to return counts of valid, invalid, and fixed polygons as a side effect.
-  select(-starts_with("Valid")) %>% 
-  # Subset for testing.
+  # Subset for quick tests.
   # slice_sample(n = 1000) %>%
   # Crop.
   crop(dat_bounds) %>% 
-  # Swap unique ID assignment to this step for convenience.
-  mutate(UID = row_number())
+  # Assign unique ID.
+  mutate(UID = row_number()) %>% 
+  relocate(UID)
 
 dat_notifications_less_1 = dat_notifications %>% select(UID)
 dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start)
-
-dat_notifications_mask = dat_notifications %>% summarize(ID = "Combined")
 
 # Elevation
 
@@ -155,7 +145,7 @@ dat_roughness = dat_elevation %>% terrain(v = "roughness")
 
 dat_join_roughness = 
   dat_notifications_less_1 %>% 
-  extract(x = dat_slope,
+  extract(x = dat_roughness,
           y = .,
           fun = mean,
           ID = FALSE,
@@ -671,6 +661,8 @@ dat_join_pad =
 
 # Prices
 
+#  Note shenanigans with years, quarters, and months across datasets.
+
 #  Indexes
 
 #   PPI (All)
@@ -718,7 +710,10 @@ dat_price_stumpage =
   left_join(dat_price_index) %>% 
   mutate(Stumpage_Real_PPI = Stumpage_Nominal * Factor_PPI_2024,
          Stumpage_Real_PPI_Timber = Stumpage_Nominal * Factor_PPI_Timber_2024) %>% 
-  select(Year, Month, starts_with("Stumpage"))
+  select(Year, Month, starts_with("Stumpage")) %>% 
+  group_by(Year) %>% 
+  summarize(across(starts_with("Stumpage"), mean, na.rm = TRUE)) %>% 
+  ungroup
 
 #   Delivered Logs, FastMarkets
 
@@ -730,15 +725,19 @@ dat_price_delivered =
   left_join(dat_price_index) %>% 
   mutate(Delivered_Real_PPI = Delivered_Nominal * Factor_PPI_2024,
          Delivered_Real_PPI_Timber = Delivered_Nominal * Factor_PPI_Timber_2024) %>% 
-  select(Year, Month, starts_with("Delivered"))
+  select(Year, Month, starts_with("Delivered")) %>% 
+  group_by(Year) %>% 
+  summarize(across(starts_with("Delivered"), mean, na.rm = TRUE)) %>% 
+  ungroup
 
 #  Join
 
 dat_join_price = 
-  dat_notifications %>% 
+  dat_notifications_less_2 %>% 
   as_tibble %>% 
-  left_join(dat_price_stumpage) %>% 
-  left_join(dat_price_delivered)
+  left_join(dat_price_stumpage, by = join_by(Year_Start == Year)) %>% 
+  left_join(dat_price_delivered, by = join_by(Year_Start == Year)) %>% 
+  select(-Year_Start)
 
 # Finale
 
@@ -755,10 +754,10 @@ dat_notifications_out =
   left_join(dat_join_treemap) %>% 
   left_join(dat_join_tcc) %>% 
   left_join(dat_join_ndvi_annual) %>% 
-  left_join(dat_join_distances) %>% 
+  left_join(dat_join_distance) %>% 
   left_join(dat_join_pad) %>% 
   # left_join(dat_join_fpa) %>% 
-  left_join(dat_join_prices, by = "UID")
+  left_join(dat_join_price)
 
 #  Export
 
