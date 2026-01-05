@@ -1,7 +1,5 @@
 # Join additional data to processed notifications.
 
-#  60 minutes as of 2026/01/04, excluding VPD and FPA.
-
 # TOC:
 #  Stopwatch
 #  Packages

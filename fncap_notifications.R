@@ -1,4 +1,4 @@
-# Check out harvest notifications from different sources.
+# Join notification data.
 
 library(tidyverse)
 library(terra)
@@ -137,12 +137,12 @@ dat_join_polygons_out =
          DateContinuationStart = DateContinuationStart_Left,
          DateContinuationEnd = DateContinutationEnd_Left,
          Link = Link_Left) %>% 
-  # Tidy up a little.
+  # Tidy up.
   arrange(NOAPID, UnitID, UnitName, DateSubmit) %>% 
   # Band-Aid for duplication.
   distinct %>% 
   # Get areas.
-  cbind(., expanse(., unit = "ha") * 2.47) %>% # This is poor practice, but.
+  cbind(., expanse(., unit = "ha") * 2.47) %>% 
   rename(Acres = y)
 
 writeVector(dat_join_polygons_out, "output/dat_notifications_polygons.gdb")
