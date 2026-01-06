@@ -8,7 +8,7 @@
 #  Elevation
 #  Slope
 #  Roughness
-#  VPD *
+#  VPD
 #  Pyromes
 #  Fires
 #  TreeMap
@@ -171,6 +171,59 @@ dat_join_pyrome =
   ungroup
 
 # VPD
+
+dat_vpd = "output/data_vpd.tif" %>% rast
+
+dat_vpd_annual = 
+  tibble(year = 1984:2024) %>%
+  mutate(string = paste0("VPD_", year)) %>%
+  mutate(data = string %>% map( ~ { dat_vpd %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
+  mutate(data =
+           data %>%
+           map2(.x = .,
+                .y = string,
+                ~ {
+                  names(.x) <- as.character(.y)
+                  .x
+                })) %>% # Restore names.
+  magrittr::extract2("data") %>% # Equivalent to .$data.
+  reduce(c) 
+
+dat_join_vpd = 
+  tibble(year = 2014:2024) %>% 
+  mutate(string = paste0("VPD_", year),
+         years = year %>% map(~ seq(.x - 30, .x - 1)) %>% map(as.character),
+         data = 
+           years %>% 
+           map( ~ dat_vpd_annual %>% select(ends_with(.x)) %>% mean(na.rm = TRUE)) %>% 
+           map2(.x = .,
+                .y = string,
+                ~ {
+                  names(.x) <- as.character(.y)
+                  .x
+                })) %>% 
+  magrittr::extract2("data") %>% # Equivalent to .$data.
+  reduce(c) %>% 
+  extract(., 
+          dat_notifications_less_1, 
+          mean, 
+          na.rm = TRUE) %>% 
+  bind_cols((dat_notifications_less_1$UID %>% tibble(UID = .))) %>% 
+  select(-ID) %>% 
+  as_tibble %>% 
+  left_join((dat_notifications_less_1 %>% as_tibble), ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("VPD"),
+               names_prefix = "VPD_",
+               names_to = "Year",
+               values_to = "VPD") %>% 
+  group_by(UID) %>% 
+  nest(data = c(Year, VPD)) %>% 
+  ungroup %>% 
+  left_join(dat_notifications_less_2 %>% as_tibble %>% rename(Year = Year_Start), .) %>% 
+  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
+  select(-Year) %>% 
+  unnest(data) %>% 
+  select(UID, VPD)
 
 # MTBS
 
@@ -425,7 +478,7 @@ dat_notifications_ndvi_annual =
 
 #  Extract NDVI to notifications, then subset results for comparisons of interest.
 
-# Remember to add an export and a switch here to read output if output exists and otherwise annualize data.
+# Remember to add a switch here to read output if output exists and otherwise annualize data and export.
 
 dat_join_ndvi_annual = "output/data_ndvi_annual.tif" %>% rast
 
@@ -446,13 +499,13 @@ dat_join_ndvi_annual =
   # export and switch goes here
   dat_join_ndvi_annual %>% 
   extract(., 
-          dat_notifications, 
+          dat_notifications_less_1, 
           mean, 
           na.rm = TRUE) %>% 
-  bind_cols((dat_notifications$UID %>% tibble(UID = .))) %>% 
+  bind_cols((dat_notifications_less_1$UID %>% tibble(UID = .))) %>% 
   select(-ID) %>% 
   as_tibble %>% 
-  left_join((dat_notifications %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
   pivot_longer(cols = starts_with("NDVI"),
                names_prefix = "NDVI_",
                names_to = "Year",
@@ -557,7 +610,7 @@ dat_cities =
 
 dat_join_cities = 
   dat_notifications_less_1 %>% 
-  centroids %>% 
+  centroids %>% # Check whether INTPTLAT, INTPTLON are more informative than centroids.
   distance(dat_cities) %>% 
   as.data.frame %>% 
   bind_cols(dat_notifications_less_1 %>% as_tibble, .) %>% 
@@ -595,7 +648,7 @@ dat_join_pad =
 
 # Riparian Zones and Slopes
 
-# The flow line geodatabase crashes R. Haven't replicated that in Arc yet.
+# The flow line geodatabase crashes R. 
 
 # dat_fpa_1 =
 #   "data/FPA/Hydrography_Flow_Line.gdb" %>%
@@ -747,7 +800,7 @@ dat_notifications_out =
   left_join(dat_join_slope) %>% 
   left_join(dat_join_roughness) %>% 
   left_join(dat_join_pyrome) %>% 
-  # left_join(dat_join_vpd) %>% 
+  left_join(dat_join_vpd) %>% 
   left_join(dat_join_mtbs) %>% 
   left_join(dat_join_treemap) %>% 
   left_join(dat_join_tcc) %>% 

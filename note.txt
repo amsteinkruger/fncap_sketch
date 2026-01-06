@@ -1,21 +1,12 @@
-2026/01/03
+2026/01/06
 
-- finish annual stuff
-- housekeeping for annual stuff
 - documentation for annual stuff
-- add quarterly stuff in another script
+- add quarterly stuff in another script, then housekeeping and documentation
 - ML
 - add FIA clone
-- make a cool flowchart
+- make a flowchart
 
-annualize prices for annual stuff? (yes)
-
-problem: coarseness around ignition dates and years in MTBS
- - i.e. we might care a lot about ignition dates close to and during notification periods
-
-? filter notifications to 2015:2024 right off the bat?
-
-fixed treemap join!
+- eventually deal with script structure and source commands
 
 2025/11/4
 

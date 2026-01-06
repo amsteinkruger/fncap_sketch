@@ -10,7 +10,7 @@ crs_tcc =
 
 # Get bounds.
 
-dat_bounds_tcc = dat_bounds %>% project(crs_tcc) # Note busted dependency on notifications_more.
+dat_bounds_tcc = dat_bounds %>% project(crs_tcc) # Note dependency on previous script.
 
 # Get data.
 
