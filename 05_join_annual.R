@@ -1,4 +1,4 @@
-# Join additional data to processed notifications.
+# Join covariates to processed notifications with an annual result.
 
 # TOC:
 #  Stopwatch

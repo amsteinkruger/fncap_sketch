@@ -1,4 +1,4 @@
-# Join notification data.
+# Process notification data.
 
 library(tidyverse)
 library(terra)
