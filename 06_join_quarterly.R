@@ -7,6 +7,7 @@
 #  Packages
 #  Bounds
 #  Notifications
+#  Intersections, Recurrences
 #  Elevation
 #  Slope
 #  Roughness
@@ -126,6 +127,22 @@ dat_notifications_more =
   rename(Year.Quarter = Quarters) %>% 
   mutate(Year_Quarter = paste0(str_sub(Year.Quarter %>% as.character, 1, 4), "_", str_sub(Year.Quarter %>% as.character, -1, -1))) %>% 
   select(UID, Year.Quarter, Year_Quarter)
+
+# Count intersections and recurrences within the set of notifications.
+
+dat_notifications_intersect = 
+  dat_notifications %>% 
+  relate(., ., relation = "intersects") %>% 
+  rowSums() %>% 
+  `-` (1) %>% 
+  tibble(UID = seq(1, length(.)), Intersects = .)
+
+dat_notifications_equal = 
+  dat_notifications %>% 
+  relate(., ., relation = "equals") %>% 
+  rowSums() %>% 
+  `-` (1) %>% 
+  tibble(UID = seq(1, length(.)), Equals = .)
 
 # Elevation
 
@@ -407,23 +424,7 @@ dat_join_treemap =
 
 # NDVI
 
-dat_join_ndvi_read = "output/data_ndvi.tif" %>% rast
-
-#  Quarterly
-
-#  Set up notifications to support comparisons between pre- and post-years.
-
-# slightly botched reference from the annual version
-# dat_notifications_ndvi =
-#   dat_notifications_more %>%
-#   as_tibble %>%
-#   mutate(Year_Before = Year_Start - 1,
-#          Year_After = Year_End + 1) %>%
-#   select(UID, Year_Before, Year_After) %>%
-#   pivot_longer(starts_with("Year"),
-#                names_prefix = "Year_",
-#                names_to = "Period",
-#                values_to = "Year")
+#  Set up notifications to support comparisons between quarters.
 
 dat_notifications_ndvi = 
   dat_notifications_more %>% 
@@ -435,81 +436,99 @@ dat_notifications_ndvi =
                   Year.Quarter.First - 1 + 0.3),
          Year_Quarter_Before = paste0(str_sub(Year.Quarter.Before %>% as.character, 1, 4), "_", str_sub(Year.Quarter.Before %>% as.character, -1, -1))) %>% 
   ungroup %>% 
-  select(-starts_with("Year.Quarter"))
+  select(-starts_with("Year.Quarter")) %>% 
+  pivot_longer(cols = c(Year_Quarter, Year_Quarter_Before),
+               names_to = "Which",
+               values_to = "Year_Quarter") %>% 
+  distinct(UID, Which, Year_Quarter) %>% 
+  select(UID, Year_Quarter) %>% 
+  arrange(UID, Year_Quarter)
+
+#  Set up notifications for a naive seasonal adjustment.
+
+dat_notifications_ndvi_adjustment = 
+  dat_notifications_ndvi %>% 
+  group_by(UID) %>% 
+  filter(row_number() == 1) %>% 
+  ungroup %>% 
+  anti_join(dat_notifications_intersect %>% filter(Intersects > 0)) %>% 
+  mutate(Year.Quarter = Year_Quarter %>% str_replace("_", ".") %>% as.numeric) %>% 
+  # This would be nice to do with nested iteration instead of additional columns.
+  mutate(Year.Quarter.1 = Year.Quarter,
+         Year.Quarter.2 = 
+           ifelse((Year.Quarter.1 - 0.1) %% 1 != 0, 
+                  Year.Quarter.1 - 0.1, 
+                  Year.Quarter.1 - 1 + 0.3) %>% 
+           round(1),
+         Year.Quarter.3 = 
+           ifelse((Year.Quarter.2 - 0.1) %% 1 != 0, 
+                  Year.Quarter.2 - 0.1, 
+                  Year.Quarter.2 - 1 + 0.3) %>% 
+           round(1),
+         Year.Quarter.4 = 
+           ifelse((Year.Quarter.3 - 0.1) %% 1 != 0, 
+                  Year.Quarter.3 - 0.1, 
+                  Year.Quarter.3 - 1 + 0.3) %>% 
+           round(1)) %>% 
+  select(1, 4:7) %>% 
+  pivot_longer(cols = starts_with("Year"),
+               names_to = "Quarter",
+               names_prefix = "Year.Quarter.",
+               values_to = "Year_Quarter") %>% 
+  mutate(Year_Quarter = paste0(str_sub(Year_Quarter, 1, 4), "_", str_sub(Year_Quarter, -1, -1))) %>% 
+  select(UID, Year_Quarter)
 
 #  Extract NDVI to notifications, then subset results for comparisons of interest.
 
 #   34' for 2014-2016 (2026/01/09).
 #   ##' for 2014-2024 (2026/01/09).
 
-dat_join_ndvi = 
+# Extract NDVI to notifications. This returns NDVI for all quarters (2014-2024) for each notification polygon.
+
+dat_join_ndvi_extract = 
   "output/data_ndvi.tif" %>% 
   rast %>% 
-  # select(starts_with("NDVI_2014"), starts_with("NDVI_2015"), starts_with("NDVI_2016")) %>% 
+  select(starts_with("NDVI_2014"), starts_with("NDVI_2015"), starts_with("NDVI_2016")) %>% 
   extract(., 
           dat_notifications_less_1, 
           mean, 
-          na.rm = TRUE)
-
-dat_join_ndvi_1 = 
-  dat_join_ndvi %>% 
+          na.rm = TRUE) %>% 
   bind_cols((dat_notifications_less_1$UID %>% tibble(UID = .))) %>% 
   select(-ID) %>% 
-  as_tibble %>% 
+  as_tibble 
+
+# Match NDVI to notifications for relevant quarters.
+
+dat_join_ndvi_notifications = 
+  dat_join_ndvi_extract %>% 
   left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
   pivot_longer(cols = starts_with("NDVI"),
                names_prefix = "NDVI_",
                names_to = "Year_Quarter",
-               values_to = "NDVI")
+               values_to = "NDVI") %>% 
+  left_join(dat_notifications_ndvi, .) %>% 
+  group_by(UID) %>% 
+  mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
+  filter(row_number() > 1) %>% 
+  ungroup
 
-dat_join_ndvi_2 = 
-  dat_join_ndvi_1 %>% 
-  left_join(dat_notifications_ndvi %>% select(UID, Year_Quarter), 
-            ., 
-            by = join_by("UID" == "UID", "Year_Quarter" == "Year_Quarter"))
+  dat_join_ndvi_adjustment
+  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
+    pivot_longer(cols = starts_with("NDVI"),
+                 names_prefix = "NDVI_",
+                 names_to = "Year_Quarter",
+                 values_to = "NDVI") %>% 
+    left_join(dat_notifications_ndvi_adjustment, .) # %>% 
+    # group_by(UID) %>% 
+    # mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
+    # filter(row_number() > 1) %>% 
+    # ungroup
 
-dat_join_ndvi_3 = 
-  dat_join_ndvi_1 %>% 
-  left_join(dat_notifications_ndvi %>% select(UID, Year_Quarter_Before) %>% distinct, 
-            ., 
-            by = join_by("UID" == "UID", "Year_Quarter_Before" == "Year_Quarter")) %>% 
-  select(UID, NDVI_Before = NDVI)
-    
-dat_join_ndvi_4 = 
-  dat_join_ndvi_2 %>% 
-  left_join(dat_join_ndvi_3) %>% 
-  mutate(NDVI_Change = NDVI - NDVI_Before)
-
-
-# Problems with quarters:
-#  (2) Accounting for seasonal change between quarters. This is a big problem. This requires the ML thing for change to be interpretable.
-#        Well, not ML, but something statistical, and in practice it will come with the ML stuff for harvest detection.
-
-#  Quarterly (Pre- and Post-)
-#   Set up notifications to support comparisons between pre- and post-quarters, excluding during- quarters.
-
-# dat_notifications_ndvi_quarterly_less = 
-#   dat_notifications %>%
-#   mutate(Quarter_Start = Month_Start %>% `/` (3) %>% ceiling,
-#          Quarter_End = Month_End %>% `/` (3) %>% ceiling,
-#          Quarter_Start_Running = Quarter_Start + (Year_Start - min(Year_Start)) * 4,
-#          Quarter_End_Running = Quarter_End + (Year_End - min(Year_End)) * 4) %>% 
-#   filter(Quarter_End_Running < 44) %>%
-#   as_tibble %>%
-#   mutate(Quarter_Before = Quarter_Start_Running - 1,
-#          Quarter_After = Quarter_End_Running + 1) %>%
-#   select(UID, Quarter_Before, Quarter_After) %>%
-#   pivot_longer(starts_with("Quarter"),
-#                names_prefix = "Quarter_",
-#                names_to = "Period",
-#                values_to = "Quarter")  
-
-# dat_join_ndvi_quarterly_less = 
-
-#  Quarterly (Pre-, During-, Post-)
-
-# dat_notifications_ndvi_quarterly_more
-# dat_join_ndvi_quarterly_more
+# Match NDVI to notifications for adjustment quarters -- those preceding relevant quarters without any intersecting or equal polygons.
+  
+dat_join_ndvi = 
+  dat_join_ndvi_notifications %>% 
+  left_join(dat_join_ndvi_adjustment) # or something, and then some arithmetic for the actual adjustment
   
 # Distances
 
@@ -754,6 +773,8 @@ dat_join_price =
 
 dat_notifications_out = 
   dat_notifications %>% 
+  left_join(dat_notifications_intersect) %>% 
+  left_join(dat_notifications_equal) %>% 
   left_join(dat_join_elevation) %>% 
   left_join(dat_join_slope) %>% 
   left_join(dat_join_roughness) %>% 
