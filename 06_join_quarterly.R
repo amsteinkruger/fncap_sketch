@@ -7,7 +7,7 @@
 #  Packages
 #  Bounds
 #  Notifications
-#  Intersections, Recurrences
+#  Intersections and Recurrences
 #  Elevation
 #  Slope
 #  Roughness
@@ -22,7 +22,7 @@
 #  Protected Areas
 #  Riparian Zones and Slopes *
 #  Prices
-#  Finale
+#  Export
 #  Stopwatch
 
 # Stopwatch
@@ -107,13 +107,20 @@ dat_notifications =
   mutate(UID = row_number()) %>% 
   relocate(UID)
 
+#  Get notifications with fewer columns for data operations.
+
 dat_notifications_less_1 = dat_notifications %>% select(UID)
 dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start, Quarter_Start, Year_Quarter_Start)
 
+#  Get valid year-quarter values. These are stored as characters to avoid a weird precision issue.
+
 vec_quarters = 
   expand_grid(year = seq(2015, 2024), quarter = seq(0.1, 0.4, by = 0.1)) %>% 
-  mutate(yearquarter = year + quarter) %>% 
-  pull(yearquarter)
+  mutate(yearquarter = year + quarter,
+         Year_Quarter = paste0(year, "_", quarter %>% as.character %>% str_sub(-1, -1))) %>% 
+  pull(Year_Quarter)
+
+#  Get notification-quarters.
 
 dat_notifications_more = 
   dat_notifications %>% 
@@ -123,10 +130,9 @@ dat_notifications_more =
   mutate(Quarters = map2(Year_Quarter_Start, Year_Quarter_End, ~ seq(.x, .y, by = 0.1))) %>% 
   ungroup %>% 
   unnest(Quarters) %>% 
-  filter(Quarters %in% vec_quarters) %>% 
-  rename(Year.Quarter = Quarters) %>% 
-  mutate(Year_Quarter = paste0(str_sub(Year.Quarter %>% as.character, 1, 4), "_", str_sub(Year.Quarter %>% as.character, -1, -1))) %>% 
-  select(UID, Year.Quarter, Year_Quarter)
+  mutate(Year_Quarter = paste0(Quarters %>% str_sub(1, 4), "_", Quarters %>% str_sub(-1, -1))) %>% 
+  select(UID, Year.Quarter = Quarters, Year_Quarter) %>% 
+  filter(Year_Quarter %in% vec_quarters)
 
 # Count intersections and recurrences within the set of notifications.
 
@@ -712,9 +718,12 @@ dat_ppi =
   "data/BLS/data_ppi.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
-         Month = observation_date %>% month,
+         Quarter = observation_date %>% quarter,
+         Year_Quarter = paste0(Year, "_", Quarter),
          Factor_PPI_2024 = max(PPIACO) / PPIACO) %>% 
-  select(Year, Month, Factor_PPI_2024)
+  group_by(Year_Quarter) %>% 
+  summarize(Factor_PPI_2024 = Factor_PPI_2024 %>% mean) %>% 
+  ungroup
 
 #   PPI (Timber)
 
@@ -722,11 +731,15 @@ dat_ppi_timber =
   "data/BLS/data_ppi_timber.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
-         Month = observation_date %>% month,
+         Quarter = observation_date %>% quarter,
+         Year_Quarter = paste0(Year, "_", Quarter),
          Factor_PPI_Timber_2024 = max(WPU085) / WPU085) %>% 
-  select(Year, Month, Factor_PPI_Timber_2024)
+  select(Year_Quarter, Factor_PPI_Timber_2024) %>% 
+  group_by(Year_Quarter) %>% 
+  summarize(Factor_PPI_Timber_2024 = Factor_PPI_Timber_2024 %>% mean) %>% 
+  ungroup
 
-#   Join.
+#   Join
 
 dat_price_index = dat_ppi %>% left_join(dat_ppi_timber)
 
@@ -738,22 +751,13 @@ dat_price_stumpage =
   "data/Prices_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
   rename(Stumpage_Nominal = 2) %>% 
-  mutate(Year = Quarter %>% str_sub(1, 4) %>% as.numeric,
-         Month = 
-           Quarter %>% 
-           str_sub(-1, -1) %>% 
-           map(~ case_when(.x == 1 ~ 1:3,
-                           .x == 2 ~ 4:6,
-                           .x == 3 ~ 7:9,
-                           .x == 4 ~ 10:12,
-                           TRUE ~ NA))) %>% 
-  unnest(Month) %>% 
+  mutate(Year_Quarter = Quarter %>% str_replace("Q", "_")) %>% 
   left_join(dat_price_index) %>% 
   mutate(Stumpage_Real_PPI = Stumpage_Nominal * Factor_PPI_2024,
          Stumpage_Real_PPI_Timber = Stumpage_Nominal * Factor_PPI_Timber_2024) %>% 
-  select(Year, Month, starts_with("Stumpage")) %>% 
-  group_by(Year) %>% 
-  summarize(across(starts_with("Stumpage"), mean, na.rm = TRUE)) %>% 
+  select(Year_Quarter, starts_with("Stumpage")) %>% 
+  group_by(Year_Quarter) %>% 
+  summarize(across(starts_with("Stumpage"), ~ mean(.x, na.rm = TRUE))) %>% 
   ungroup
 
 #   Delivered Logs, FastMarkets
@@ -763,29 +767,30 @@ dat_price_delivered =
   read_csv %>% 
   select(1:3) %>% 
   rename(Delivered_Nominal = 3) %>% 
+  mutate(Year_Quarter = paste0(Year, "_", ceiling(Month / 3))) %>% 
+  group_by(Year_Quarter) %>% 
+  summarize(Delivered_Nominal = mean(Delivered_Nominal, na.rm = TRUE)) %>% 
+  ungroup %>% 
   left_join(dat_price_index) %>% 
   mutate(Delivered_Real_PPI = Delivered_Nominal * Factor_PPI_2024,
          Delivered_Real_PPI_Timber = Delivered_Nominal * Factor_PPI_Timber_2024) %>% 
-  select(Year, Month, starts_with("Delivered")) %>% 
-  group_by(Year) %>% 
-  summarize(across(starts_with("Delivered"), mean, na.rm = TRUE)) %>% 
-  ungroup
+  select(Year_Quarter, starts_with("Delivered"))
 
 #  Join
 
 dat_join_price = 
-  dat_notifications_less_2 %>% 
+  dat_notifications_more %>% 
   as_tibble %>% 
-  left_join(dat_price_stumpage, by = join_by(Year_Start == Year)) %>% 
-  left_join(dat_price_delivered, by = join_by(Year_Start == Year)) %>% 
-  select(-Year_Start)
+  left_join(dat_price_stumpage) %>% 
+  left_join(dat_price_delivered) %>% 
+  select(-Year.Quarter)
 
-# Finale
-
-#  Joins
+# Export
 
 dat_notifications_out = 
-  dat_notifications %>% 
+  dat_notifications_more %>% 
+  select(-Year.Quarter) %>% 
+  left_join(dat_notifications %>% as_tibble) %>% 
   left_join(dat_notifications_intersect) %>% 
   left_join(dat_notifications_equal) %>% 
   left_join(dat_join_elevation) %>% 
@@ -795,18 +800,12 @@ dat_notifications_out =
   left_join(dat_join_vpd) %>% 
   left_join(dat_join_mtbs) %>% 
   left_join(dat_join_treemap) %>% 
-  left_join(dat_join_tcc) %>% 
-  left_join(dat_join_ndvi_annual) %>% 
+  left_join(dat_join_ndvi) %>% 
   left_join(dat_join_distance) %>% 
   left_join(dat_join_pad) %>% 
   # left_join(dat_join_fpa) %>% 
-  left_join(dat_join_price)
-
-#  Export
-
-writeVector(dat_notifications_out, "output/dat_notifications_more_polygons.gdb", overwrite = TRUE)
-
-write_csv(dat_notifications_out %>% as_tibble, "output/dat_notifications_more_flat.csv")
+  left_join(dat_join_price) %T>% 
+  write_csv("output/dat_notifications_more_quarterly.csv")
 
 # Stopwatch
 

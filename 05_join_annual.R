@@ -5,6 +5,7 @@
 #  Packages
 #  Bounds
 #  Notifications
+#  Intersections and Recurrences
 #  Elevation
 #  Slope
 #  Roughness
@@ -18,7 +19,7 @@
 #  Protected Areas
 #  Riparian Zones and Slopes *
 #  Prices
-#  Finale
+#  Export
 #  Stopwatch
 
 # Stopwatch
@@ -101,6 +102,22 @@ dat_notifications =
 
 dat_notifications_less_1 = dat_notifications %>% select(UID)
 dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start)
+
+# Count intersections and recurrences within the set of notifications.
+
+dat_notifications_intersect = 
+  dat_notifications %>% 
+  relate(., ., relation = "intersects") %>% 
+  rowSums() %>% 
+  `-` (1) %>% 
+  tibble(UID = seq(1, length(.)), Intersects = .)
+
+dat_notifications_equal = 
+  dat_notifications %>% 
+  relate(., ., relation = "equals") %>% 
+  rowSums() %>% 
+  `-` (1) %>% 
+  tibble(UID = seq(1, length(.)), Equals = .)
 
 # Elevation
 
@@ -790,12 +807,15 @@ dat_join_price =
   left_join(dat_price_delivered, by = join_by(Year_Start == Year)) %>% 
   select(-Year_Start)
 
-# Finale
+# Export
 
-#  Joins
+dat_notifications_less_1 %T>% writeVector("output/dat_notifications_more_polygons.gdb", overwrite = TRUE)
 
 dat_notifications_out = 
   dat_notifications %>% 
+  as_tibble %>% 
+  left_join(dat_notifications_intersect) %>% 
+  left_join(dat_notifications_equal) %>% 
   left_join(dat_join_elevation) %>% 
   left_join(dat_join_slope) %>% 
   left_join(dat_join_roughness) %>% 
@@ -808,13 +828,8 @@ dat_notifications_out =
   left_join(dat_join_distance) %>% 
   left_join(dat_join_pad) %>% 
   # left_join(dat_join_fpa) %>% 
-  left_join(dat_join_price)
-
-#  Export
-
-writeVector(dat_notifications_out, "output/dat_notifications_more_polygons.gdb", overwrite = TRUE)
-
-write_csv(dat_notifications_out %>% as_tibble, "output/dat_notifications_more_flat.csv")
+  left_join(dat_join_price) %T>% 
+  write_csv("output/dat_notifications_more_annual.csv")
 
 # Stopwatch
 

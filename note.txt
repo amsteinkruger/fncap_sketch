@@ -1,15 +1,13 @@
 remember that in-memory references are a mess from 02-05.
 
-2026/01/06
+2026/01/12
 
-- precise sources for annual stuff
-- for quarterly, resolve prices, then NDVI, then NDVI seasonal adjustment. Leave VPD, MTBS for later.
-- spatial overlap
+- update documentation for both scripts; automate summary statistics for the data dictionary
 - ML
 - add FIA clone
 - make a flowchart
 
-- eventually deal with script structure and source commands
+- eventually deal with script structure, object names, and source commands
 
 2025/11/4
 
