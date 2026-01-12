@@ -476,7 +476,8 @@ dat_notifications_ndvi_adjustment =
                names_prefix = "Year.Quarter.",
                values_to = "Year_Quarter") %>% 
   mutate(Year_Quarter = paste0(str_sub(Year_Quarter, 1, 4), "_", str_sub(Year_Quarter, -1, -1))) %>% 
-  select(UID, Year_Quarter)
+  select(UID, Year_Quarter) %>% 
+  arrange(UID, Year_Quarter)
 
 #  Extract NDVI to notifications, then subset results for comparisons of interest.
 
@@ -488,7 +489,7 @@ dat_notifications_ndvi_adjustment =
 dat_join_ndvi_extract = 
   "output/data_ndvi.tif" %>% 
   rast %>% 
-  select(starts_with("NDVI_2014"), starts_with("NDVI_2015"), starts_with("NDVI_2016")) %>% 
+  # select(starts_with("NDVI_2014"), starts_with("NDVI_2015"), starts_with("NDVI_2016")) %>% 
   extract(., 
           dat_notifications_less_1, 
           mean, 
@@ -512,23 +513,35 @@ dat_join_ndvi_notifications =
   filter(row_number() > 1) %>% 
   ungroup
 
-  dat_join_ndvi_adjustment
-  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
-    pivot_longer(cols = starts_with("NDVI"),
-                 names_prefix = "NDVI_",
-                 names_to = "Year_Quarter",
-                 values_to = "NDVI") %>% 
-    left_join(dat_notifications_ndvi_adjustment, .) # %>% 
-    # group_by(UID) %>% 
-    # mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
-    # filter(row_number() > 1) %>% 
-    # ungroup
-
 # Match NDVI to notifications for adjustment quarters -- those preceding relevant quarters without any intersecting or equal polygons.
-  
+
+dat_join_ndvi_adjustment = 
+  dat_join_ndvi_extract %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("NDVI"),
+               names_prefix = "NDVI_",
+               names_to = "Year_Quarter",
+               values_to = "NDVI") %>% 
+  left_join(dat_notifications_ndvi_adjustment, .) %>% 
+  group_by(UID) %>% 
+  mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
+  filter(row_number() > 1) %>% 
+  ungroup %>% 
+  mutate(Quarter = Year_Quarter %>% str_sub(-1, -1)) %>% 
+  group_by(Quarter) %>% 
+  summarize(NDVI_Adjustment = mean(NDVI, na.rm = TRUE),
+            NDVI_Change_Adjustment = mean(NDVI_Change, na.rm = TRUE)) %>% 
+  ungroup
+
+# Join adjustment values to notifications for relevant quarters.
+
 dat_join_ndvi = 
   dat_join_ndvi_notifications %>% 
-  left_join(dat_join_ndvi_adjustment) # or something, and then some arithmetic for the actual adjustment
+  mutate(Quarter = Year_Quarter %>% str_sub(-1, -1)) %>% 
+  left_join(dat_join_ndvi_adjustment) %>% 
+  mutate(NDVI_Adjusted = NDVI - NDVI_Adjustment,
+         NDVI_Change_Adjusted = NDVI_Change - NDVI_Change_Adjustment) %>% 
+  select(UID, Year_Quarter, NDVI, NDVI_Change, NDVI_Change_Adjusted)
   
 # Distances
 
