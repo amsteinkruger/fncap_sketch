@@ -1,5 +1,7 @@
 # Join covariates to processed notifications with an annual result.
 
+#  55' (2026/1/12)
+
 # TOC:
 #  Stopwatch
 #  Packages
@@ -249,9 +251,9 @@ dat_mtbs =
   vect %>% 
   filter(substr(Event_ID, 1, 2) == "OR") %>% 
   project("EPSG:2992") %>% 
-  mutate(Year_MTBS = Ig_Date %>% year) %>% #, 
-         # .keep = "none") %>% 
-  filter(Year_MTBS %in% 1994:2024) # %>% 
+  mutate(Year_MTBS = Ig_Date %>% year, 
+         .keep = "none") %>%
+  filter(Year_MTBS %in% 1994:2024) %>% 
   crop(dat_bounds)
 
 # 1. No Buffer

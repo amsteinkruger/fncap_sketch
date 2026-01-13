@@ -3,6 +3,7 @@ remember that in-memory references are a mess from 02-05.
 2026/01/12
 
 - update documentation for both scripts; automate summary statistics for the data dictionary
+- add variables?
 - ML
 - add FIA clone
 - make a flowchart
