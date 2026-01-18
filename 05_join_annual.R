@@ -17,6 +17,7 @@
 #  TreeMap
 #  TCC
 #  NDVI
+#  Harvest Detection
 #  Distances
 #  Protected Areas
 #  Riparian Zones and Slopes *
@@ -540,37 +541,73 @@ dat_join_ndvi_annual =
   filter(Period == "After") %>% 
   select(UID, NDVI_Change)  
 
-# Problems with quarters:
-#  (1) Storing absolute names of quarters (1-44) in names of rasters in a raster stack. This is not a big problem.
-#  (2) Accounting for seasonal change between quarters. This is a big problem. This requires the ML thing for change to be interpretable.
-#        Well, not ML, but something statistical, and in practice it will come with the ML stuff for harvest detection.
-#  (3) Accounting for during- quarters by expanding notifications to multiple rows (notification-quarters). This is a big but clean problem.
+# Harvest Detection
 
-#  Quarterly (Pre- and Post-)
-#   Set up notifications to support comparisons between pre- and post-quarters, excluding during- quarters.
+#  Get public timber sales in a convenient format.
 
-# dat_notifications_ndvi_quarterly_less = 
-#   dat_notifications %>%
-#   mutate(Quarter_Start = Month_Start %>% `/` (3) %>% ceiling,
-#          Quarter_End = Month_End %>% `/` (3) %>% ceiling,
-#          Quarter_Start_Running = Quarter_Start + (Year_Start - min(Year_Start)) * 4,
-#          Quarter_End_Running = Quarter_End + (Year_End - min(Year_End)) * 4) %>% 
-#   filter(Quarter_End_Running < 44) %>%
-#   as_tibble %>%
-#   mutate(Quarter_Before = Quarter_Start_Running - 1,
-#          Quarter_After = Quarter_End_Running + 1) %>%
-#   select(UID, Quarter_Before, Quarter_After) %>%
-#   pivot_longer(starts_with("Quarter"),
-#                names_prefix = "Quarter_",
-#                names_to = "Period",
-#                values_to = "Quarter")  
+crs_usfs = 
+  "data/USFS_Harvest/Actv_TimberHarvest.gdb" %>% 
+  vect %>% 
+  crs
 
-# dat_join_ndvi_quarterly_less = 
+dat_bounds_usfs = dat_bounds %>% project(crs_usfs)
+  
+dat_detect_usfs = 
+  "data/USFS_Harvest/Actv_TimberHarvest.gdb" %>% 
+  vect %>% 
+  select(ADMIN_FOREST_NAME,
+         ACTIVITY_CN,
+         ACTIVITY_UNIT_CN,
+         ACTIVITY_CODE,
+         ACTIVITY_NAME,
+         TREATMENT_TYPE,
+         DATE_PLANNED,
+         DATE_AWARDED,
+         DATE_COMPLETED,
+         METHOD_CODE,
+         METHOD_DESC,
+         EQUIPMENT_CODE,
+         EQUIPMENT_DESC,
+         LAND_SUITABILITY_CLASS_CODE, 
+         LAND_SUITABILITY_CLASS_DESC, 
+         PRODUCTIVITY_CLASS_CODE, 
+         PRODUCTIVITY_CLASS_DESC, 
+         OWNERSHIP_CODE, 
+         OWNERSHIP_DESC, 
+         ASPECT, 
+         ELEVATION, 
+         SLOPE, 
+         STATE_ABBR) %>% 
+  filter(STATE_ABBR == "OR" & ACTIVITY_NAME == "Commercial Thin" & year(DATE_COMPLETED) %in% 2015:2024) %>% 
+  crop(dat_bounds_usfs) %>% 
+  project("EPSG:2992")
 
-#  Quarterly (Pre-, During-, Post-)
+#  Get TCC.
 
-# dat_notifications_ndvi_quarterly_more
-# dat_join_ndvi_quarterly_more
+dat_detect_tcc = 
+  "output/data_tcc.tif" %>% 
+  rast %>% 
+  extract(.,
+          dat_detect_usfs, 
+          mean, 
+          na.rm = TRUE)
+
+#  Get NDVI.
+
+dat_detect_ndvi = "output/data_ndvi_annual.tif" %>% rast
+
+dat_detect_extract_tcc = dat_detect_tcc %>% extract()
+  
+# dat_detect_extract_ndvi = 
+
+#  Get notifications with change in TCC and NDVI in convenient formats.
+
+dat_detect_notifications_tcc = dat_join_tcc
+dat_detect_notifications_ndvi = dat_join_ndvi_annual
+
+#  Parameterize a bad-but-useful model for harvest detection.
+
+#  Do something better?
   
 # Distances
 
