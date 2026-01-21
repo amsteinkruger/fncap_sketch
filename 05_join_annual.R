@@ -578,11 +578,29 @@ dat_detect_usfs =
          ELEVATION, 
          SLOPE, 
          STATE_ABBR) %>% 
-  filter(STATE_ABBR == "OR" & ACTIVITY_NAME == "Commercial Thin" & year(DATE_COMPLETED) %in% 2015:2024) %>% 
+  filter(STATE_ABBR == "OR") %>% 
+  filter(ACTIVITY_NAME == "Commercial Thin") %>% 
+  filter(year(DATE_COMPLETED) %in% 2015:2024) %>%
+  filter(year(DATE_COMPLETED) - year(DATE_AWARDED) == 0) %>% 
   crop(dat_bounds_usfs) %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %>% 
+  mutate(UID = row_number())
 
-#  Get TCC.
+#  Get TCC for public timber sales.
+
+#   Set up public timber sales in a convenient format for TCC extraction.
+
+dat_detect_usfs_tcc = 
+  dat_detect_usfs %>% 
+  as_tibble %>% 
+  mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
+         Year_Complete = DATE_COMPLETED %>% year,
+         Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>% 
+  filter(Year_Before %in% 2014:2022 & Year_Complete %in% 2014:2023) %>% 
+  select(UID, Years) %>% 
+  unnest(Years)
+
+#   Handle TCC.
 
 dat_detect_tcc = 
   "output/data_tcc.tif" %>% 
@@ -590,24 +608,89 @@ dat_detect_tcc =
   extract(.,
           dat_detect_usfs, 
           mean, 
-          na.rm = TRUE)
+          na.rm = TRUE) %>% 
+  bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>% 
+  select(-ID) %>% 
+  as_tibble %>% 
+  left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("TCC"),
+               names_prefix = "TCC_",
+               names_to = "Year",
+               values_to = "TCC") %>% 
+  mutate(Year = Year %>% as.numeric) %>% 
+  left_join(dat_detect_usfs_tcc, by = c("UID", "Year" = "Years")) %>% 
+  group_by(UID) %>% 
+  mutate(TCC_Change = TCC - lag(TCC),
+         TCC_Detect = ifelse(TCC_Change == min(TCC_Change, na.rm = TRUE) & min(TCC_Change, na.rm = TRUE) < 0, 1, 0)) %>% 
+  drop_na(TCC_Change) %>% 
+  ungroup
 
-#  Get NDVI.
+#  Get NDVI for public timber sales.
 
-dat_detect_ndvi = "output/data_ndvi_annual.tif" %>% rast
+#   Set up public timber sales in a convenient format for NDVI extraction.
 
-dat_detect_extract_tcc = dat_detect_tcc %>% extract()
-  
-# dat_detect_extract_ndvi = 
+dat_detect_usfs_ndvi = 
+  dat_detect_usfs %>% 
+  as_tibble %>% 
+  mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
+         Year_Complete = DATE_COMPLETED %>% year,
+         Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>% 
+  filter(Year_Before %in% 2014:2024 & Year_Complete %in% 2014:2024) %>% 
+  select(UID, Years) %>% 
+  unnest(Years)
 
-#  Get notifications with change in TCC and NDVI in convenient formats.
+#   Handle NDVI.
 
-dat_detect_notifications_tcc = dat_join_tcc
-dat_detect_notifications_ndvi = dat_join_ndvi_annual
+dat_detect_ndvi = 
+  "output/data_ndvi_annual.tif" %>% 
+  rast %>% 
+  extract(.,
+          dat_detect_usfs, 
+          mean, 
+          na.rm = TRUE) %>% 
+  bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>% 
+  select(-ID) %>% 
+  as_tibble %>% 
+  left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("NDVI"),
+               names_prefix = "NDVI_",
+               names_to = "Year",
+               values_to = "NDVI") %>% 
+  mutate(Year = Year %>% as.numeric) %>% 
+  semi_join(dat_detect_usfs_tcc, by = c("UID", "Year" = "Years")) %>% 
+  group_by(UID) %>% 
+  mutate(NDVI_Change = NDVI - lag(NDVI),
+         NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>% 
+  drop_na(NDVI_Change) %>% 
+  ungroup
+
+#  Compare NDVI and TCC.
+
+dat_detect_tcc_ndvi = 
+  dat_detect_ndvi %>% 
+  full_join(dat_detect_tcc, by = c("UID", "Year"))
+
+val_detect_tcc_ndvi_cor_measure = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
+val_detect_tcc_ndvi_cor_change = cor(dat_detect_tcc_ndvi$NDVI_Change, dat_detect_tcc_ndvi$TCC_Change)
+val_detect_tcc_ndvi_cor_detect = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
+val_detect_tcc_ndvi_agreement = 
+  dat_detect_tcc_ndvi %>% 
+  mutate(Agreement = NDVI_Detect * TCC_Detect) %>% 
+  summarize(Check = sum(Agreement) / n_distinct(UID)) %>% 
+  pull(Check)
+
+# dat_detect_tcc_ndvi = dat_detect_tcc_ndvi %>% group_by(UID) %>% filter(n() < 2) %>% ungroup
+
+# problem: why are single-change observations returning different results? should be same then
 
 #  Parameterize a bad-but-useful model for harvest detection.
 
 #  Do something better?
+
+#  Get notifications with change in TCC and NDVI in convenient formats.
+
+# dat_detect_notifications_tcc = dat_join_tcc
+# dat_detect_notifications_ndvi = dat_join_ndvi_annual
   
 # Distances
 
