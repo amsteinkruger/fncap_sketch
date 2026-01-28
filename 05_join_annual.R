@@ -1,5 +1,7 @@
 # Join covariates to processed notifications with an annual result.
 
+#  Remember that UID is fragile throughout this script. (And maybe remember to fix that.)
+
 #  55' (2026/1/12)
 
 # TOC:
@@ -593,12 +595,10 @@ dat_detect_usfs =
 dat_detect_usfs_tcc = 
   dat_detect_usfs %>% 
   as_tibble %>% 
-  mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
-         Year_Complete = DATE_COMPLETED %>% year,
-         Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>% 
-  filter(Year_Before %in% 2014:2022 & Year_Complete %in% 2014:2023) %>% 
-  select(UID, Years) %>% 
-  unnest(Years)
+  mutate(Year = DATE_COMPLETED %>% year,
+         Activity = 1) %>% 
+  filter(Year %in% 2015:2023) %>% 
+  select(UID, Year, Activity)
 
 #   Handle TCC.
 
@@ -618,12 +618,12 @@ dat_detect_tcc =
                names_to = "Year",
                values_to = "TCC") %>% 
   mutate(Year = Year %>% as.numeric) %>% 
-  left_join(dat_detect_usfs_tcc, by = c("UID", "Year" = "Years")) %>% 
+  left_join(dat_detect_usfs_tcc) %>% 
+  mutate(Activity = ifelse(is.na(Activity), 0, Activity)) %>% 
   group_by(UID) %>% 
-  mutate(TCC_Change = TCC - lag(TCC),
-         TCC_Detect = ifelse(TCC_Change == min(TCC_Change, na.rm = TRUE) & min(TCC_Change, na.rm = TRUE) < 0, 1, 0)) %>% 
-  drop_na(TCC_Change) %>% 
-  ungroup
+  mutate(TCC_Change = TCC - ifelse(is.na(lag(TCC, n = 2)), lag(TCC), (lag(TCC) + lag(TCC, n = 2)) / 2)) %>% 
+  ungroup %>% 
+  drop_na(TCC_Change)
 
 #  Get NDVI for public timber sales.
 
@@ -682,6 +682,8 @@ val_detect_tcc_ndvi_agreement =
 # dat_detect_tcc_ndvi = dat_detect_tcc_ndvi %>% group_by(UID) %>% filter(n() < 2) %>% ungroup
 
 # problem: why are single-change observations returning different results? should be same then
+
+# problem: why are the data like this? DATE_COMPLETED offset from breaks in TCC(, NDVI?)
 
 #  Parameterize a bad-but-useful model for harvest detection.
 

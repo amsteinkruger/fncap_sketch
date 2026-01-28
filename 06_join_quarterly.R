@@ -13,13 +13,12 @@
 #  Elevation
 #  Slope
 #  Roughness
-#  VPD (Preceding) *
-#  VPD (During) *
+#  VPD
 #  Pyromes
-#  Fires (Preceding) *
-#  Fires (During) *
+#  Fires
 #  TreeMap
 #  NDVI
+#  Harvest Detection *
 #  Distances
 #  Protected Areas
 #  Riparian Zones and Slopes *
