@@ -270,7 +270,7 @@ dat_notifications_intersect_sample =
   select(from, to) %>% 
   pivot_longer(cols = c(from, to)) %>% 
   select(UID = value) %>% 
-  slice_sample(n = 1000) %>% 
+  slice_sample(n = 50) %>% 
   nest(data = UID, .by = UID) %>% 
   
   # This next bit is complicated by having dropped either the top or bottom triangle of the initial intersection matrix.
