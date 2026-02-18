@@ -3,6 +3,7 @@
 #  Remember that UID is fragile throughout this script. (And maybe remember to fix that.)
 
 #  55' (2026/1/12)
+#  ~ 3h? (2026/2/17)
 
 # TOC:
 #  Stopwatch
@@ -19,10 +20,11 @@
 #  TreeMap
 #  TCC
 #  NDVI
-#  Harvest Detection
+#  Harvest Detection *
 #  Distances
 #  Protected Areas
-#  Riparian Zones and Slopes *
+#  Riparian Zones and Slopes
+#  Watersheds
 #  Prices
 #  Export
 #  Stopwatch
@@ -189,7 +191,7 @@ dat_join_pyrome =
   intersect(dat_pyrome) %>% 
   as_tibble %>% 
   group_by(UID) %>% 
-  filter(row_number() == 1) %>% # Keep only the first pyrome intersecting with a notification. This is arbitrary.
+  filter(row_number() == 1) %>% # Keep only the first pyrome intersecting a notification. This is arbitrary.
   ungroup
 
 # VPD
@@ -629,55 +631,55 @@ dat_detect_tcc =
 
 #   Set up public timber sales in a convenient format for NDVI extraction.
 
-dat_detect_usfs_ndvi = 
-  dat_detect_usfs %>% 
-  as_tibble %>% 
-  mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
-         Year_Complete = DATE_COMPLETED %>% year,
-         Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>% 
-  filter(Year_Before %in% 2014:2024 & Year_Complete %in% 2014:2024) %>% 
-  select(UID, Years) %>% 
-  unnest(Years)
+# dat_detect_usfs_ndvi = 
+#   dat_detect_usfs %>% 
+#   as_tibble %>% 
+#   mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
+#          Year_Complete = DATE_COMPLETED %>% year,
+#          Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>% 
+#   filter(Year_Before %in% 2014:2024 & Year_Complete %in% 2014:2024) %>% 
+#   select(UID, Years) %>% 
+#   unnest(Years)
 
 #   Handle NDVI.
 
-dat_detect_ndvi = 
-  "output/data_ndvi_annual.tif" %>% 
-  rast %>% 
-  extract(.,
-          dat_detect_usfs, 
-          mean, 
-          na.rm = TRUE) %>% 
-  bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>% 
-  select(-ID) %>% 
-  as_tibble %>% 
-  left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
-  pivot_longer(cols = starts_with("NDVI"),
-               names_prefix = "NDVI_",
-               names_to = "Year",
-               values_to = "NDVI") %>% 
-  mutate(Year = Year %>% as.numeric) %>% 
-  semi_join(dat_detect_usfs_tcc, by = c("UID", "Year" = "Years")) %>% 
-  group_by(UID) %>% 
-  mutate(NDVI_Change = NDVI - lag(NDVI),
-         NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>% 
-  drop_na(NDVI_Change) %>% 
-  ungroup
+# dat_detect_ndvi = 
+#   "output/data_ndvi_annual.tif" %>% 
+#   rast %>% 
+#   extract(.,
+#           dat_detect_usfs, 
+#           mean, 
+#           na.rm = TRUE) %>% 
+#   bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>% 
+#   select(-ID) %>% 
+#   as_tibble %>% 
+#   left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
+#   pivot_longer(cols = starts_with("NDVI"),
+#                names_prefix = "NDVI_",
+#                names_to = "Year",
+#                values_to = "NDVI") %>% 
+#   mutate(Year = Year %>% as.numeric) %>% 
+#   semi_join(dat_detect_usfs_tcc, by = c("UID", "Year" = "Years")) %>% 
+#   group_by(UID) %>% 
+#   mutate(NDVI_Change = NDVI - lag(NDVI),
+#          NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>% 
+#   drop_na(NDVI_Change) %>% 
+#   ungroup
 
 #  Compare NDVI and TCC.
 
-dat_detect_tcc_ndvi = 
-  dat_detect_ndvi %>% 
-  full_join(dat_detect_tcc, by = c("UID", "Year"))
-
-val_detect_tcc_ndvi_cor_measure = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
-val_detect_tcc_ndvi_cor_change = cor(dat_detect_tcc_ndvi$NDVI_Change, dat_detect_tcc_ndvi$TCC_Change)
-val_detect_tcc_ndvi_cor_detect = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
-val_detect_tcc_ndvi_agreement = 
-  dat_detect_tcc_ndvi %>% 
-  mutate(Agreement = NDVI_Detect * TCC_Detect) %>% 
-  summarize(Check = sum(Agreement) / n_distinct(UID)) %>% 
-  pull(Check)
+# dat_detect_tcc_ndvi = 
+#   dat_detect_ndvi %>% 
+#   full_join(dat_detect_tcc, by = c("UID", "Year"))
+# 
+# val_detect_tcc_ndvi_cor_measure = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
+# val_detect_tcc_ndvi_cor_change = cor(dat_detect_tcc_ndvi$NDVI_Change, dat_detect_tcc_ndvi$TCC_Change)
+# val_detect_tcc_ndvi_cor_detect = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
+# val_detect_tcc_ndvi_agreement = 
+#   dat_detect_tcc_ndvi %>% 
+#   mutate(Agreement = NDVI_Detect * TCC_Detect) %>% 
+#   summarize(Check = sum(Agreement) / n_distinct(UID)) %>% 
+#   pull(Check)
 
 # dat_detect_tcc_ndvi = dat_detect_tcc_ndvi %>% group_by(UID) %>% filter(n() < 2) %>% ungroup
 
@@ -789,67 +791,98 @@ dat_join_pad =
 
 # Riparian Zones and Slopes
 
-# The flow line geodatabase crashes R. 
+dat_fpa_1 =
+  "data/FPA/Hydrography_Flow_Line.geojson" %>%
+  vect %>% # 5'
+  select(OBJECTID,
+         FishPresence,
+         SSBTStatus,
+         DistanceToFish,
+         DistanceToSSBT,
+         Barrier,
+         FPAStreamSize,
+         StreamName,
+         StreamPermanence,
+         StreamTermination,
+         StreamWaterUse,
+         HUC8Name,
+         HUC8) %>%
+  crop(dat_bounds %>% project("EPSG:4326")) %>% # 112'
+  project("EPSG:2992") %>%
+  intersect(dat_notifications_less_1, .) %>%
+  select(UID) %>%
+  as_tibble %>%
+  mutate(FPA_1 = 1) %>%
+  left_join(dat_notifications_less_1, .) %>% 
+  distinct %>% 
+  mutate(FPA_1 = FPA_1 %>% replace_na(0))
 
-# dat_fpa_1 =
-#   "data/FPA/Hydrography_Flow_Line.gdb" %>%
+dat_fpa_2 =
+  "data/FPA/Topography_Designated_Sediment_Source_Area.gdb" %>%
+  vect %>%
+  select(TriggerSource) %>% 
+  crop(dat_bounds %>% project("EPSG:3857")) %>%
+  project("EPSG:2992") %>%
+  intersect(dat_notifications_less_1, .) %>%
+  select(UID) %>%
+  as_tibble %>%
+  mutate(FPA_2 = 1) %>%
+  left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
+  distinct %>% 
+  mutate(FPA_2 = FPA_2 %>% replace_na(0))
+
+# So, the flow traversal areas are described by points. This is silly.
+# They should be lines. Specifically, lines with fewer (than 4000000) vertices.
+# So: figure out geospatial operations to turn points into sensible lines.
+
+# dat_fpa_3 =
+#   "data/FPA/Topography_Debris_Flow_Traversal_Area.gdb" %>%
 #   vect %>%
-#   aggregate %>%
+#   slice_sample(n = 10) %>% # Testing runtimes.
 #   crop(dat_bounds %>% project("EPSG:3857")) %>%
 #   project("EPSG:2992") %>%
 #   intersect(dat_notifications_less_1, .) %>%
 #   select(UID) %>%
 #   as_tibble %>%
-#   mutate(FPA_1 = 1) %>%
+#   mutate(FPA_3 = 1) %>%
 #   left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
-#   mutate(FPA_1 = FPA_1 %>% replace_na(0))
-
-# The sediment source, flow area, and flow subbasin files do not crash R, but they're pretty slow to process.
-
-# dat_fpa_2 = 
-#   "data/FPA/Topography_Designated_Sediment_Source_Area.gdb" %>% 
-#   vect %>% 
-#   aggregate %>% 
-#   crop(dat_bounds %>% project("EPSG:3857")) %>% 
-#   project("EPSG:2992") %>% 
-#   intersect(dat_notifications_less_1, .) %>% 
-#   select(UID) %>% 
-#   as_tibble %>% 
-#   mutate(FPA_2 = 1) %>% 
-#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
-#   mutate(FPA_2 = FPA_2 %>% replace_na(0))
-
-# dat_fpa_3 = 
-#   "data/FPA/Topography_Debris_Flow_Traversal_Area.gdb" %>% 
-#   vect %>% 
-#   aggregate %>% 
-#   crop(dat_bounds %>% project("EPSG:3857")) %>% 
-#   project("EPSG:2992") %>% 
-#   intersect(dat_notifications_less_1, .) %>% 
-#   select(UID) %>% 
-#   as_tibble %>% 
-#   mutate(FPA_3 = 1) %>% 
-#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
+#   distinct %>% 
 #   mutate(FPA_3 = FPA_3 %>% replace_na(0))
 
-# dat_fpa_4 = 
-#   "data/FPA/Topography_Debris_Flow_Traversal_Subbasin.gdb" %>% 
-#   vect %>% 
-#   aggregate %>% 
-#   crop(dat_bounds %>% project("EPSG:3857")) %>% 
-#   project("EPSG:2992") %>% 
-#   intersect(dat_notifications_less_1, .) %>% 
-#   select(UID) %>% 
-#   as_tibble %>% 
-#   mutate(FPA_4 = 1) %>% 
-#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
-#   mutate(FPA_4 = FPA_4 %>% replace_na(0))
+dat_fpa_4 =
+  "data/FPA/Topography_Debris_Flow_Traversal_Subbasin.gdb" %>%
+  vect %>%
+  crop(dat_bounds %>% project("EPSG:3857")) %>%
+  project("EPSG:2992") %>%
+  intersect(dat_notifications_less_1, .) %>%
+  select(UID) %>%
+  as_tibble %>%
+  mutate(FPA_4 = 1) %>%
+  left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
+  distinct %>% 
+  mutate(FPA_4 = FPA_4 %>% replace_na(0))
 
-# dat_join_fpa = 
-#   dat_fpa_1 %>% 
-#   dat_fpa_2 %>% 
-#   left_join(dat_fpa_3) %>% 
-#   left_join(dat_fpa_4)
+dat_join_fpa =
+  dat_fpa_1 %>%
+  left_join(dat_fpa_2) %>%
+  # left_join(dat_fpa_3) %>%
+  left_join(dat_fpa_4)
+
+# Watersheds
+
+dat_huc8 = 
+  "data/HUC8/Oregon_Subbasins%3A_8_Digit_Hydrologic_Units_(2024).shp" %>% 
+  vect %>% 
+  select(Watershed = name) %>% 
+  project("EPSG:2992")
+
+dat_join_huc8 = 
+  dat_notifications_less_1 %>% 
+  intersect(dat_huc8) %>% 
+  as_tibble %>% 
+  group_by(UID) %>% 
+  filter(row_number() == 1) %>% # Keep only the first watershed intersecting a notification. This is arbitrary.
+  ungroup
 
 # Prices
 
@@ -951,7 +984,8 @@ dat_notifications_out =
   left_join(dat_join_ndvi_annual) %>% 
   left_join(dat_join_distance) %>% 
   left_join(dat_join_pad) %>% 
-  # left_join(dat_join_fpa) %>% 
+  left_join(dat_join_fpa) %>%
+  left_join(dat_join_huc8) %>%
   left_join(dat_join_price) %T>% 
   write_csv("output/dat_notifications_more_annual.csv")
 
