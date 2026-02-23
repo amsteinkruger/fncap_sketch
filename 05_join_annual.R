@@ -846,7 +846,7 @@ dat_fpa_2 =
 #   as_tibble %>%
 #   mutate(FPA_3 = 1) %>%
 #   left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
-#   distinct %>% 
+#   distinct %>%
 #   mutate(FPA_3 = FPA_3 %>% replace_na(0))
 
 dat_fpa_4 =
@@ -866,7 +866,8 @@ dat_join_fpa =
   dat_fpa_1 %>%
   left_join(dat_fpa_2) %>%
   # left_join(dat_fpa_3) %>%
-  left_join(dat_fpa_4)
+  left_join(dat_fpa_4) %>% 
+  as_tibble
 
 # Watersheds
 
@@ -882,7 +883,8 @@ dat_join_huc8 =
   as_tibble %>% 
   group_by(UID) %>% 
   filter(row_number() == 1) %>% # Keep only the first watershed intersecting a notification. This is arbitrary.
-  ungroup
+  ungroup %>% 
+  as_tibble
 
 # Prices
 
