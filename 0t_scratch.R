@@ -1,10 +1,22 @@
-# Estimate simple linear models of MBF/Acre on a kitchen sink of variables.
+# Estimate . . . stuff for 2YP.
 
 # Need: 
+#  - real quarterly harvest detection
 #  - PAD for ownership type intersection/restriction
 #  - owner company string
 #  - owner scale (percentile in acres of clearcuts?)
 #  - short-term VPD, fires
+#  - something for land rents
+#  - something for discount rates
+#  - something for yield increase in time
+#  - maybe treatment intersections (but not really without more data)
+
+# Out:
+#  - maps of notifications, MBF, acre by county and HUC8
+#  - plots of notifications, MBF, acre in time by firm
+#  - plots of notification-MBF-acre relationships (appendix)
+#  - table of sample restriction impacts
+#  - table of summary statistics by model variable
 
 library(tidyverse)
 library(magrittr)
