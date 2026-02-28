@@ -1,15 +1,17 @@
-# Estimate . . . stuff for 2YP.
+# Estimate something for 2YP.
 
 # Need: 
-#  - real quarterly harvest detection
-#  - PAD for ownership type intersection/restriction
-#  - owner company string
-#  - owner scale (percentile in acres of clearcuts?)
-#  - short-term VPD, fires
-#  - something for land rents
-#  - something for discount rates
-#  - something for yield increase in time
+#  - real quarterly harvest detection (x) (placeholder)
+#  - owner company string (x)
+#  - owner scale (percentile in acres of clearcuts?) (x)
+#  - short-term VPD, fires (nope)
+#  - something for land rents (x) (placeholder)
+#  - something for discount rates (x)
+#  - something for yield increase in time ( ) (placeholder)
+#  - stupid counties
 #  - maybe treatment intersections (but not really without more data)
+#  - probably proportional intersection for public lands (instead of 1/0)
+#  - recover some observations with intersections (x)
 
 # Out:
 #  - maps of notifications, MBF, acre by county and HUC8
@@ -18,26 +20,29 @@
 #  - table of sample restriction impacts
 #  - table of summary statistics by model variable
 
+# Packages
+
 library(tidyverse)
 library(magrittr)
 library(plm)
 library(stargazer)
 library(sandwich)
 
+# Data
+
 dat = 
   "output/dat_notifications_more_annual.csv" %>% 
   read_csv %>% 
-  mutate(Restriction_Overlaps = (Intersects == 0 & Equals == 0),
+  mutate(Restriction_Overlaps = (Intersect_Maximum < 0.01),
          Restriction_DouglasFir = (ProportionDouglasFir > 0.50),
-         Restriction_NDVI = !is.na(NDVI_Change),
-         Restriction_PAD = (PAD == 0),
-         Restriction_None = TRUE,
-         Restriction_Any = (Restriction_Overlaps == TRUE | Restriction_DouglasFir == TRUE | Restriction_NDVI == TRUE | Restriction_PAD == TRUE),
-         Restriction_All = (Restriction_Overlaps == TRUE & Restriction_DouglasFir == TRUE & Restriction_NDVI == TRUE & Restriction_PAD == TRUE)) %>% 
+         Restriction_NDVI = (NDVI_Detect == 1),
+         Restriction_Any = (Restriction_Overlaps == TRUE | Restriction_DouglasFir == TRUE | Restriction_NDVI == TRUE),
+         Restriction_All = (Restriction_Overlaps == TRUE & Restriction_DouglasFir == TRUE & Restriction_NDVI == TRUE)) %>% 
   filter(Restriction_All == TRUE) %>% 
   select(UID, 
          Year_Start, 
          Month_Start, 
+         Company,
          MBF, 
          Acres, 
          Elevation, 
@@ -45,155 +50,141 @@ dat =
          Roughness, 
          Pyrome, 
          VPD, 
-         starts_with("Fire"),
          ProportionDouglasFir,
-         starts_with("SiteClass"),
+         SiteClass_Mod,
          starts_with("Distance"),
-         starts_with("FPA"),
          Watershed,
-         starts_with("Stumpage"),
-         starts_with("Delivered")) %>% 
+         County,
+         Stumpage_Real_PPI_Timber) %>% 
   mutate(MBF_Acre = MBF / Acres) %>% 
   filter(MBF < quantile(MBF, 0.99) & MBF > quantile(MBF, 0.01),
          Acres < quantile(Acres, 0.99) & Acres > quantile(Acres, 0.01),
-         MBF_Acre < quantile(MBF_Acre, 0.99) & MBF_Acre > quantile(MBF_Acre, 0.01))
+         MBF_Acre < quantile(MBF_Acre, 0.99) & MBF_Acre > quantile(MBF_Acre, 0.01)) %>% 
+  mutate(MBF_Prime = par_growth * (1 / 1000) * Acres + MBF)
 
-mod_less = dat %>% lm(MBF_Acre ~ Elevation + Slope + VPD + ProportionDouglasFir + SiteClass_Med + Distance_Place + FPA_1 + Stumpage_Real_PPI_Timber, data = .)
+#  - maps of notifications and firms by county
+
+dat_counties = 
+  dat %>% 
+  group_by(Year_Start, County) %>% 
+  summarize(MBF = sum(MBF),
+            Firms = n_distinct(Company)) %>% 
+  group_by(County) %>% 
+  summarize(MBF = mean(MBF),
+            Firms = mean(Firms)) %>% 
+  left_join("data/TIGER.gdb" %>% 
+              vect(layer = "County") %>% 
+              select(County = NAMELSAD) %>% 
+              project("EPSG:2992"),
+            .) %>% 
+  crop(dat_pyrome) %>% 
+  drop_na
+
+vis_counties_mbf =
+  dat_counties %>% 
+  ggplot() +
+  geom_spatvector(aes(fill = MBF / 1000000),
+                  color = "white",
+                  linewidth = 0.20) +
+  scale_fill_viridis(option = "E",
+                     limits = c(0, NA),
+                     # breaks = c(0, 1, 2),
+                     guide = guide_colorbar(title.position = "top")) +
+  labs(fill = "Board Feet (Billions)") +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.ticks = element_blank(),
+        legend.key.height = unit(0.25, "lines"),
+        legend.key.width = unit(1.5, "lines"),
+        legend.title = element_text(hjust = 0.5))
+
+
+vis_counties_firms =
+  dat_counties %>% 
+  ggplot() +
+  geom_spatvector(aes(fill = Firms),
+                  color = "white",
+                  linewidth = 0.20) +
+  scale_fill_viridis(option = "G",
+                     limits = c(0, NA),
+                     # breaks = c(0, 40, 80),
+                     guide = guide_colorbar(title.position = "top")) +
+  labs(fill = "Timberland Owners") +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.ticks = element_blank(),
+        legend.key.height = unit(0.25, "lines"),
+        legend.key.width = unit(1.5, "lines"),
+        legend.title = element_text(hjust = 0.5))
+
+vis_counties = vis_counties_mbf + vis_counties_firms
+
+ggsave("output/paper_vis_counties.png",
+       dpi = 300,
+       width = 6.5)
+
+#  - plots of MBF in time by firm
+
+dat_time = 
+  dat %>% 
+  group_by(Year_Start, Company) %>% 
+  summarize(MBF = sum(MBF)) %>% 
+  ungroup
+
+vis_time = 
+  dat_time %>% 
+  ggplot() +
+  geom_boxplot(aes(x = Year_Start %>% factor,
+                   y = log(MBF)))
+
+#  - plots of notification-MBF-acre relationships (appendix)
+#  - table of sample restriction impacts
+#  - table of summary statistics by model variable
+
+# Yield Models
+
+mod_less = 
+  dat %>% 
+  lm(MBF_Acre ~ 
+       Elevation + 
+       Slope + 
+       VPD + 
+       ProportionDouglasFir + 
+       SiteClass_Med + 
+       Distance_Place + 
+       FPA_1 + 
+       Stumpage_Real_PPI_Timber, 
+     data = .)
 
 mod_more = 
   dat %>% 
   plm(MBF_Acre ~ 
-        MBF +
-        Acres +
-        Elevation +
-        Slope + 
-        Roughness + 
-        VPD + 
-        Fire_0 +
-        Fire_15_Doughnut +
-        Fire_30_Doughnut +
-        ProportionDouglasFir +
-        SiteClass_Min +
-        SiteClass_Max +
-        SiteClass_Med +
-        Distance_Road +
-        Distance_Mill + 
-        Distance_Place +
-        FPA_1 +
-        FPA_2 +
-        FPA_4 + 
-        Stumpage_Real_PPI +
-        Stumpage_Real_PPI_Timber +
-        Delivered_Real_PPI +
-        Delivered_Real_PPI_Timber,
-      index = c("Pyrome", "Year_Start"),
-      data = .)
-
-mod_less_iterate = 
-  dat %>% 
-  plm(MBF_Acre ~ 
-        # MBF +
-        # Acres +
         Elevation + 
         Slope + 
         VPD + 
-        Fire_0 +
-        Fire_15_Doughnut +
         ProportionDouglasFir + 
         SiteClass_Med + 
-        Distance_Road + 
-        Distance_Mill +
+        Distance_Place + 
         FPA_1 + 
-        Stumpage_Real_PPI_Timber,
+        Stumpage_Real_PPI_Timber, 
       index = c("Pyrome", "Year_Start"),
       data = .)
 
 # Begin tabulation shenanigans.
 
 m1 = mod_less
-m2 = mod_less_iterate
-m3 = mod_more
+m2 = mod_more
 
-se_list <- list(
-  sqrt(diag(vcovHC(m1, type = "HC1"))),
-  sqrt(diag(vcovHC(m2, type = "HC1", cluster = "group"))),
-  sqrt(diag(vcovHC(m3, type = "HC1", cluster = "group")))
-)
+se_list <- 
+  list(sqrt(diag(vcovHC(m1, type = "HC1"))), 
+       sqrt(diag(vcovHC(m2, type = "HC1", cluster = "group"))),
+       sqrt(diag(vcovHC(m3, type = "HC1", cluster = "group"))))
 
-stargazer(m1, m2, m3,
+stargazer(m1, m2, 
           type = "html",
           se = se_list,
-          column.labels = c("Naive", "Less Naive", "Kitchen SInk"),
+          column.labels = c("Less", "More"),
           keep.stat = c("n","rsq","adj.rsq","f"),
           out = "output/estimates_20260225.html")
-
-# Correlogram
-
-dat %>%
-  select(where(is.numeric)) %>%
-  select(-UID) %>% 
-  cor(use = "pairwise.complete.obs") %>%
-  as.data.frame() %>%
-  rownames_to_column("var1") %>%
-  pivot_longer(-var1, names_to = "var2", values_to = "Correlation") %>%
-  ggplot(aes(var1, var2, fill = Correlation)) +
-  geom_tile() +
-  scale_fill_gradient2(limits = c(-1, 1), low = "orange", mid = "white", high = "#2166AC") +
-  coord_equal() +
-  theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = NULL, y = NULL, fill = "Correlation")
-
-ggsave("output/corr_20260225.png",
-       dpi = 300,
-       width = 9,
-       height = 9)
-
-# PCA Biplot
-
-X <- 
-  dat %>% 
-  select(where(is.numeric)) %>% 
-  select(-UID) %>% 
-  tidyr::drop_na()
-
-# PCA
-pca <- prcomp(X, scale. = TRUE)
-ve  <- (pca$sdev^2) / sum(pca$sdev^2) 
-
-# Scores (observations) and loadings (variables)
-scores <- 
-  as_tibble(pca$x[, 1:2], .name_repair = "minimal") %>%
-  rename(PC1 = 1, PC2 = 2)
-
-loadings <- 
-  as_tibble(pca$rotation[, 1:2], rownames = "var") %>%
-  rename(PC1 = 2, PC2 = 3)
-
-# Scale loadings to the score range for a readable biplot
-sf <- 0.8 * min(
-  (max(scores$PC1) - min(scores$PC1)) / max(abs(loadings$PC1)),
-  (max(scores$PC2) - min(scores$PC2)) / max(abs(loadings$PC2))
-)
-
-loadings_sc <- loadings %>% mutate(PC1 = PC1 * sf, PC2 = PC2 * sf)
-
-# Biplot
-
-ggplot() +
-  geom_point(data = scores, aes(PC1, PC2), alpha = 0.1, shape = 21, fill = NA, color = "black") +
-  geom_segment(data = loadings_sc,
-               aes(x = 0, y = 0, xend = PC1, yend = PC2),
-               arrow = arrow(length = unit(0.02, "npc")), color = "#444444") +
-  geom_text(data = loadings_sc, aes(PC1, PC2, label = var),
-            hjust = 0.5, vjust = -0.7, size = 3.2) +
-  coord_equal() +
-  theme_minimal(base_size = 12) +
-  labs(
-    x = sprintf("PC1 (%.1f%%)", 100 * ve[1]),
-    y = sprintf("PC2 (%.1f%%)", 100 * ve[2]))
-
-ggsave("output/pca_20260225.png",
-       dpi = 300,
-       width = 9,
-       height = 9)

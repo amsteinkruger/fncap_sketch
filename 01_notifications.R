@@ -21,8 +21,8 @@ dat_right =
   dat_flat %>% 
   mutate(across(starts_with("LO"), ~ifelse(. == "NULL", "", .)),
          across(c("LOFirstName", "LOMiddleName"), ~ifelse(. == "", "", paste0(., " "))),
-         `LO Company Name` = ifelse(`LO Company Name` == "", "", paste0(", ", `LO Company Name`)),
-         LandOwnerName = paste0(LOFirstName, LOMiddleName, LOLastName, `LO Company Name`) %>% str_trim,
+         LOCompany = ifelse(`LO Company Name` == "", "", paste0(", ", `LO Company Name`)),
+         LandOwnerName = paste0(LOFirstName, LOMiddleName, LOLastName, LOCompany) %>% str_trim, 
          UID_Right = row_number()) %>% 
   select(NOAPID = NoapIdentifier,
          UnitID = Id,
@@ -33,6 +33,7 @@ dat_right =
          ActivityQuantity_Right = `Unit Quantity`,
          LandOwnerType_Right = LandOwnerType,
          LandOwnerName_Right = LandOwnerName,
+         LandOwnerCompany_Right = `LO Company Name`,
          DateSubmit_Right = SubmitDate,
          DateStart_Right = `Actvity StartDate`,
          DateEnd_Right = `Activity EndDate`)
@@ -128,6 +129,7 @@ dat_join_polygons_out =
          ActivityQuantity = ActivityQuantity_Right,
          LandOwnerName_Left,
          LandOwnerName_Right,
+         LandOwnerCompany_Right,
          LandOwnerType = LandOwnerType_Right,
          DateSubmit = DateSubmit_Right,
          DateStart_Left,

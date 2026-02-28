@@ -10,7 +10,8 @@
 #  Packages
 #  Bounds
 #  Notifications
-#  Intersections and Recurrences
+#  Ownership
+#  Intersections
 #  Elevation
 #  Slope
 #  Roughness
@@ -18,14 +19,19 @@
 #  Pyromes
 #  Fires
 #  TreeMap
+#  Growth *
 #  TCC
 #  NDVI
 #  Harvest Detection *
 #  Distances
-#  Protected Areas
-#  Riparian Zones and Slopes
+#  Public Lands
+#  Protected Lands
+#  Flow Lines
+#  Steep Slopes *
 #  Watersheds
+#  Counties
 #  Prices
+#  Effective Federal Funds Rate
 #  Export
 #  Stopwatch
 
@@ -81,7 +87,8 @@ dat_notifications =
   filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   filter(ActivityUnit == "MBF") %>% 
   filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  rename(LandOwner = LandOwnerName_Right) %>% 
+  rename(LandOwner = LandOwnerName_Right,
+         LandOwnerCompany = LandOwnerCompany_Right) %>% 
   select(-ends_with("Right")) %>% 
   rename_with(~ sub("_Left$", "", .x), everything()) %>% 
   mutate(Year_Start = year(DateStart),
@@ -91,7 +98,9 @@ dat_notifications =
          MBF = ActivityQuantity %>% as.numeric) %>%
   arrange(desc(Year_Start), desc(Month_Start), LandOwnerType, LandOwner, desc(MBF), desc(Acres)) %>% 
   filter(Year_Start > 2014 & Year_End < 2025) %>% 
+  mutate(LandOwnerCompany = LandOwnerCompany %>% str_sub(3, -1)) %>% 
   select(LandOwner,
+         LandOwnerCompany,
          ends_with("_Start"), 
          ends_with("_End"), 
          MBF, 
@@ -110,21 +119,104 @@ dat_notifications =
 dat_notifications_less_1 = dat_notifications %>% select(UID)
 dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start)
 
-# Count intersections and recurrences within the set of notifications.
+# Ownership
+
+#  This should go in another script for ease of interpretation, but: 
+#   one line exports companies for hand-fixing, 
+#   the next line reads them back in,
+#   and the last line drops the original company field from the main data object.
+
+dat_notifications %>% as_tibble %>% select(LandOwner, LandOwnerCompany) %>% distinct %>% write_csv("output/landowners.csv")
+
+dat_join_owner = 
+  "output/landowners.xlsx" %>% 
+  read_xlsx %>% 
+  mutate(LandOwnerCompany = ifelse(is.na(LandOwnerCompany), "", LandOwnerCompany),
+         LandOwnerCompany = ifelse(LandOwnerCompany == "NA", "", LandOwnerCompany)) %>% 
+  left_join(dat_notifications %>% 
+              select(UID, LandOwner, LandOwnerCompany) %>% 
+              as_tibble %>% 
+              mutate(LandOwnerCompany = ifelse(is.na(LandOwnerCompany), "", LandOwnerCompany),
+                     LandOwnerCompany = ifelse(LandOwnerCompany == "NA", "", LandOwnerCompany)), 
+            .) %>% 
+  select(UID, Company = Company_2)
+
+dat_notifications = dat_notifications %>% select(-LandOwnerCompany)
+
+# Owner Scale
+#  This should really run after subsetting notifications.
+
+dat_join_scale = 
+  dat_notifications %>% 
+  as_tibble %>% 
+  left_join(dat_join_owner) %>% 
+  group_by(Company) %>% 
+  summarize(Company_MBF = sum(MBF),
+            Company_Acres = sum(Acres),
+            Company_Notifications = n()) %>% 
+  ungroup %>% 
+  arrange(desc(Company_MBF)) %>% 
+  mutate(Company_Percentile_MBF = ntile(Company_MBF, 100),
+         Company_Percentile_Acres = ntile(Company_Acres, 100))
+
+# Intersections
+
+#  Count intersections.
 
 dat_notifications_intersect = 
   dat_notifications %>% 
-  relate(., ., relation = "intersects") %>% 
+  relate(., ., relation = "intersects")
+
+dat_join_intersect_binary = 
+  dat_notifications_intersect %>% 
   rowSums() %>% 
   `-` (1) %>% 
   tibble(UID = seq(1, length(.)), Intersects = .)
 
-dat_notifications_equal = 
-  dat_notifications %>% 
-  relate(., ., relation = "equals") %>% 
-  rowSums() %>% 
-  `-` (1) %>% 
-  tibble(UID = seq(1, length(.)), Equals = .)
+#  Compute proportional areas of intersections.
+
+dat_join_intersect_proportional = 
+  dat_notifications_intersect %>% 
+  as_tibble %>% 
+  rownames_to_column("from") %>% 
+  pivot_longer(cols = -from,
+               names_to = "to",
+               values_to = "intersects") %>% 
+  mutate(to = to %>% str_sub(2, -1),
+         across(c(to, from), ~ as.integer(.x))) %>% 
+  filter(from != to) %>% # Drop autocomparisons.
+  filter(from < to) %>% # Drop duplicate comparisons.
+  filter(intersects == TRUE) %>% # Drop uninteresting comparisons.
+  mutate(area_intersect = 
+           map2(from, 
+                to, 
+                ~ expanse(intersect(dat_notifications_less_1[.x], 
+                                    dat_notifications_less_1[.y]), 
+                          unit = "ha"))) %>% 
+  unnest(area_intersect) %>% 
+  mutate(Acres_Intersect = area_intersect * 2.47) %>% # Hectares to acres.
+  left_join(dat_notifications %>% 
+              as_tibble %>% 
+              select(UID, Year_Start, Year_End, Acres), 
+            by = c("from" = "UID")) %>% 
+  rename(Acres_From = Acres,
+         Year_From = Year_Start) %>% 
+  left_join(dat_notifications %>% 
+              as_tibble %>% 
+              select(UID, Year_Start, Year_End, Acres), 
+            by = c("to" = "UID")) %>% 
+  rename(Acres_To = Acres,
+         Year_To = Year_Start) %>% 
+  mutate(Acres_From_Proportion = Acres_Intersect / Acres_From,
+         Acres_To_Proportion = Acres_Intersect / Acres_To) %>% 
+  select(from, to, Acres_From_Proportion, Acres_To_Proportion) %>% 
+  pivot_longer(c(from, to)) %>% 
+  mutate(Proportion = ifelse(name == "from", Acres_From_Proportion, Acres_To_Proportion)) %>% 
+  select(UID = value, Intersect = Proportion) %>% 
+  group_by(UID) %>% 
+  summarize(Intersect_Maximum = Intersect %>% max) %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
+  mutate(Intersect_Maximum = Intersect_Maximum %>% replace_na(0))
 
 # Elevation
 
@@ -398,11 +490,22 @@ dat_join_treemap_siteclcd_med =
   select(SiteClass_Med = tl_id) %>% 
   bind_cols(dat_notifications_less_1 %>% as_tibble, .)
 
+dat_join_treemap_siteclcd_mod = 
+  dat_notifications_less_1 %>% 
+  extract(dat_treemap_siteclcd, ., fun = "modal", na.rm = TRUE) %>% 
+  select(SiteClass_Mod = tl_id) %>% 
+  bind_cols(dat_notifications_less_1 %>% as_tibble, .)
+
 dat_join_treemap = 
   dat_join_treemap_fortypcd %>% 
   left_join(dat_join_treemap_siteclcd_min) %>% 
   left_join(dat_join_treemap_siteclcd_max) %>% 
-  left_join(dat_join_treemap_siteclcd_med)
+  left_join(dat_join_treemap_siteclcd_med) %>% 
+  left_join(dat_join_treemap_siteclcd_mod)
+
+# Growth
+
+
 
 # TCC
 
@@ -447,38 +550,6 @@ dat_join_tcc =
   mutate(TCC_Change = TCC - lag(TCC)) %>% 
   filter(Period == "After") %>% 
   select(UID, TCC_Change)
-
-#  Check the distribution of pre-to-post-notification changes in TCC.
-
-# library(ggpubr)
-# library(RColorBrewer)
-# 
-# pal_tcc_lower = brewer.pal('Reds', n = 8) %>% rev
-# pal_tcc_upper = brewer.pal('Greys', n = 7)
-# pal_tcc = c(pal_tcc_lower, pal_tcc_upper)
-
-# vis_tcc = 
-#   dat_join_tcc %>% 
-#   mutate(bin = cut_interval(TCC_Change, length = 10)) %>% 
-#   group_by(bin) %>% 
-#   summarize(count = n()) %>% 
-#   ungroup %>% 
-#   ggplot() +
-#   geom_col(aes(x = bin,
-#                y = count,
-#                fill = bin),
-#            color = "#000000") +
-#   labs(x = "Change in TCC (Pre- to Post-Notification)",
-#        y = "Notification Count") +
-#   scale_fill_manual(values = pal_tcc) +
-#   scale_y_continuous(expand = c(0, 0)) +
-#   theme_pubr() +
-#   theme(legend.position = "none",
-#         axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-#   
-# ggsave("output/vis_tcc_20251210.png",
-#        dpi = 300,
-#        width = 6.5)
 
 # NDVI
 
@@ -543,7 +614,7 @@ dat_join_ndvi_annual =
   unnest(data) %>% 
   mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
   filter(Period == "After") %>% 
-  select(UID, NDVI_Change)  
+  select(UID, NDVI_Change) 
 
 # Harvest Detection
 
@@ -594,57 +665,18 @@ dat_detect_usfs =
 
 #   Set up public timber sales in a convenient format for TCC extraction.
 
-dat_detect_usfs_tcc = 
-  dat_detect_usfs %>% 
-  as_tibble %>% 
-  mutate(Year = DATE_COMPLETED %>% year,
-         Activity = 1) %>% 
-  filter(Year %in% 2015:2023) %>% 
-  select(UID, Year, Activity)
+# dat_detect_usfs_tcc = 
+#   dat_detect_usfs %>% 
+#   as_tibble %>% 
+#   mutate(Year = DATE_COMPLETED %>% year,
+#          Activity = 1) %>% 
+#   filter(Year %in% 2015:2023) %>% 
+#   select(UID, Year, Activity)
 
 #   Handle TCC.
 
-dat_detect_tcc = 
-  "output/data_tcc.tif" %>% 
-  rast %>% 
-  extract(.,
-          dat_detect_usfs, 
-          mean, 
-          na.rm = TRUE) %>% 
-  bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>% 
-  select(-ID) %>% 
-  as_tibble %>% 
-  left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
-  pivot_longer(cols = starts_with("TCC"),
-               names_prefix = "TCC_",
-               names_to = "Year",
-               values_to = "TCC") %>% 
-  mutate(Year = Year %>% as.numeric) %>% 
-  left_join(dat_detect_usfs_tcc) %>% 
-  mutate(Activity = ifelse(is.na(Activity), 0, Activity)) %>% 
-  group_by(UID) %>% 
-  mutate(TCC_Change = TCC - ifelse(is.na(lag(TCC, n = 2)), lag(TCC), (lag(TCC) + lag(TCC, n = 2)) / 2)) %>% 
-  ungroup %>% 
-  drop_na(TCC_Change)
-
-#  Get NDVI for public timber sales.
-
-#   Set up public timber sales in a convenient format for NDVI extraction.
-
-# dat_detect_usfs_ndvi = 
-#   dat_detect_usfs %>% 
-#   as_tibble %>% 
-#   mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
-#          Year_Complete = DATE_COMPLETED %>% year,
-#          Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>% 
-#   filter(Year_Before %in% 2014:2024 & Year_Complete %in% 2014:2024) %>% 
-#   select(UID, Years) %>% 
-#   unnest(Years)
-
-#   Handle NDVI.
-
-# dat_detect_ndvi = 
-#   "output/data_ndvi_annual.tif" %>% 
+# dat_detect_tcc = 
+#   "output/data_tcc.tif" %>% 
 #   rast %>% 
 #   extract(.,
 #           dat_detect_usfs, 
@@ -654,17 +686,56 @@ dat_detect_tcc =
 #   select(-ID) %>% 
 #   as_tibble %>% 
 #   left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
-#   pivot_longer(cols = starts_with("NDVI"),
-#                names_prefix = "NDVI_",
+#   pivot_longer(cols = starts_with("TCC"),
+#                names_prefix = "TCC_",
 #                names_to = "Year",
-#                values_to = "NDVI") %>% 
+#                values_to = "TCC") %>% 
 #   mutate(Year = Year %>% as.numeric) %>% 
-#   semi_join(dat_detect_usfs_tcc, by = c("UID", "Year" = "Years")) %>% 
+#   left_join(dat_detect_usfs_tcc) %>% 
+#   mutate(Activity = ifelse(is.na(Activity), 0, Activity)) %>% 
 #   group_by(UID) %>% 
-#   mutate(NDVI_Change = NDVI - lag(NDVI),
-#          NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>% 
-#   drop_na(NDVI_Change) %>% 
-#   ungroup
+#   mutate(TCC_Change = TCC - ifelse(is.na(lag(TCC, n = 2)), lag(TCC), (lag(TCC) + lag(TCC, n = 2)) / 2)) %>% 
+#   ungroup %>% 
+#   drop_na(TCC_Change)
+
+#  Get NDVI for public timber sales.
+
+#   Set up public timber sales in a convenient format for NDVI extraction.
+
+dat_detect_usfs_ndvi =
+  dat_detect_usfs %>%
+  as_tibble %>%
+  mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
+         Year_Complete = DATE_COMPLETED %>% year,
+         Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>%
+  filter(Year_Before %in% 2014:2024 & Year_Complete %in% 2014:2024) %>%
+  select(UID, Years) %>%
+  unnest(Years)
+
+#   Handle NDVI.
+
+dat_detect_ndvi =
+  "output/data_ndvi_annual.tif" %>%
+  rast %>%
+  extract(.,
+          dat_detect_usfs,
+          mean,
+          na.rm = TRUE) %>%
+  bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>%
+  select(-ID) %>%
+  as_tibble %>%
+  left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>%
+  pivot_longer(cols = starts_with("NDVI"),
+               names_prefix = "NDVI_",
+               names_to = "Year",
+               values_to = "NDVI") %>%
+  mutate(Year = Year %>% as.numeric) %>%
+  semi_join(dat_detect_usfs_ndvi, by = c("UID", "Year" = "Years")) %>%
+  group_by(UID) %>%
+  mutate(NDVI_Change = NDVI - lag(NDVI),
+         NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>%
+  drop_na(NDVI_Change) %>%
+  ungroup
 
 #  Compare NDVI and TCC.
 
@@ -672,29 +743,30 @@ dat_detect_tcc =
 #   dat_detect_ndvi %>% 
 #   full_join(dat_detect_tcc, by = c("UID", "Year"))
 # 
-# val_detect_tcc_ndvi_cor_measure = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
-# val_detect_tcc_ndvi_cor_change = cor(dat_detect_tcc_ndvi$NDVI_Change, dat_detect_tcc_ndvi$TCC_Change)
-# val_detect_tcc_ndvi_cor_detect = cor(dat_detect_tcc_ndvi$NDVI_Detect, dat_detect_tcc_ndvi$TCC_Detect)
 # val_detect_tcc_ndvi_agreement = 
 #   dat_detect_tcc_ndvi %>% 
 #   mutate(Agreement = NDVI_Detect * TCC_Detect) %>% 
 #   summarize(Check = sum(Agreement) / n_distinct(UID)) %>% 
 #   pull(Check)
 
-# dat_detect_tcc_ndvi = dat_detect_tcc_ndvi %>% group_by(UID) %>% filter(n() < 2) %>% ungroup
+#  Parameterize a model for harvest detection.
 
-# problem: why are single-change observations returning different results? should be same then
+#  Detect harvests in notifications.
 
-# problem: why are the data like this? DATE_COMPLETED offset from breaks in TCC(, NDVI?)
-
-#  Parameterize a bad-but-useful model for harvest detection.
-
-#  Do something better?
-
-#  Get notifications with change in TCC and NDVI in convenient formats.
+#   Get notifications with change in TCC and NDVI in convenient formats.
 
 # dat_detect_notifications_tcc = dat_join_tcc
 # dat_detect_notifications_ndvi = dat_join_ndvi_annual
+
+#  Set up detection for joins.
+
+#   Placeholder!
+
+dat_join_detect = 
+  dat_join_ndvi_annual %>% 
+  mutate(NDVI_Detect = ifelse(NDVI_Change < 0, 1, 0)) %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble,
+            .)
   
 # Distances
 
@@ -772,9 +844,26 @@ dat_join_distance =
   left_join(dat_join_mills) %>% 
   left_join(dat_join_cities)
 
+# Public Lands
+
+dat_join_pad_public = 
+  "data/PADUS4_1_State_OR_GDB_KMZ/PADUS4_1_StateOR.gdb" %>% 
+  vect %>% 
+  filter(Own_Type != "PVT") %>% 
+  select(Shape_Area) %>% 
+  aggregate %>% 
+  project("EPSG:2992") %>% 
+  crop(dat_bounds) %>% 
+  intersect(dat_notifications_less_1, .) %>% 
+  select(UID) %>% 
+  as_tibble %>% 
+  mutate(PAD_Public = 1) %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
+  mutate(PAD_Public = PAD_Public %>% replace_na(0))
+
 # Protected Areas
 
-dat_join_pad = 
+dat_join_pad_protected = 
   "data/PADUS4_1_State_OR_GDB_KMZ/PADUS4_1_StateOR.gdb" %>% 
   vect %>% 
   filter(GAP_Sts %in% c("1", "2")) %>% 
@@ -785,9 +874,9 @@ dat_join_pad =
   intersect(dat_notifications_less_1, .) %>% 
   select(UID) %>% 
   as_tibble %>% 
-  mutate(PAD = 1) %>% 
+  mutate(PAD_Protected = 1) %>% 
   left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
-  mutate(PAD = PAD %>% replace_na(0))
+  mutate(PAD_Protected = PAD_Protected %>% replace_na(0))
 
 # Riparian Zones and Slopes
 
@@ -886,6 +975,23 @@ dat_join_huc8 =
   ungroup %>% 
   as_tibble
 
+# Counties
+
+dat_counties = 
+  "data/TIGER.gdb" %>% 
+  vect(layer = "County") %>% 
+  select(County = NAMELSAD) %>% 
+  project("EPSG:2992")
+
+dat_join_counties = 
+  dat_notifications_less_1 %>% 
+  intersect(dat_counties) %>% 
+  as_tibble %>% 
+  group_by(UID) %>% 
+  filter(row_number() == 1) %>% # Keep only the first county intersecting a notification. This is arbitrary.
+  ungroup %>% 
+  as_tibble
+
 # Prices
 
 #  Note shenanigans with years, quarters, and months across datasets.
@@ -966,6 +1072,20 @@ dat_join_price =
   left_join(dat_price_delivered, by = join_by(Year_Start == Year)) %>% 
   select(-Year_Start)
 
+# Effective Federal Funds Rate
+
+dat_join_rate = 
+  "data/Fed/FEDFUNDS.csv" %>% 
+  read_csv %>% 
+  mutate(Year = observation_date %>% year,
+         FEDFUNDS = FEDFUNDS / 100) %>% 
+  group_by(Year) %>% 
+  summarize(Fed_Rate = FEDFUNDS %>% mean) %>% 
+  ungroup %>% 
+  left_join(dat_notifications_less_2 %>% as_tibble,
+            .,
+            by = c("Year_Start" = "Year"))
+
 # Export
 
 dat_notifications_less_1 %T>% writeVector("output/dat_notifications_more_polygons.gdb", overwrite = TRUE)
@@ -973,8 +1093,10 @@ dat_notifications_less_1 %T>% writeVector("output/dat_notifications_more_polygon
 dat_notifications_out = 
   dat_notifications %>% 
   as_tibble %>% 
-  left_join(dat_notifications_intersect) %>% 
-  left_join(dat_notifications_equal) %>% 
+  left_join(dat_join_owner) %>% 
+  left_join(dat_join_scale) %>% 
+  left_join(dat_join_intersect_binary) %>% 
+  left_join(dat_join_intersect_proportional) %>% 
   left_join(dat_join_elevation) %>% 
   left_join(dat_join_slope) %>% 
   left_join(dat_join_roughness) %>% 
@@ -984,11 +1106,15 @@ dat_notifications_out =
   left_join(dat_join_treemap) %>% 
   left_join(dat_join_tcc) %>% 
   left_join(dat_join_ndvi_annual) %>% 
+  left_join(dat_join_detect) %>% 
   left_join(dat_join_distance) %>% 
-  left_join(dat_join_pad) %>% 
-  left_join(dat_join_fpa) %>%
+  left_join(dat_join_pad_public) %>% 
+  left_join(dat_join_pad_protected) %>% 
+  # left_join(dat_join_fpa) %>% 
   left_join(dat_join_huc8) %>%
-  left_join(dat_join_price) %T>% 
+  left_join(dat_join_counties) %>% 
+  left_join(dat_join_price) %>% 
+  left_join(dat_join_rate) %T>% 
   write_csv("output/dat_notifications_more_annual.csv")
 
 # Stopwatch
