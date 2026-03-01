@@ -19,3 +19,5 @@ dat_growth_less =
   filter(ntile(ANN_NET_GROWTH_ACRE, 100) %in% 2:99)
 
 par_growth = mean(dat_growth_less$ANN_NET_GROWTH_ACRE)
+
+# note that 0t uses a naive 5% growth rate instead, since the magnitude of this doesn't make sense.
