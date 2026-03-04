@@ -210,11 +210,14 @@ write_csv(dat_restrictions, "output/paper_tab_restrictions.csv")
 
 dat_summary = 
   dat %>% 
-  select(MBF,
+  select(Acres = Acres,
+         MBF,
          MBF_Prime,
          Price = Stumpage_Real_PPI_Timber,
-         Rate = Fed_Rate) %>% 
-  mutate(Growth = MBF_Prime - MBF) %>% 
+         Rate = Fed_Rate,
+         Rents = Acres) %>% 
+  mutate(Growth = MBF_Prime - MBF,
+         Yield = MBF / Acres) %>% 
   select(-MBF_Prime) %>% 
   summarize(across(everything(), c(mean, sd))) %>% 
   pivot_longer(everything()) %>% 
