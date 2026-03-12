@@ -855,11 +855,18 @@ dat_join_pad_public =
   project("EPSG:2992") %>% 
   crop(dat_bounds) %>% 
   intersect(dat_notifications_less_1, .) %>% 
-  select(UID) %>% 
+  mutate(area_intersect_acres = expanse(., unit = "ha") * 2.47) %>% 
   as_tibble %>% 
-  mutate(PAD_Public = 1) %>% 
-  left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
-  mutate(PAD_Public = PAD_Public %>% replace_na(0))
+  inner_join(dat_notifications_less_1, .) %>% 
+  mutate(area_total_acres = expanse(., unit = "ha") * 2.47,
+         area_intersect_proportion = area_intersect_acres / area_total_acres,
+         area_intersect_binary = 1) %>% 
+  as_tibble %>% 
+  select(UID, 
+         PAD_Public_Binary = area_intersect_binary,
+         PAD_Public_Proportional = area_intersect_proportion) %>% 
+  left_join(dat_notifications_less_1, .) %>% 
+  mutate(across(starts_with("PAD"), ~ replace_na(.x, 0)))
 
 # Protected Areas
 

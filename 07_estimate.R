@@ -19,6 +19,8 @@ dat =
   filter(Restriction_All == TRUE) %>% 
   select(UID, 
          Company,
+         Company_Percentile_Acres,
+         Company_Percentile_MBF,
          Watershed,
          County,
          Year_Start, 
@@ -50,6 +52,7 @@ dat =
 mod_1 = 
   dat %>% 
   lm(MBF_Acre ~ 
+       Company_Percentile_MBF +
        Elevation + 
        Slope + 
        VPD + 
@@ -63,7 +66,7 @@ mod_1 =
 mod_2 = 
   dat %>% 
   lm(MBF_Acre ~ 
-       Acres + 
+       Company_Percentile_MBF +
        Elevation + 
        Slope + 
        Roughness + 
@@ -88,7 +91,7 @@ mod_2 =
 mod_3 = 
   dat %>% 
   plm(MBF_Acre ~ 
-        Acres + 
+        Company_Percentile_MBF +
         Elevation + 
         Slope + 
         Roughness + 
@@ -114,7 +117,7 @@ mod_3 =
 mod_4 = 
   dat %>% 
   plm(MBF_Acre ~ 
-        Acres + 
+        Company_Percentile_MBF +
         Elevation + 
         Slope + 
         Roughness + 
@@ -140,6 +143,7 @@ mod_4 =
 mod_5 = 
   dat %>% 
   plm(MBF_Acre ~ 
+        Company_Percentile_MBF +
         Acres + 
         Elevation + 
         Slope + 
@@ -178,7 +182,130 @@ stargazer(mod_1, mod_2, mod_3, mod_4, mod_5,
           se = se_list,
           column.labels = c("Less", "More", "Year FE", "County FE", "TWFE"),
           keep.stat = c("n","rsq","adj.rsq","f"),
-          out = "output/estimates_20260304.html")
+          out = "output/estimates_20260311.html")
+
+# quick plots
+
+library(terra)
+library(tidyterra)
+
+dat_counties = 
+  dat %>% 
+  group_by(Year_Start, County) %>% 
+  summarize(Firms = n_distinct(Company),
+            Notifications = n(),
+            MBF = sum(MBF),
+            MBF_Acre = weighted.mean(MBF_Acre, Acres)) %>% 
+  group_by(County) %>% 
+  summarize(Firms = mean(Firms),
+            Notifications = mean(Notifications),
+            MBF = mean(MBF),
+            MBF_Acre = mean(MBF_Acre)) %>% 
+  left_join("data/TIGER.gdb" %>% 
+              vect(layer = "County") %>% 
+              select(County = NAMELSAD) %>% 
+              project("EPSG:2992"),
+            .) %>% 
+  crop(dat_bounds) %>% 
+  drop_na
+
+vis_counties_firms =
+  dat_counties %>% 
+  ggplot() +
+  geom_spatvector(aes(fill = Firms),
+                  color = "black",
+                  linewidth = 0.20) +
+  scale_fill_distiller(palette = "Oranges",
+                       direction = 1,
+                       limits = c(0, NA),
+                       # breaks = c(0, 200),
+                       guide = guide_colorbar(title.position = "top")) +
+  labs(fill = "Mean Annual Firms Harvesting") +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.ticks = element_blank(),
+        legend.key.height = unit(0.25, "lines"),
+        legend.key.width = unit(1.5, "lines"),
+        legend.key = element_rect(fill = NA, color = "black"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 9, hjust = 0.5))
+
+vis_counties_notifications =
+  dat_counties %>% 
+  ggplot() +
+  geom_spatvector(aes(fill = Notifications),
+                  color = "black",
+                  linewidth = 0.20) +
+  scale_fill_distiller(palette = "Blues",
+                       direction = 1,
+                       limits = c(0, NA),
+                       # breaks = c(0, 200),
+                       guide = guide_colorbar(title.position = "top")) +
+  labs(fill = "Mean Annual Notifications") +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.ticks = element_blank(),
+        legend.key.height = unit(0.25, "lines"),
+        legend.key.width = unit(1.5, "lines"),
+        legend.key = element_rect(fill = NA, color = "black"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 9, hjust = 0.5))
+
+vis_counties_mbf =
+  dat_counties %>% 
+  ggplot() +
+  geom_spatvector(aes(fill = MBF / 1000),
+                  color = "black",
+                  linewidth = 0.20) +
+  scale_fill_distiller(palette = "Greens",
+                       direction = 1,
+                       limits = c(0, NA),
+                       # breaks = c(0, 200),
+                       guide = guide_colorbar(title.position = "top")) +
+  labs(fill = "Mean Annual Board Feet (Millions)") +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.ticks = element_blank(),
+        legend.key.height = unit(0.25, "lines"),
+        legend.key.width = unit(1.5, "lines"),
+        legend.key = element_rect(fill = NA, color = "black"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 9, hjust = 0.5))
+
+vis_counties_yield =
+  dat_counties %>% 
+  ggplot() +
+  geom_spatvector(aes(fill = MBF_Acre),
+                  color = "black",
+                  linewidth = 0.20) +
+  scale_fill_distiller(palette = "Purples",
+                       direction = 1,
+                       limits = c(0, NA),
+                       # breaks = c(0, 200),
+                       guide = guide_colorbar(title.position = "top")) +
+  labs(fill = "Mean Annual Yield (MBF/Acre)") +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.ticks = element_blank(),
+        legend.key.height = unit(0.25, "lines"),
+        legend.key.width = unit(1.5, "lines"),
+        legend.key = element_rect(fill = NA, color = "black"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 9, hjust = 0.5))
+
+library(ggpubr)
+library(patchwork)
+
+vis_counties = vis_counties_firms + vis_counties_notifications + vis_counties_mbf + vis_counties_yield + plot_layout(nrow = 1, byrow = FALSE)
+
+ggsave("output/vis_counties_20260311.png",
+       vis_counties,
+       dpi = 300,
+       width = 8)
 
 # Correlogram
 
