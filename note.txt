@@ -1,3 +1,12 @@
+2026/03/17
+
+ - Everything from 3/11. 
+ - Alternatives to VPD? Climate Moisture Index (?) is one per JK.
+ - Alternative road datasets -- check in with MS, JK.
+ - Lumber price complex with reference to literature. 
+ - Something with air pollution permits.
+ - 
+
 2026/03/11
 
 - Intersections into 01 after updating with current FERNS output

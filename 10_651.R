@@ -127,6 +127,8 @@ vec_activities =
     "Insecticide Application",
     "Rodenticide Application")
 
+vec_activities = c("Site Preparation /Afforestation", "Herbicide Application (Unit)")
+
 dat_effort = 
   dat_join_polygons_out %>% 
   filter(ActivityType %in% vec_activities) %>% 
@@ -164,12 +166,17 @@ dat_effort_other =
   mutate(UID_Other = row_number()) %>% 
   relocate(UID_Other)
 
+# dat_effort_other = dat_effort_other %>% slice_sample(n = 1000)
+
 # Intersect.
 
-dat_effort_intersect = 
+dat_effort_intersect_set = 
   relate(dat_effort_plant, 
          dat_effort_other, 
-         relation = "intersects") %>% 
+         relation = "intersects")
+
+dat_effort_intersect = 
+  dat_effort_intersect_set %>% 
   as_tibble %>% 
   rownames_to_column("from") %>% 
   pivot_longer(cols = -from,
@@ -194,7 +201,7 @@ dat_effort_intersect =
 dat_effort_time = 
   dat_effort_intersect %>% 
   mutate(Year_Relative = Year_Plant - Year_Effort) %>% 
-  filter(Year_Relative > -3) %>% 
+  # filter(Year_Relative > -5) %>% 
   group_by(from, Year_Relative, ActivityType) %>% 
   summarize(Count = n()) %>% 
   ungroup %>% 
@@ -202,19 +209,16 @@ dat_effort_time =
   summarize(Count = n()) %>% 
   ungroup
 
-library(fishualize)
+# library(fishualize)
 
 vis_effort_time = 
   dat_effort_time %>% 
   ggplot() +
   geom_col(aes(x = Year_Relative %>% factor,
-               y = Count,
-               fill = ActivityType),
-           position = position_dodge2(preserve = "single")) +
+               y = Count),
+           fill = pal_oranges) + # Note that this is assigned later in the script. 
   labs(x = "Years since afforestation",
-       y = "Notifications",
-       fill = NULL) +
-  scale_fill_fish_d(option = "Oncorhynchus_nerka") +
+       y = "Records") +
   theme_minimal()
 
 ggsave("output/vis_present_time.png",
@@ -243,7 +247,7 @@ dat_effort_expand =
   # Subset to relevant choices.
   #  Planting Years
   left_join(dat_effort_intersect %>% select(from, Year_Plant)) %>% 
-  filter(Year_Relative %in% -2:9) %>% 
+  filter(Year_Relative %in% -9:9) %>% 
   filter(Year_Plant + Year_Relative < 2025) %>% 
   filter(Year_Plant + Year_Relative > 2014) %>% 
   #  Effort Realizations
@@ -263,40 +267,53 @@ dat_effort_expand =
 
 # Regressions
 
-mod_repellent = 
-  dat_effort_expand %>% 
-  filter(ActivityType == "Animal Repellent Application") %>% 
-  lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
+#  Linear Probability Models
 
-mod_fertilizer = 
-  dat_effort_expand %>% 
-  filter(ActivityType == "Fertilizer Application") %>% 
-  lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
+# mod_repellent = 
+#   dat_effort_expand %>% 
+#   filter(ActivityType == "Animal Repellent Application") %>% 
+#   lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
+
+# mod_fertilizer = 
+#   dat_effort_expand %>% 
+#   filter(ActivityType == "Fertilizer Application") %>% 
+#   lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
 
 mod_herbicide = 
   dat_effort_expand %>% 
   filter(ActivityType == "Herbicide Application (Unit)") %>% 
-  lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
+  mutate(Year_Relative_Sq = Year_Relative^2) %>% 
+  lm(ActivityEffort ~ Year_Relative + Year_Relative_Sq + Stumpage + Rate, data = .)
 
-mod_rodenticide = 
+# mod_rodenticide = 
+#   dat_effort_expand %>% 
+#   filter(ActivityType == "Rodenticide Application") %>% 
+#   lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
+
+#  Probit
+
+mod_herbicide_probit = 
   dat_effort_expand %>% 
-  filter(ActivityType == "Rodenticide Application") %>% 
-  lm(ActivityEffort ~ Year_Relative + Stumpage + Rate, data = .)
+  filter(ActivityType == "Herbicide Application (Unit)") %>% 
+  mutate(Year_Relative_Sq = Year_Relative^2) %>% 
+  glm(ActivityEffort ~ Year_Relative + Year_Relative_Sq + Stumpage + Rate, data = ., family = binomial(link = "probit"))
+
+#  Output
 
 library(sandwich)
 
-se_list <- 
-  list(sqrt(diag(vcovHC(mod_repellent, type = "HC1"))), 
-       sqrt(diag(vcovHC(mod_fertilizer, type = "HC1"))),
-       sqrt(diag(vcovHC(mod_herbicide, type = "HC1"))),
-       sqrt(diag(vcovHC(mod_fertilizer, type = "HC1"))))
+# se_list <- 
+#   list(sqrt(diag(vcovHC(mod_repellent, type = "HC1"))), 
+#        sqrt(diag(vcovHC(mod_fertilizer, type = "HC1"))),
+#        sqrt(diag(vcovHC(mod_herbicide, type = "HC1"))),
+#        sqrt(diag(vcovHC(mod_fertilizer, type = "HC1"))))
 
 library(stargazer)
 
-stargazer(mod_repellent, mod_fertilizer, mod_herbicide, mod_rodenticide, 
+stargazer(mod_herbicide, mod_herbicide_probit, 
           type = "html",
-          se = se_list,
-          column.labels = c("Animal Repellent", "Fertilizer", "Herbicide", "Rodenticide"),
+          # se = se_list,
+          column.labels = c("LPM", "Probit"),
           keep.stat = c("n", "rsq", "f"),
           out = "output/estimates_20260303.html")
 
@@ -318,23 +335,42 @@ dat_effort_expand %>%
 library(RColorBrewer)
 
 pal_greens = brewer.pal('Greens', n = 9)[8]
+pal_oranges = brewer.pal('Oranges', n = 9)[8]
 
-vis_map =  
+vis_map_plant =  
   ggplot() + 
   geom_spatvector(data = dat_bounds_or,
                   color = NA,
-                  fill = "grey75") +
+                  fill = "grey90") +
   geom_spatvector(data = dat_bounds,
                   color = NA,
-                  fill = "grey50") +
+                  fill = "grey80") +
   geom_spatvector(data = dat_effort_plant %>% centroids, 
                   color = pal_greens,
                   fill = NA,
-                  size = 0.25) +
+                  size = 0.33) +
   theme_void()
+
+vis_map_other =  
+  ggplot() + 
+  geom_spatvector(data = dat_bounds_or,
+                  color = NA,
+                  fill = "grey90") +
+  geom_spatvector(data = dat_bounds,
+                  color = NA,
+                  fill = "grey80") +
+  geom_spatvector(data = dat_effort_other %>% centroids, 
+                  color = pal_oranges,
+                  fill = NA,
+                  size = 0.33) +
+  theme_void()
+
+library(patchwork)
+
+vis_map = vis_map_plant + vis_map_other + plot_annotation(tag_levels = 'A')
 
 ggsave("output/vis_map.png",
        vis_map,
        dpi = 300,
-       width = 7,
-       height = 4)
+       width = 6.5,
+       height = 2.5)
