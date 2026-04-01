@@ -1,7 +1,5 @@
-bin
-data
-documentation
-figures
-output
-sketchbook.txt
+00_bin
+02_data
+03_intermediate
+04_out
 .Rproj.user

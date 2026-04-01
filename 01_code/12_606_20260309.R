@@ -52,10 +52,10 @@ dat =
          Acres < quantile(Acres, 0.99) & Acres > quantile(Acres, 0.01),
          MBF_Acre < quantile(MBF_Acre, 0.99) & MBF_Acre > quantile(MBF_Acre, 0.01)) %>% 
   # mutate(MBF_Prime = par_growth * Acres + MBF) # This really should work, but it doesn't.
-  mutate(MBF_Prime = MBF * 1.05) %>% 
+  mutate(MBF_Prime = MBF * 1.05) # %>% 
   # Annual HHI
-  group_by(Company) %>% 
-  mutate(Concentration_)
+  # group_by(Company) %>% 
+  # mutate(Concentration_)
 
 # note spatial HHI problem
 
@@ -159,12 +159,17 @@ vis_production =
   ggplot() +
   geom_spatraster(data = dat_raster_production_sum_mean / 1000) +
   geom_spatvector(data = dat_bounds, fill = "NA", color = "black") +
-  scale_fill_distiller(palette = "Greens",
-                       direction = 1,
-                       limits = c(0, NA),
-                       breaks = c(0, 5),
-                       guide = guide_colorbar(title.position = "top"),
-                       na.value = NA) +
+  # scale_fill_distiller(palette = "Greens",
+  #                      direction = 1,
+                       # limits = c(0, NA),
+                       # breaks = c(0, 5),
+                       # guide = guide_colorbar(title.position = "top"),
+                       # na.value = NA) +
+  scale_fill_viridis(option = "D", 
+                     limits = c(0, NA),
+                     # breaks = c(0, 5),
+                     guide = guide_colorbar(title.position = "top"),
+                     na.value = NA) +
   labs(fill = "Mean Annual Board Feet (Millions)") +
   theme_void() +
   theme(legend.position = "bottom",
@@ -226,6 +231,12 @@ ggsave("output/presentation_vis_space_20260310.png",
        vis_space,
        dpi = 300,
        width = 9,
+       height = 6)
+
+ggsave("output/presentation_vis_production_20260331.png",
+       vis_production,
+       dpi = 300,
+       width = 3,
        height = 6)
 
 # Time Series
