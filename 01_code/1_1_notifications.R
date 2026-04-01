@@ -1,19 +1,20 @@
 # Process notification data.
 
-library(tidyverse)
-library(terra)
-library(tidyterra)
-library(readxl)
+# Get spatial data. Omit points and lines. 
 
-# Get spatial data. Exclude points and lines for now; clearcuts only appear as polygons.
+# dat_polygons = "data/Polygons_Notifications.gdb" %>% vect
 
-dat_points = "data/Points_Notifications.gdb" %>% vect
-dat_lines = "data/Lines_Notifications.gdb" %>% vect
-dat_polygons = "data/Polygons_Notifications.gdb" %>% vect
+dat_spat_1 = "02_data/ODF_FERNS/Spatial/Polygons_20250820.gdb" %>% vect
+dat_spat_2 = "02_data/ODF_FERNS/Spatial/Polygons_20260311.gdb" %>% vect
 
 # Get flat data.
 
-dat_flat = read_excel("data/Flat_Notifications.xlsx")
+# dat_flat = read_excel("data/Flat_Notifications.xlsx")
+
+dat_flat_1 = "02_data/ODF_FERNS/Flat/Notifications_20250820.xlsx" %>% read_excel
+dat_flat_2 = "02_data/ODF_FERNS/Flat/Notifications_20251124.csv" %>% read_csv
+dat_flat_3 = "02_data/ODF_FERNS/Flat/Notifications_20260311.csv" %>% read_csv
+dat_flat_4 = "02_data/ODF_FERNS/Flat/Notifications_20260401.csv" %>% read_csv
 
 # Set up joins.
 
