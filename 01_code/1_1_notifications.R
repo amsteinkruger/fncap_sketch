@@ -1,20 +1,20 @@
 # Process notification data.
 
-# Get spatial data. Omit points and lines. 
-
-# dat_polygons = "data/Polygons_Notifications.gdb" %>% vect
+# Get spatial data (polygons, excluding lines and points).  
 
 dat_spat_1 = "02_data/ODF_FERNS/Spatial/Polygons_20250820.gdb" %>% vect
 dat_spat_2 = "02_data/ODF_FERNS/Spatial/Polygons_20260311.gdb" %>% vect
 
-# Get flat data.
+# Note that the later file has the same 2014-2015 coverage as the earlier file. 
 
-# dat_flat = read_excel("data/Flat_Notifications.xlsx")
+# Get flat data.
 
 dat_flat_1 = "02_data/ODF_FERNS/Flat/Notifications_20250820.xlsx" %>% read_excel
 dat_flat_2 = "02_data/ODF_FERNS/Flat/Notifications_20251124.csv" %>% read_csv
 dat_flat_3 = "02_data/ODF_FERNS/Flat/Notifications_20260311.csv" %>% read_csv
 dat_flat_4 = "02_data/ODF_FERNS/Flat/Notifications_20260401.csv" %>% read_csv
+
+# Note that files obtained through FERNS share records for (e.g.) 2015 but have fewer records across years than the file obtained by hand. 
 
 # Set up joins.
 
