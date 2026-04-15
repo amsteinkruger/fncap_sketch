@@ -5,3 +5,4 @@ Check journal on Box for details.
 Consider using 0#_ scripts for preliminaries like NDVI processing, then 1#_ scripts for data assembly, then 2#_ for analysis.
 
 Remember that all paths are broken. 
+

@@ -4,6 +4,7 @@
 
 library(tidyverse)
 library(readxl)
+library(magrittr)
 
 #  Spatial
 

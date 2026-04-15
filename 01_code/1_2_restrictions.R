@@ -1,52 +1,44 @@
-# Join covariates to processed notifications with an annual result.
+# Join additional data to restrict FERNS to observations of interest. 
 
-#  Remember that UID is fragile throughout this script. (And maybe remember to fix that.)
-
-#  55' (2026/1/12)
-#  ~ 3h? (2026/2/17)
-
-# TOC:
-#  Stopwatch
-#  Packages
-#  Bounds
 #  Notifications
+#  Bounds
 #  Ownership
-#  Intersections
-#  Elevation
-#  Slope
-#  Roughness
-#  VPD
-#  Pyromes
-#  Fires
-#  TreeMap
-#  Growth *
-#  TCC
-#  NDVI
-#  Harvest Detection *
-#  Distances
+#  Species
+#  Remote Sensing
 #  Public Lands
 #  Protected Lands
-#  Flow Lines
-#  Steep Slopes *
-#  Watersheds
-#  Counties
-#  Prices
-#  Effective Federal Funds Rate
-#  Export
-#  Stopwatch
 
-# Stopwatch
+# Start timing. 
 
 time_start = Sys.time()
 
-# Packages
+# Notifications
 
-library(tidyverse)
-library(magrittr)
-library(terra)
-library(tidyterra)
-library(readxl)
+dat_notifications = 
+  "03_intermediate/dat_notifications.gdb" %>% 
+  vect %>% 
+  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  filter(ActivityUnit == "MBF") %>% 
+  # filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
+  filter(str_sub(OperationName, 1, 10) != "do not use") %>% 
+  cbind(., expanse(., unit = "ha") * 2.47105381) %>% 
+  rename(Acres = y) %>% 
+  mutate(Year_Start = DateStart %>% year,
+         Month_Start = DateStart %>% month,
+         Year_End = DateEnd %>% year,
+         Month_End = DateEnd %>% month,
+         MBF = ActivityQuantity %>% as.numeric,
+         MBF_Acre = MBF / Acres) %>%
+  project("EPSG:2992") # %>% 
+  # Fix invalid polygons.
+  makeValid %>% 
+    
 
+  # Crop.
+  crop(dat_bounds) %>% 
+  # Assign unique ID.
+  mutate(UID = row_number()) %>% 
+  relocate(UID)
 # Bounds
 
 #  OR
@@ -79,42 +71,7 @@ dat_bounds =
   filter(y == max(y)) %>% 
   select(-y)
 
-# Notifications
 
-dat_notifications = 
-  "output/dat_notifications_polygons.gdb" %>% 
-  vect %>% 
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-  filter(ActivityUnit == "MBF") %>% 
-  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  rename(LandOwner = LandOwnerName_Right,
-         LandOwnerCompany = LandOwnerCompany_Right) %>% 
-  select(-ends_with("Right")) %>% 
-  rename_with(~ sub("_Left$", "", .x), everything()) %>% 
-  mutate(Year_Start = year(DateStart),
-         Month_Start = month(DateStart),
-         Year_End = ifelse(is.na(DateContinuationEnd), year(DateEnd), year(DateContinuationEnd)),
-         Month_End = ifelse(is.na(DateContinuationEnd), month(DateEnd), month(DateContinuationEnd)),
-         MBF = ActivityQuantity %>% as.numeric) %>%
-  arrange(desc(Year_Start), desc(Month_Start), LandOwnerType, LandOwner, desc(MBF), desc(Acres)) %>% 
-  filter(Year_Start > 2014 & Year_End < 2025) %>% 
-  mutate(LandOwnerCompany = LandOwnerCompany %>% str_sub(3, -1)) %>% 
-  select(LandOwner,
-         LandOwnerCompany,
-         ends_with("_Start"), 
-         ends_with("_End"), 
-         MBF, 
-         Acres) %>% 
-  project("EPSG:2992") %>% 
-  # Fix invalid polygons.
-  makeValid %>% 
-  # Subset for quick tests.
-  # slice_sample(n = 1000) %>%
-  # Crop.
-  crop(dat_bounds) %>% 
-  # Assign unique ID.
-  mutate(UID = row_number()) %>% 
-  relocate(UID)
 
 dat_notifications_less_1 = dat_notifications %>% select(UID)
 dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start)
