@@ -1,94 +1,41 @@
-# Join additional data to restrict FERNS to observations of interest. 
+# Join covariates to processed notifications with an annual result.
 
-#  Notifications
-#  Bounds
-#  Ownership
-#  Species
-#  Remote Sensing
+#  Remember that UID is fragile throughout this script. (And maybe remember to fix that.)
+
+#  55' (2026/1/12)
+#  ~ 3h? (2026/2/17)
+
+# TOC:
+#  Stopwatch
+
+#  Elevation
+#  Slope
+#  Roughness
+#  VPD
+#  Pyromes
+#  Fires
+#  TreeMap? 
+#  Growth *
+#  TCC
+#  NDVI
+#  Harvest Detection *
+#  Distances
 #  Public Lands
 #  Protected Lands
+#  Flow Lines
+#  Steep Slopes *
+#  Watersheds
+#  Counties
+#  Prices
+#  Effective Federal Funds Rate
+#  Export
+#  Stopwatch
 
-# Start timing. 
+# Stopwatch
 
 time_start = Sys.time()
 
-# Notifications
-
-dat_notifications = 
-  "03_intermediate/dat_notifications.gdb" %>% 
-  vect %>% 
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-  filter(ActivityUnit == "MBF") %>% 
-  # filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  filter(str_sub(OperationName, 1, 10) != "do not use") %>% 
-  cbind(., expanse(., unit = "ha") * 2.47105381) %>% 
-  rename(Acres = y) %>% 
-  mutate(Year_Start = DateStart %>% year,
-         Month_Start = DateStart %>% month,
-         Year_End = DateEnd %>% year,
-         Month_End = DateEnd %>% month,
-         MBF = ActivityQuantity %>% as.numeric,
-         MBF_Acre = MBF / Acres) %>% 
-  project("EPSG:2992")
-
-# Intersections
-
-#  Count intersections.
-
-dat_notifications_intersect = 
-  dat_notifications %>% 
-  relate(., ., relation = "intersects")
-
-dat_join_intersect_binary = 
-  dat_notifications_intersect %>% 
-  rowSums() %>% 
-  `-` (1) %>% 
-  tibble(UID = seq(1, length(.)), Intersects = .)
-
-#  Compute proportional areas of intersections.
-
-dat_join_intersect_proportional = 
-  dat_notifications_intersect %>% 
-  as_tibble %>% 
-  rownames_to_column("from") %>% 
-  pivot_longer(cols = -from,
-               names_to = "to",
-               values_to = "intersects") %>% 
-  mutate(to = to %>% str_sub(2, -1),
-         across(c(to, from), ~ as.integer(.x))) %>% 
-  filter(from != to) %>% # Drop autocomparisons.
-  filter(from < to) %>% # Drop duplicate comparisons.
-  filter(intersects == TRUE) %>% # Drop uninteresting comparisons.
-  mutate(area_intersect = 
-           map2(from, 
-                to, 
-                ~ expanse(intersect(dat_notifications_less_1[.x], 
-                                    dat_notifications_less_1[.y]), 
-                          unit = "ha"))) %>% 
-  unnest(area_intersect) %>% 
-  mutate(Acres_Intersect = area_intersect * 2.47) %>% # Hectares to acres.
-  left_join(dat_notifications %>% 
-              as_tibble %>% 
-              select(UID, Year_Start, Year_End, Acres), 
-            by = c("from" = "UID")) %>% 
-  rename(Acres_From = Acres,
-         Year_From = Year_Start) %>% 
-  left_join(dat_notifications %>% 
-              as_tibble %>% 
-              select(UID, Year_Start, Year_End, Acres), 
-            by = c("to" = "UID")) %>% 
-  rename(Acres_To = Acres,
-         Year_To = Year_Start) %>% 
-  mutate(Acres_From_Proportion = Acres_Intersect / Acres_From,
-         Acres_To_Proportion = Acres_Intersect / Acres_To) %>% 
-  select(from, to, Acres_From_Proportion, Acres_To_Proportion) %>% 
-  pivot_longer(c(from, to)) %>% 
-  mutate(Proportion = ifelse(name == "from", Acres_From_Proportion, Acres_To_Proportion)) %>% 
-  select(UID = value, Intersect = Proportion) %>% 
-  group_by(UID) %>% 
-  summarize(Intersect_Maximum = Intersect %>% max) %>% 
-  left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
-  mutate(Intersect_Maximum = Intersect_Maximum %>% replace_na(0))
+# modified notifications lifted from 1_5
 
 # Elevation
 

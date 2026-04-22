@@ -7,18 +7,14 @@
 
 # TOC:
 #  Stopwatch
-#  Packages
-#  Bounds
-#  Notifications
-#  Ownership
-#  Intersections
+
 #  Elevation
 #  Slope
 #  Roughness
 #  VPD
 #  Pyromes
 #  Fires
-#  TreeMap
+#  TreeMap? 
 #  Growth *
 #  TCC
 #  NDVI
@@ -38,185 +34,6 @@
 # Stopwatch
 
 time_start = Sys.time()
-
-# Packages
-
-library(tidyverse)
-library(magrittr)
-library(terra)
-library(tidyterra)
-library(readxl)
-
-# Bounds
-
-#  OR
-
-dat_bounds_or = 
-  "data/cb_2023_us_state_500k" %>% 
-  vect %>% 
-  filter(STUSPS == "OR") %>% 
-  project("EPSG:2992")
-
-#  Pyromes
-
-dat_bounds_pyromes = 
-  "data/USFS Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
-  vect %>% 
-  rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
-  filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
-  select(Pyrome = WHICH) %>% 
-  summarize(Pyrome = "All Pyromes") %>% 
-  fillHoles %>% 
-  project("EPSG:2992")
-
-#  Intersection
-
-dat_bounds = 
-  intersect(dat_bounds_or, dat_bounds_pyromes) %>% 
-  # Handle island polygons. These are not real islands.
-  disagg %>% 
-  cbind(., expanse(., unit = "ha")) %>% 
-  filter(y == max(y)) %>% 
-  select(-y)
-
-# Notifications
-
-dat_notifications = 
-  "output/dat_notifications_polygons.gdb" %>% 
-  vect %>% 
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-  filter(ActivityUnit == "MBF") %>% 
-  filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  rename(LandOwner = LandOwnerName_Right,
-         LandOwnerCompany = LandOwnerCompany_Right) %>% 
-  select(-ends_with("Right")) %>% 
-  rename_with(~ sub("_Left$", "", .x), everything()) %>% 
-  mutate(Year_Start = year(DateStart),
-         Month_Start = month(DateStart),
-         Year_End = ifelse(is.na(DateContinuationEnd), year(DateEnd), year(DateContinuationEnd)),
-         Month_End = ifelse(is.na(DateContinuationEnd), month(DateEnd), month(DateContinuationEnd)),
-         MBF = ActivityQuantity %>% as.numeric) %>%
-  arrange(desc(Year_Start), desc(Month_Start), LandOwnerType, LandOwner, desc(MBF), desc(Acres)) %>% 
-  filter(Year_Start > 2014 & Year_End < 2025) %>% 
-  mutate(LandOwnerCompany = LandOwnerCompany %>% str_sub(3, -1)) %>% 
-  select(LandOwner,
-         LandOwnerCompany,
-         ends_with("_Start"), 
-         ends_with("_End"), 
-         MBF, 
-         Acres) %>% 
-  project("EPSG:2992") %>% 
-  # Fix invalid polygons.
-  makeValid %>% 
-  # Subset for quick tests.
-  # slice_sample(n = 1000) %>%
-  # Crop.
-  crop(dat_bounds) %>% 
-  # Assign unique ID.
-  mutate(UID = row_number()) %>% 
-  relocate(UID)
-
-dat_notifications_less_1 = dat_notifications %>% select(UID)
-dat_notifications_less_2 = dat_notifications %>% select(UID, Year_Start)
-
-# Ownership
-
-#  This should go in another script for ease of interpretation, but: 
-#   one line exports companies for hand-fixing, 
-#   the next line reads them back in,
-#   and the last line drops the original company field from the main data object.
-
-dat_notifications %>% as_tibble %>% select(LandOwner, LandOwnerCompany) %>% distinct %>% write_csv("output/landowners.csv")
-
-dat_join_owner = 
-  "output/landowners.xlsx" %>% 
-  read_xlsx %>% 
-  mutate(LandOwnerCompany = ifelse(is.na(LandOwnerCompany), "", LandOwnerCompany),
-         LandOwnerCompany = ifelse(LandOwnerCompany == "NA", "", LandOwnerCompany)) %>% 
-  left_join(dat_notifications %>% 
-              select(UID, LandOwner, LandOwnerCompany) %>% 
-              as_tibble %>% 
-              mutate(LandOwnerCompany = ifelse(is.na(LandOwnerCompany), "", LandOwnerCompany),
-                     LandOwnerCompany = ifelse(LandOwnerCompany == "NA", "", LandOwnerCompany)), 
-            .) %>% 
-  select(UID, Company = Company_2)
-
-dat_notifications = dat_notifications %>% select(-LandOwnerCompany)
-
-# Owner Scale
-#  This should really run after subsetting notifications.
-
-dat_join_scale = 
-  dat_notifications %>% 
-  as_tibble %>% 
-  left_join(dat_join_owner) %>% 
-  group_by(Company) %>% 
-  summarize(Company_MBF = sum(MBF),
-            Company_Acres = sum(Acres),
-            Company_Notifications = n()) %>% 
-  ungroup %>% 
-  arrange(desc(Company_MBF)) %>% 
-  mutate(Company_Percentile_MBF = ntile(Company_MBF, 100),
-         Company_Percentile_Acres = ntile(Company_Acres, 100))
-
-# Intersections
-
-#  Count intersections.
-
-dat_notifications_intersect = 
-  dat_notifications %>% 
-  relate(., ., relation = "intersects")
-
-dat_join_intersect_binary = 
-  dat_notifications_intersect %>% 
-  rowSums() %>% 
-  `-` (1) %>% 
-  tibble(UID = seq(1, length(.)), Intersects = .)
-
-#  Compute proportional areas of intersections.
-
-dat_join_intersect_proportional = 
-  dat_notifications_intersect %>% 
-  as_tibble %>% 
-  rownames_to_column("from") %>% 
-  pivot_longer(cols = -from,
-               names_to = "to",
-               values_to = "intersects") %>% 
-  mutate(to = to %>% str_sub(2, -1),
-         across(c(to, from), ~ as.integer(.x))) %>% 
-  filter(from != to) %>% # Drop autocomparisons.
-  filter(from < to) %>% # Drop duplicate comparisons.
-  filter(intersects == TRUE) %>% # Drop uninteresting comparisons.
-  mutate(area_intersect = 
-           map2(from, 
-                to, 
-                ~ expanse(intersect(dat_notifications_less_1[.x], 
-                                    dat_notifications_less_1[.y]), 
-                          unit = "ha"))) %>% 
-  unnest(area_intersect) %>% 
-  mutate(Acres_Intersect = area_intersect * 2.47) %>% # Hectares to acres.
-  left_join(dat_notifications %>% 
-              as_tibble %>% 
-              select(UID, Year_Start, Year_End, Acres), 
-            by = c("from" = "UID")) %>% 
-  rename(Acres_From = Acres,
-         Year_From = Year_Start) %>% 
-  left_join(dat_notifications %>% 
-              as_tibble %>% 
-              select(UID, Year_Start, Year_End, Acres), 
-            by = c("to" = "UID")) %>% 
-  rename(Acres_To = Acres,
-         Year_To = Year_Start) %>% 
-  mutate(Acres_From_Proportion = Acres_Intersect / Acres_From,
-         Acres_To_Proportion = Acres_Intersect / Acres_To) %>% 
-  select(from, to, Acres_From_Proportion, Acres_To_Proportion) %>% 
-  pivot_longer(c(from, to)) %>% 
-  mutate(Proportion = ifelse(name == "from", Acres_From_Proportion, Acres_To_Proportion)) %>% 
-  select(UID = value, Intersect = Proportion) %>% 
-  group_by(UID) %>% 
-  summarize(Intersect_Maximum = Intersect %>% max) %>% 
-  left_join(dat_notifications_less_1 %>% as_tibble, .) %>% 
-  mutate(Intersect_Maximum = Intersect_Maximum %>% replace_na(0))
 
 # Elevation
 

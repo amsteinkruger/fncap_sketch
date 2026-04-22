@@ -46,7 +46,8 @@ dat_bounds =
   disagg %>% 
   cbind(., expanse(., unit = "ha")) %>% 
   filter(y == max(y)) %>% 
-  select(STUSPS)
+  select(STUSPS) %T>% 
+  writeVector("03_intermediate/dat_bounds.gdb")
 
 #   Relation
 
