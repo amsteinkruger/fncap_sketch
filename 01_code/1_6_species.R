@@ -19,7 +19,6 @@ dat_notifications =
          Month_End = DateEnd %>% month,
          MBF = ActivityQuantity %>% as.numeric,
          MBF_Acre = MBF / Acres) %>% 
-  filter(Year_Start %in% 2015:2025 & Year_End %in% 2015:2025) %>% 
   # The following lines are applied in earlier scripts. 
   # filter(ActivityType == "Clearcut/Overstory Removal") %>% 
   # filter(ActivityUnit == "MBF") %>%
