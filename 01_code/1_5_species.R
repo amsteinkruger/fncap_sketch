@@ -1,49 +1,33 @@
-# Join data on forest type to restrict the data to Douglas fir (and whem). 
+# Join data on forest type to restrict the data to Douglas fir.
+
+#  The ideal here might be to: 
+#   Get the subset of cells in each rasterized polygon that are forest/timber. 
+#   Get the proportions of forest/timber cells that are Douglas fir or hemlock. 
+#   Transform MBF into Douglas fir, western hemlock, and "other" timber. 
+#   Note that condition-level forest type != proportions of trees in tree table. 
+
+#  No idea how to defend that, but it's a cleaner connection between FIA and FERNS. 
 
 #  Clear the environment.
 
 rm(list = ls())
 
-# Start timing. 
+#  Start timing. 
 
 time_start = Sys.time()
 
-# Notifications
+#  Notifications
 
 dat_notifications = 
   "03_intermediate/dat_notifications_1_4.gdb" %>% 
   vect %>% 
-  mutate(Year_Start = DateStart %>% year,
-         Month_Start = DateStart %>% month,
-         Year_End = DateEnd %>% year,
-         Month_End = DateEnd %>% month,
-         MBF = ActivityQuantity %>% as.numeric,
-         MBF_Acre = MBF / Acres) %>% 
-  # The following lines are applied in earlier scripts. 
-  # filter(ActivityType == "Clearcut/Overstory Removal") %>% 
-  # filter(ActivityUnit == "MBF") %>%
-  # filter(LandOwnerType == "Partnership/Corporate Forestland Ownership") %>% 
-  # filter(str_sub(OperationName, 1, 10) != "do not use") %>% 
-  filter(MBF_Acre > quantile(MBF_Acre, 0.01) & MBF_Acre < quantile(MBF_Acre, 0.99)) %>% 
-  select(UID,
-         Landowner = Landowner_Company_Reviewed, 
-         Year_Start,
-         Month_Start,
-         Year_End,
-         Month_End, 
-         Completion_String = ActivityStatus,
-         Completion_Date = DateCompletion, 
-         MBF, 
-         Acres, 
-         MBF_Acre)
+  filter(is.valid(.)) 
   
+# This filter is important: it costs ~ 1/6 obs. to maintain valid polygons. 
+
 dat_notifications_less = 
   dat_notifications %>% 
   select(UID)
-
-dat_notifications_flat = 
-  dat_notifications_less %>% 
-  as_tibble
 
 # TreeMap
 
@@ -90,8 +74,7 @@ dat_treemap =
   "02_data/1_5_2_TreeMap_2014/national_c2014_tree_list.tif" %>% 
   rast %>% 
   crop(dat_bounds_treemap, mask = TRUE) %>% 
-  project("EPSG:2992") # %>% 
-  # as.numeric # This might matter, but it runs for ~20 minutes (2025/11/25).
+  project("EPSG:2992")
 
 vec_treemap = dat_treemap %>% as.vector %>% na.omit %>% unique
 
@@ -163,3 +146,18 @@ dat_join_treemap =
   left_join(dat_join_treemap_siteclcd_max) %>% 
   left_join(dat_join_treemap_siteclcd_med) %>% 
   left_join(dat_join_treemap_siteclcd_mod)
+
+dat_notifications_treemap = 
+  dat_notifications %>% 
+  left_join(dat_join_treemap) %T>% 
+  # Export with spatial data. 
+  writeVector("03_intermediate/dat_notifications_1_5.gdb") %>% 
+  # Export without spatial data. 
+  as_tibble %T>% 
+  write_csv("03_intermediate/dat_notifications_1_5.csv")
+
+#  Stop timing. 
+
+time_end = Sys.time()
+
+time_end - time_start

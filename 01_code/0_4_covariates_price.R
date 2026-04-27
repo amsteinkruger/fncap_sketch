@@ -63,7 +63,7 @@ dat_price_delivered =
 #   Lumber, FastMarkets
 
 dat_price_test = 
-  "02_data/Prices_FastMarkets/data_pull.csv" %>% 
+  "02_data/1_6_8_FastMarkets/data_pull.csv" %>% 
   read_csv %>% 
   select(-c(`Start Date`, `Fame Name`)) %>% 
   mutate(across(!1:13, ~ as.numeric(.x))) %>% 

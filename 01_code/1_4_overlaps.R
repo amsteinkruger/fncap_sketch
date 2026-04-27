@@ -42,6 +42,7 @@ dat_order =
          MBF_Landowner = MBF %>% sum) %>% 
   ungroup %>% 
   arrange(desc(DateStart),
+          desc(DateEnd),
           desc(DateSubmit),
           desc(MBF),
           desc(Acres),
@@ -61,11 +62,11 @@ dat_intersect =
 
 dat_erase = 
   dat_intersect %>% 
-  filter(Order_1 < Order_2) %>% 
-  group_by(UID_1) %>% 
+  filter(Order_1 < Order_2) %>% # Get intersections where UID_1 is later. 
+  group_by(UID_2) %>% # Match those intersections to UID_2. 
   summarize() %>% 
   ungroup %>% 
-  rename(UID = UID_1)
+  rename(UID = UID_2)
 
 #  Erase intersections from all but the latest notification, then export. 
 
@@ -81,7 +82,7 @@ dat_clean =
          data_erase = 
            map2(data_original,
                 data_intersections,
-                erase),
+                erase), 
          data_null = 
            map(data_erase,
                ~ nrow(as_tibble(.x)))) %>% 

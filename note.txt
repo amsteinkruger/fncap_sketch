@@ -2,7 +2,12 @@
 
 Check journal on Box for details. 
 
-Consider using 0#_ scripts for preliminaries like NDVI processing, then 1#_ scripts for data assembly, then 2#_ for analysis.
-
-Remember that all paths are broken. 
-
+Update:
+ - Notifications on 07/01. 
+ - Roads now, and remember the inventory. 
+ - PRISM now, and remember John's input. 
+ - Mills now, and remember multiple forms of state and federal licensing. 
+    - Also private data. 
+ - Growth!
+ - Include western hemlock (and remember all the related price wrangling). 
+ - Costs!

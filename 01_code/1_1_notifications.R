@@ -1,9 +1,5 @@
 # Process FERNS. 
 
-#  Problems: 
-#   QA/QC on Activity_Completion_Status
-#   Substitute for landowner type from original flat data
-
 #  Clear the environment.
 
 rm(list = ls())
