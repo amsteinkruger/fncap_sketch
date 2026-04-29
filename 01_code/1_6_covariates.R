@@ -46,9 +46,7 @@ dat_notifications_years =
 
 #  Bounds
 
-dat_bounds = 
-  "03_intermediate/dat_bounds.gdb" %>% 
-  vect
+dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
 
 #  Elevation
 

@@ -11,3 +11,9 @@ library(magrittr)
 
 library(terra)
 library(tidyterra)
+
+#  Visualization
+
+library(viridis)
+library(patchwork)
+library(ggridges)
