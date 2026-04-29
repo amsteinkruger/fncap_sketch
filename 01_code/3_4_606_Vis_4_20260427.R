@@ -13,7 +13,13 @@ dat_mtbs =
   makeValid %>% 
   crop(dat_bounds) %>% 
   mutate(Year_MTBS = ig_date %>% year, 
-         .keep = "none")
+         .keep = "none") %>% 
+  mutate(Year_Bin = 
+           case_when(Year_MTBS %in% 1984:1999 ~ "1984-1999",
+                     Year_MTBS %in% 2000:2019 ~ "2000-2019",
+                     Year_MTBS %in% 2020:2025 ~ "2020-2025") %>% 
+           factor %>% 
+           fct_rev)
 
 dat = 
   "03_intermediate/dat_notifications_1_6.csv" %>% 
@@ -33,7 +39,7 @@ dat =
             Fire_30 = Fire_30 %>% weighted.mean(na.rm = TRUE, w = MBF)) %>% 
   ungroup %>% 
   pivot_longer(cols = c(Fire_0, Fire_15, Fire_30))
-  
+
 # MTBS
 
 vis_mtbs = 
@@ -42,52 +48,64 @@ vis_mtbs =
   ggplot() + 
   geom_spatvector(data = dat_bounds, fill = "NA", color = "black") +
   geom_spatvector(data = dat_mtbs,
-                  aes(fill = Year_MTBS),
-                  color = "black",
+                  aes(fill = Year_Bin),
+                  color = NA,
                   alpha = 1.00) +
   labs(fill = NULL) +
-  scale_fill_distiller(palette = "Reds",
-                       direction = 1,
-                       limits = c(1984, 2024),
-                       breaks = c(1984, 2024),
-                       guide = guide_colorbar(title.position = "top"),
-                       na.value = NA) +
+  # scale_fill_distiller(palette = "Reds",
+  #                      direction = 1,
+  #                      limits = c(1984, 2024),
+  #                      breaks = c(1984, 2024),
+  #                      guide = guide_colorbar(title.position = "top"),
+  #                      na.value = NA) +
+  scale_fill_brewer(palette = "Reds", direction = -1) +
   theme_void() +
-  theme(legend.position = "top",
-        legend.direction = "horizontal",
-        legend.ticks = element_blank(),
-        legend.key.height = unit(0.25, "lines"),
-        legend.key.width = unit(1.5, "lines"),
-        legend.key = element_rect(fill = NA, color = "black"),
-        legend.text = element_text(size = 8),
-        legend.text.position = "top")
-  
+  theme(legend.position = "inside",
+        legend.position.inside = c(-0.05, 0.50),
+        # legend.direction = "vertical",
+        legend.key.height = unit(5.00, "lines"),
+        legend.key.width = unit(0.50, "lines"),
+        # legend.key = element_rect(fill = NA, color = "black"),
+        # legend.text = element_text(size = 8),
+        legend.text = element_text(angle = 90, hjust = 0.50),
+        legend.text.position = "left")
+
 # Exposure
 
+pal_exposure = RColorBrewer::brewer.pal(9, "Reds")[7]
+
 vis_exposure = 
-  dat %>% 
-  filter(value > 0) %>% 
+  dat %>%
+  filter(value > 0) %>%
   mutate(value = value %>% log) %>% 
+  # mutate(name = name %>% str_split_i("_", 2) %>% factor) %>% 
+  mutate(name = 
+           case_when(name == "Fire_0" ~ "0",
+                     name == "Fire_15" ~ "(0, 15]",
+                     name == "Fire_30" ~ "(15, 30]") %>% 
+           factor %>% 
+           fct_relevel("0", "(0, 15]", "(15, 30]")) %>% 
   ggplot() +
   geom_density_ridges(aes(x = value,
-                           y = name,
-                          fill = name),
+                          y = name),
+                          # fill = name),
                       # stat = "binline",
                       # bins = 26,
+                      fill = NA,
                       scale = 0.95) +
-  labs(x = "Mean Log(Count) by Landowner",
-       y = NULL) +
+  labs(x = "Mean Log(Count)",
+       y = "Kilometers to Wildfire") +
   scale_y_discrete(position = "right") +
-  scale_fill_brewer(palette = "Reds") +
+  # scale_fill_brewer(palette = "Reds") +
   theme_minimal() + 
   theme(legend.position = "none") 
 
 # Combine/Export
 
-vis = vis_mtbs + vis_exposure + plot_layout(widths = c(3, 2))
+vis = free(vis_mtbs) + vis_exposure + plot_layout(widths = c(2, 2))
 
 ggsave("04_out/vis_4_20260428.png",
        vis,
        dpi = 300,
-       height = 4.0,
-       width = 6.0)
+       height = 4.5,
+       width = 6.5)
