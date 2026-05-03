@@ -20,10 +20,9 @@ time_start = Sys.time()
 
 dat_notifications = 
   "03_intermediate/dat_notifications_1_4.gdb" %>% 
-  vect %>% 
-  filter(is.valid(.)) 
-  
-# This filter is important: it costs ~ 1/6 obs. to maintain valid polygons. 
+  vect # %>% 
+  # makeValid(buffer = TRUE) %>% 
+  # filter(is.valid(.))
 
 dat_notifications_less = 
   dat_notifications %>% 
@@ -33,28 +32,57 @@ dat_notifications_less =
 
 #  Get FIA data.
 
+#   Trees
+
+dat_fia_tree = 
+  bind_rows("02_data/1_5_1_FIA/CA_TREE.csv" %>% 
+              read_csv,
+            "02_data/1_5_1_FIA/OR_TREE.csv" %>% 
+              read_csv,
+            "02_data/1_5_1_FIA/WA_TREE.csv" %>% 
+              read_csv) %>% 
+  select(CN = PLT_CN, 
+         TREE, 
+         SPCD,
+         VOLBFNET,
+         TPA_UNADJ) %>% 
+  filter(VOLBFNET > 0) %>% 
+  mutate(SPCD_USE = 
+           case_when(SPCD %in% 201:202 ~ "DouglasFir",
+                     SPCD == 263 ~ "WesternHemlock",
+                     TRUE ~ "Other"),
+         VOLBFNET_ACRE = VOLBFNET * TPA_UNADJ) %>% 
+  group_by(CN, SPCD_USE) %>% 
+  summarize(VOLBFNET_ACRE = VOLBFNET_ACRE %>% sum,
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  group_by(CN) %>% 
+  mutate(Species_Proportion = VOLBFNET_ACRE / sum(VOLBFNET_ACRE)) %>% 
+  ungroup %>% 
+  select(-VOLBFNET_ACRE) %>% 
+  pivot_wider(names_from = SPCD_USE, 
+              values_from = Species_Proportion, 
+              names_prefix = "Proportion") %>% 
+  mutate(across(starts_with("Proportion"), ~ replace_na(.x, 0)))
+  
+#  Conditions
+
 dat_fia_cond = 
-  bind_rows("02_data/1_5_1_FIA/CA_COND.csv" %>% 
-              read_csv %>% 
-              select(CN = PLT_CN, 
-                     INVYR, 
-                     FORTYPCD, 
-                     SITECLCD),
-            "02_data/1_5_1_FIA/OR_COND.csv" %>% 
-              read_csv %>% 
-              select(CN = PLT_CN, 
-                     INVYR, 
-                     FORTYPCD, 
-                     SITECLCD),
-            "02_data/1_5_1_FIA/WA_COND.csv" %>% 
-              read_csv %>% 
-              select(CN = PLT_CN, 
-                     INVYR, 
-                     FORTYPCD, 
-                     SITECLCD)) %>% 
+  bind_rows("02_data/1_5_1_FIA/CA_COND.csv" %>% read_csv,
+            "02_data/1_5_1_FIA/OR_COND.csv" %>% read_csv,
+            "02_data/1_5_1_FIA/WA_COND.csv" %>% read_csv) %>% 
+  select(CN = PLT_CN, 
+         FORTYPCD, 
+         SITECLCD) %>%
+  drop_na %>% 
   distinct %>% 
-  drop_na %>% # For FORTYPCD and SITECLCD.
-  mutate(Join = 1)
+  group_by(CN) %>% 
+  filter(n() == 1) %>% 
+  ungroup
+
+#  Join
+
+dat_fia = left_join(dat_fia_cond, dat_fia_tree)
 
 #  Get TreeMap data.
 
@@ -90,13 +118,17 @@ dat_treemap_join =
   vec_treemap %>%
   tibble(TL_ID = .) %>%
   left_join(dat_treemap_lookup) %>% 
-  left_join(dat_fia_cond)
+  left_join(dat_fia)
 
-#  Reclassify Treemap into (1) binary forest types (Douglas Fir / Not) and (2) site class (1-7).
+#  Reclassify Treemap into 
+#   (1) binary forest types (Douglas Fir / Not) 
+#   (2) site class (1-7).
+#   (3) proportions of Douglas fir (from all sawlog timber by MBF)
+#   (4) proportions of western hemlock ("")
 
 dat_treemap_fortypcd = 
   dat_treemap_join %>% 
-  mutate(FORTYPCD_BIN = ifelse(FORTYPCD %in% 201:203, 1, ifelse(!is.na(Join) | !is.na(FORTYPCD), 0, NA))) %>% 
+  mutate(FORTYPCD_BIN = ifelse(FORTYPCD %in% 201:203, 1, ifelse(!is.na(FORTYPCD), 0, NA))) %>% 
   select(tl_id = TL_ID, FORTYPCD_BIN) %>% 
   as.matrix %>% 
   classify(dat_treemap, .)
@@ -108,48 +140,54 @@ dat_treemap_siteclcd =
   as.matrix %>% 
   classify(dat_treemap, .)
 
+dat_treemap_proportiondouglasfir = 
+  dat_treemap_join %>% 
+  select(tl_id = TL_ID, ProportionDouglasFir) %>% 
+  as.matrix %>% 
+  classify(dat_treemap, .)
+
+dat_treemap_proportionwesternhemlock = 
+  dat_treemap_join %>% 
+  select(tl_id = TL_ID, ProportionWesternHemlock) %>% 
+  as.matrix %>% 
+  classify(dat_treemap, .)
+
 #  Extract both results onto notifications for later joins.
 
 dat_join_treemap_fortypcd = 
   dat_notifications_less %>% 
   extract(dat_treemap_fortypcd, ., fun = "mean", na.rm = TRUE) %>% 
-  select(ProportionDouglasFir = CN) %>% 
+  select(ProportionDouglasFirCondition = CN) %>% 
   bind_cols(dat_notifications_less %>% as_tibble, .)
 
-dat_join_treemap_siteclcd_min = 
-  dat_notifications_less %>% 
-  extract(dat_treemap_siteclcd, ., fun = "min", na.rm = TRUE) %>% 
-  select(SiteClass_Min = CN) %>% 
-  bind_cols(dat_notifications_less %>% as_tibble, .)
-
-dat_join_treemap_siteclcd_max = 
-  dat_notifications_less %>% 
-  extract(dat_treemap_siteclcd, ., fun = "max", na.rm = TRUE) %>% 
-  select(SiteClass_Max = CN) %>% 
-  bind_cols(dat_notifications_less %>% as_tibble, .)
-
-dat_join_treemap_siteclcd_med = 
-  dat_notifications_less %>% 
-  extract(dat_treemap_siteclcd, ., fun = "median", na.rm = TRUE) %>% 
-  select(SiteClass_Med = CN) %>% 
-  bind_cols(dat_notifications_less %>% as_tibble, .)
-
-dat_join_treemap_siteclcd_mod = 
+dat_join_treemap_siteclcd = 
   dat_notifications_less %>% 
   extract(dat_treemap_siteclcd, ., fun = "modal", na.rm = TRUE) %>% 
-  select(SiteClass_Mod = CN) %>% 
+  select(SiteClassMode = CN) %>% 
+  bind_cols(dat_notifications_less %>% as_tibble, .)
+
+dat_join_treemap_proportiondouglasfir = 
+  dat_notifications_less %>% 
+  extract(dat_treemap_proportiondouglasfir, ., fun = "mean", na.rm = TRUE) %>% 
+  select(ProportionDouglasFirTree = CN) %>% 
+  bind_cols(dat_notifications_less %>% as_tibble, .)
+
+dat_join_treemap_proportionwesternhemlock = 
+  dat_notifications_less %>% 
+  extract(dat_treemap_proportionwesternhemlock, ., fun = "mean", na.rm = TRUE) %>% 
+  select(ProportionWesternHemlockTree = CN) %>% 
   bind_cols(dat_notifications_less %>% as_tibble, .)
 
 dat_join_treemap = 
   dat_join_treemap_fortypcd %>% 
-  left_join(dat_join_treemap_siteclcd_min) %>% 
-  left_join(dat_join_treemap_siteclcd_max) %>% 
-  left_join(dat_join_treemap_siteclcd_med) %>% 
-  left_join(dat_join_treemap_siteclcd_mod)
+  left_join(dat_join_treemap_siteclcd) %>%
+  left_join(dat_join_treemap_proportiondouglasfir) %>%
+  left_join(dat_join_treemap_proportionwesternhemlock)
 
 dat_notifications_treemap = 
   dat_notifications %>% 
   left_join(dat_join_treemap) %T>% 
+  #  This is where you could adjust acres, MBF, MBF_Acre. 
   # Export with spatial data. 
   writeVector("03_intermediate/dat_notifications_1_5.gdb") %>% 
   # Export without spatial data. 

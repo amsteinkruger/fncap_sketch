@@ -17,8 +17,9 @@ dat_prepare =
   filter(ActivityType == "Clearcut/Overstory Removal") %>% # Implicit in 1_3. 
   filter(ActivityUnit == "MBF") %>%
   filter(str_sub(OperationName, 1, 10) != "do not use") %>% 
-  mutate(Acres = expanse(., unit = "ha") * 2.47105381) %>% 
-  mutate(MBF = ActivityQuantity %>% as.numeric) %>% 
+  mutate(Acres = expanse(., unit = "ha") * 2.47105381,
+         MBF = ActivityQuantity %>% as.numeric,
+         MBF_Acre = MBF / Acres) %>% 
   select(UID,
          Landowner = Landowner_Company_Reviewed, 
          DateSubmit, 
@@ -26,8 +27,9 @@ dat_prepare =
          DateEnd,
          DateCompletion,
          Completion = ActivityStatus,
-         MBF, 
-         Acres)
+         Acres,
+         MBF,
+         MBF_Acre)
 
 #  Set aside attributes. 
 
@@ -49,14 +51,15 @@ dat_order =
           desc(MBF_Landowner),
           desc(Acres_Landowner)) %>% 
   select(UID) %>% 
-  makeValid 
+  makeValid(buffer = TRUE) 
 
 #  Intersect data. 
 
 dat_intersect = 
   dat_order %>% 
   mutate(Order = row_number()) %>% # Standing in for dates, etc. 
-  intersect(., .)
+  intersect(., .) %>% 
+  makeValid(buffer = TRUE) 
 
 #  Set aside intersections. 
 
@@ -66,7 +69,8 @@ dat_erase =
   group_by(UID_2) %>% # Match those intersections to UID_2. 
   summarize() %>% 
   ungroup %>% 
-  rename(UID = UID_2)
+  rename(UID = UID_2) %>% 
+  makeValid(buffer = TRUE) 
 
 #  Erase intersections from all but the latest notification, then export. 
 
@@ -90,12 +94,14 @@ dat_clean =
   filter(data_null > 0) %>% 
   pull(data_erase) %>% 
   bind_spat_rows %>% 
+  makeValid(buffer = TRUE) %>% 
   left_join(dat_prepare_flat) %>% 
   mutate(Acres_Less = expanse(., unit = "ha") * 2.47105381, 
          Acres_Change = Acres_Less - Acres,
          MBF_Less = MBF * (Acres_Less / Acres),
          MBF_Change = MBF_Less - MBF,
-         MBF_Acre = MBF_Less / Acres_Less) %>% 
+         MBF_Acre_Less = MBF_Less / Acres_Less) %>% 
+  filter(Acres_Less > 1) %>% 
   arrange(UID) %>% 
   select(UID,
          Landowner,
@@ -104,9 +110,12 @@ dat_clean =
          DateEnd,
          DateCompletion,
          Completion,
-         MBF_Acre,
-         MBF = MBF_Less,
-         Acres = Acres_Less) %T>% 
+         Acres_0 = Acres,
+         MBF_0 = MBF,
+         MBF_Acre_0 = MBF_Acre,
+         Acres_1 = Acres_Less,
+         MBF_1 = MBF_Less,
+         MBF_Acre_1 = MBF_Acre_Less) %T>% 
   # Export with spatial data. 
   writeVector("03_intermediate/dat_notifications_1_4.gdb") %>% 
   # Export without spatial data. 

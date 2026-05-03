@@ -1,13 +1,23 @@
-2026/03/31
+2026/04/30
 
 Check journal on Box for details. 
 
-Update:
  - Notifications on 07/01. 
  - Roads now, and remember the inventory. 
  - PRISM now, and remember John's input. 
+ - Large Fire Probability now (but last). 
  - Mills now, and remember multiple forms of state and federal licensing. 
     - Also private data. 
  - Growth!
  - Include western hemlock (and remember all the related price wrangling). 
  - Costs!
+
+ - Add 2025 NDVI via GEE now, to set up minimal ML workflow for harvest detection. 
+
+ - Lags now. 1, 2, 3, 4, 5, 10, 15, 20, 30. 
+
+ - Try distance to fires as an alternative to doughnuts. 
+
+With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
+
+16530 is quite a bit better than 15039. 
