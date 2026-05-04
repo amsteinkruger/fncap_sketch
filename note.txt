@@ -9,15 +9,16 @@ Check journal on Box for details.
  - Mills now, and remember multiple forms of state and federal licensing. 
     - Also private data. 
  - Growth!
- - Include western hemlock (and remember all the related price wrangling). 
+ - Include western hemlock (and remember all the related price wrangling). (~)
  - Costs!
 
  - Add 2025 NDVI via GEE now, to set up minimal ML workflow for harvest detection. 
 
- - Lags now. 1, 2, 3, 4, 5, 10, 15, 20, 30. 
+ - Lags now. 1, 2, 3, 4, 5, 10, 15, 20, 30. (~)
 
  - Try distance to fires as an alternative to doughnuts. 
 
 With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
+ - Losing only a few hundred more with speciation. 
 
 16530 is quite a bit better than 15039. 

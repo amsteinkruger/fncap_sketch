@@ -186,8 +186,25 @@ dat_join_treemap =
 
 dat_notifications_treemap = 
   dat_notifications %>% 
-  left_join(dat_join_treemap) %T>% 
-  #  This is where you could adjust acres, MBF, MBF_Acre. 
+  left_join(dat_join_treemap) %>% 
+  mutate(MBF_2_DouglasFir = MBF_1 * ProportionDouglasFirTree,
+         MBF_2_WesternHemlock = MBF_1 * ProportionWesternHemlockTree,
+         MBF_Acre_2_DouglasFir = MBF_Acre_1 * ProportionDouglasFirTree,
+         MBF_Acre_2_WesternHemlock = MBF_Acre_1 * ProportionWesternHemlockTree) %>% 
+  select(UID,
+         Landowner,
+         DateSubmit,
+         DateStart,
+         DateEnd,
+         DateCompletion,
+         Completion,
+         starts_with("Acres"),
+         starts_with("MBF_"),
+         starts_with("MBF_Acre"),
+         SiteClassMode,
+         ProportionDouglasFirTree,
+         ProportionWesternHemlockTree) %>% 
+  filter(ProportionDouglasFirTree > 0 | ProportionWesternHemlockTree > 0) %T>% 
   # Export with spatial data. 
   writeVector("03_intermediate/dat_notifications_1_5.gdb") %>% 
   # Export without spatial data. 
