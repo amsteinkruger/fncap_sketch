@@ -24,7 +24,8 @@ time_start = Sys.time()
 
 dat_notifications = 
   "03_intermediate/dat_notifications_1_5.gdb" %>% 
-  vect
+  vect %>% 
+  makeValid(buffer = TRUE)
 
 dat_notifications_less = 
   dat_notifications %>% 

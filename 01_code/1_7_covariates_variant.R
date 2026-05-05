@@ -23,7 +23,8 @@ time_start = Sys.time()
 
 dat_notifications = 
   "03_intermediate/dat_notifications_1_6.gdb" %>% 
-  vect
+  vect %>% 
+  makeValid(buffer = TRUE)
 
 dat_notifications_less = 
   dat_notifications %>% 
@@ -75,45 +76,77 @@ dat_mtbs =
   project("EPSG:2992") %>% 
   makeValid %>% 
   crop(dat_bounds) %>% 
-  mutate(Year_MTBS = ig_date %>% year, 
+  mutate(Year_MTBS = ig_date %>% year,
+         Month_MTBS = ig_date %>% month,
+         Quarter_MTBS = Month_MTBS %>% multiply_by(1 / 3) %>% ceiling, 
          .keep = "none")
 
-# 1. No Buffer
+#  No Buffer
 
 dat_join_mtbs_0 = 
-  dat_notifications_years %>% 
+  dat_notifications_less %>% 
+  full_join(dat_notifications_quarters) %>% 
+  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  filter(Year > Year_MTBS & Year - 30 < Year_MTBS) %>% 
-  group_by(UID) %>% 
+  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
+  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
+  group_by(UID, YearQuarter) %>% 
   summarize(Fire_0 = n()) %>% 
   ungroup
 
-# 2. 15km Buffer
+#  15km Buffer
 
 dat_join_mtbs_15 = 
-  dat_notifications_years %>% 
+  dat_notifications_less %>% 
   buffer(width = 15 * 3280.84) %>% # Kilometers to feet.
+  full_join(dat_notifications_quarters) %>% 
+  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  filter(Year > Year_MTBS & Year - 30 < Year_MTBS) %>% 
-  group_by(UID) %>% 
+  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
+  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
+  group_by(UID, YearQuarter) %>% 
   summarize(Fire_15 = n()) %>% 
   ungroup
 
-# 3. 30km Buffer
+#  30km Buffer
 
 dat_join_mtbs_30 = 
-  dat_notifications_years %>% 
+  dat_notifications_less %>% 
   buffer(width = 30 * 3280.84) %>% # Kilometers to feet.
+  full_join(dat_notifications_quarters) %>% 
+  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  filter(Year >= Year_MTBS & Year - 30 < Year_MTBS) %>% 
-  group_by(UID) %>% 
+  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
+  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
+  group_by(UID, YearQuarter) %>% 
   summarize(Fire_30 = n()) %>% 
   ungroup
 
-# 4. Combine
+#  Proportion within fire perimeters. 
+
+dat_join_mtbs_proportion = 
+  dat_notifications_less %>% 
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
+  full_join(dat_notifications_quarters) %>% 
+  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
+  intersect(dat_mtbs) %>% 
+  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
+  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
+  select(UID, YearQuarter, Acres_1) %>% 
+  aggregate(by = c("UID", "YearQuarter", "Acres_1")) %>% 
+  mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381,
+         Fire_Proportion = Acres_Burnt / Acres_1) %>% 
+  select(UID, YearQuarter, Fire_Proportion) %>% 
+  as_tibble %>% 
+  # Band-Aid for upstream polygon handling issues. Remember to fix those. 
+  mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
+
+# Combine
+
+#  swap in _quarters for _less
 
 dat_join_mtbs = 
   dat_notifications_less %>% 
@@ -121,9 +154,8 @@ dat_join_mtbs =
   left_join(dat_join_mtbs_0) %>% 
   left_join(dat_join_mtbs_15) %>% 
   left_join(dat_join_mtbs_30) %>% 
-  mutate(Fire_0 = Fire_0 %>% replace_na(0),
-         Fire_15 = Fire_15 %>% replace_na(0),
-         Fire_30 = Fire_30 %>% replace_na(0),
+  left_join(dat_join_proportion) %>% 
+  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)),
          Fire_15_Doughnut = Fire_15 - Fire_0,
          Fire_30_Doughnut = Fire_30 - Fire_15)
 
