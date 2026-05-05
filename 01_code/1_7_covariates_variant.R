@@ -14,16 +14,15 @@ time_start = Sys.time()
 
 #  TOC:
 
-#    MTBS (Lag)
-#    VPD (Lag)
-#    other climate, weather, fire (Lag)
-#    Prices (Lag)
-#    Effective Federal Funds Rate (Lag)
+#    MTBS
+#    VPD
+#    Prices
+#    Effective Federal Funds Rate
 
 #  Notifications
 
 dat_notifications = 
-  "03_intermediate/dat_notifications_1_7.gdb" %>% 
+  "03_intermediate/dat_notifications_1_6.gdb" %>% 
   vect
 
 dat_notifications_less = 
@@ -34,6 +33,35 @@ dat_notifications_years =
   dat_notifications %>% 
   mutate(Year = DateStart %>% year) %>% 
   select(UID, Year)
+
+dat_notifications_quarters = 
+  dat_notifications %>% 
+  as_tibble %>% 
+  select(UID, DateStart, DateEnd) %>% 
+  # Get year-quarter components. 
+  mutate(YearStart = DateStart %>% year,
+         MonthStart = DateStart %>% month,
+         QuarterStart = MonthStart %>% multiply_by(1 / 3) %>% ceiling,
+         YearEnd = DateEnd %>% year,
+         MonthEnd = DateEnd %>% month,
+         QuarterEnd = MonthEnd %>% multiply_by(1 / 3) %>% ceiling) %>% # ,
+  # Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  # Get intervening years and quarters. 
+  mutate(Years = map2(YearStart, YearEnd, seq),
+         Quarters = seq(1, 4) %>% list) %>% 
+  unnest(Years) %>% 
+  unnest(Quarters) %>% 
+  # Get conditions for keeping quarters.
+  mutate(CheckStart = (Years == YearStart & Quarters < QuarterStart),
+         CheckEnd = (Years == YearEnd & Quarters > QuarterEnd)) %>% 
+  # Get year-quarter. 
+  mutate(YearQuarter = paste0(Years, "_Q", Quarters)) %>% 
+  # Clean up. 
+  filter(!CheckStart & !CheckEnd) %>% 
+  select(UID,
+         YearQuarter,
+         Year = Years,
+         Quarter = Quarters)
 
 #  Bounds
 
@@ -258,14 +286,11 @@ dat_price_lumber =
 
 #  Join
 
+#   Anyhow: 
+
 dat_join_price = 
-  dat_notifications %>% 
-  select(UID, DateStart) %>% 
-  mutate(Year = DateStart %>% year,
-         Month = DateStart %>% month,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  select(UID, Year_Quarter) %>% 
+  dat_notifications_quarters %>% 
+  select(UID, Year_Quarter = YearQuarter) %>% # Ridiculous. 
   left_join(dat_price_stumpage) %>% 
   left_join(dat_price_lumber)
 
@@ -278,18 +303,20 @@ dat_join_rate =
          Month = observation_date %>% month,
          Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
          Year_Quarter = paste0(Year, "_Q", Quarter),
-         Rate_Fed = FEDFUNDS) %>% 
+         Rate = FEDFUNDS) %>% 
   group_by(Year_Quarter) %>% 
-  summarize(Rate_Fed = Rate_Fed %>% mean) %>% 
+  summarize(Rate = Rate %>% mean) %>% 
   ungroup %>% 
-  left_join(dat_notifications_quarters, 
-            .) %>% 
-  select(UID, Rate_Fed)
+  mutate(across(Rate, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  filter(Year_Quarter > "2009_Q4" & Year_Quarter < "2025_Q1") %>% 
+  left_join(dat_notifications_quarters %>% 
+              select(UID, Year_Quarter = YearQuarter), 
+            .)
 
 #  Export
 
 dat_notifications_out = 
-  dat_notifications %>% 
+  dat_notifications_quarters %>% 
   left_join(dat_join_mtbs) %>% 
   left_join(dat_join_vpd) %>% 
   left_join(dat_join_price) %>% 
