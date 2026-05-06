@@ -1,5 +1,87 @@
 # Detect clearcuts, thinning, and salvage. 
 
+#  Fresh start with 2015-2025 in NDVI only. 
+
+#  Clear the environment.
+
+rm(list = ls())
+
+#  Start timing. 
+
+time_start = Sys.time()
+
+#  Notifications
+
+dat_notifications = 
+  "03_intermediate/dat_notifications_1_6.gdb" %>% 
+  vect %>% 
+  makeValid(buffer = TRUE)
+
+dat_notifications_less = 
+  dat_notifications %>% 
+  select(UID)
+
+dat_notifications_variant = 
+  "03_intermediate/dat_notifications_1_7.csv" %>% 
+  read_csv
+
+dat_notifications_more = 
+  dat_notifications %>% 
+  full_join(dat_notifications_variant)
+
+# NDVI
+
+dat_join_ndvi_read = "03_intermediate/dat_ndvi.tif" %>% rast
+
+# Get an easy subset to work with. 
+
+#  Extract NDVI to notifications, then subset results for comparisons of interest.
+
+dat_join_ndvi_annual = 
+  dat_join_ndvi_read %>% 
+  extract(., 
+          dat_notifications_less_1, 
+          mean, 
+          na.rm = TRUE) %>% 
+  bind_cols((dat_notifications_less_1$UID %>% tibble(UID = .))) %>% 
+  select(-ID) %>% 
+  as_tibble %>% 
+  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
+  pivot_longer(cols = starts_with("NDVI"),
+               names_prefix = "NDVI_",
+               names_to = "Year",
+               values_to = "NDVI") %>% 
+  group_by(UID) %>% 
+  nest(data = c(Year, NDVI)) %>% 
+  ungroup %>% 
+  left_join(dat_notifications_ndvi_annual, .) %>% 
+  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
+  select(-Year) %>% 
+  unnest(data) %>% 
+  mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
+  filter(Period == "After") %>% 
+  select(UID, NDVI_Change) 
+
+
+#  Export
+
+dat_notifications_out = 
+  dat_notifications %>% 
+  # Join detection results. 
+  # Export with spatial data. 
+  writeVector("03_intermediate/dat_notifications_1_8.gdb") %>% 
+  # Export without spatial data. 
+  as_tibble %T>% 
+  write_csv("03_intermediate/dat_notifications_1_8.csv")
+
+#  Stop timing. 
+
+time_end = Sys.time()
+
+time_end - time_start
+
+# --- Code for reference starts here. ---
+
 # TCC
 
 #  Set up notifications to support comparisons between pre- and post-years.
@@ -229,40 +311,3 @@ dat_detect_ndvi =
          NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>%
   drop_na(NDVI_Change) %>%
   ungroup
-
-#  Compare NDVI and TCC.
-
-# dat_detect_tcc_ndvi = 
-#   dat_detect_ndvi %>% 
-#   full_join(dat_detect_tcc, by = c("UID", "Year"))
-# 
-# val_detect_tcc_ndvi_agreement = 
-#   dat_detect_tcc_ndvi %>% 
-#   mutate(Agreement = NDVI_Detect * TCC_Detect) %>% 
-#   summarize(Check = sum(Agreement) / n_distinct(UID)) %>% 
-#   pull(Check)
-
-#  Parameterize a model for harvest detection.
-
-#  Detect harvests in notifications.
-
-#   Get notifications with change in TCC and NDVI in convenient formats.
-
-# dat_detect_notifications_tcc = dat_join_tcc
-# dat_detect_notifications_ndvi = dat_join_ndvi_annual
-
-#  Set up detection for joins.
-
-#   Placeholder!
-
-dat_join_detect = 
-  dat_join_ndvi_annual %>% 
-  mutate(NDVI_Detect = ifelse(NDVI_Change < 0, 1, 0)) %>% 
-  left_join(dat_notifications_less_1 %>% as_tibble,
-            .)
-
-# Stopwatch
-
-time_end = Sys.time()
-
-time_end - time_start

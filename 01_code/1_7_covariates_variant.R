@@ -146,37 +146,41 @@ dat_join_mtbs_proportion =
 
 # Combine
 
-#  swap in _quarters for _less
-
 dat_join_mtbs = 
-  dat_notifications_less %>% 
+  dat_notifications_quarters %>% 
   as_tibble %>% 
   left_join(dat_join_mtbs_0) %>% 
   left_join(dat_join_mtbs_15) %>% 
   left_join(dat_join_mtbs_30) %>% 
-  left_join(dat_join_proportion) %>% 
+  left_join(dat_join_mtbs_proportion) %>% 
   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)),
          Fire_15_Doughnut = Fire_15 - Fire_0,
          Fire_30_Doughnut = Fire_30 - Fire_15)
 
 # VPD
 
+#  Problems:
+#   (1) Need 2025.
+#   (2) Want all months.
+#   (3) No idea what the code is doing.
+#   (4) No idea what to do for lags with extraction. 
+
 dat_vpd = "03_intermediate/dat_vpd.tif" %>% rast
 
-dat_vpd_annual = 
-  tibble(year = 1984:2024) %>%
-  mutate(string = paste0("VPD_", year)) %>%
-  mutate(data = string %>% map( ~ { dat_vpd %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
-  mutate(data =
-           data %>%
-           map2(.x = .,
-                .y = string,
-                ~ {
-                  names(.x) <- as.character(.y)
-                  .x
-                })) %>% # Restore names.
-  magrittr::extract2("data") %>% # Equivalent to .$data.
-  reduce(c) 
+# dat_vpd_annual = 
+#   tibble(year = 1984:2024) %>%
+#   mutate(string = paste0("VPD_", year)) %>%
+#   mutate(data = string %>% map( ~ { dat_vpd %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
+#   mutate(data =
+#            data %>%
+#            map2(.x = .,
+#                 .y = string,
+#                 ~ {
+#                   names(.x) <- as.character(.y)
+#                   .x
+#                 })) %>% # Restore names.
+#   magrittr::extract2("data") %>% # Equivalent to .$data.
+#   reduce(c) 
 
 dat_join_vpd = 
   tibble(year = 2014:2025) %>% 
@@ -348,16 +352,14 @@ dat_join_rate =
 #  Export
 
 dat_notifications_out = 
-  dat_notifications_quarters %>% 
-  left_join(dat_join_mtbs) %>% 
-  left_join(dat_join_vpd) %>% 
-  left_join(dat_join_price) %>% 
-  left_join(dat_join_rate) %T>% 
-  # Export with spatial data. 
-  writeVector("03_intermediate/dat_notifications_1_6.gdb") %>% 
+  dat_join_mtbs %>% 
+  # left_join(dat_join_vpd) %>% 
+  left_join(dat_join_price %>% rename(YearQuarter = Year_Quarter), 
+            by = c("UID", "YearQuarter")) %>% 
+  left_join(dat_join_rate %>% rename(YearQuarter = Year_Quarter), 
+            by = c("UID", "YearQuarter")) %T>% 
   # Export without spatial data. 
-  as_tibble %T>% 
-  write_csv("03_intermediate/dat_notifications_1_6.csv")
+  write_csv("03_intermediate/dat_notifications_1_7.csv")
 
 #  Stop timing. 
 

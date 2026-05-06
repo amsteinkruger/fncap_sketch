@@ -12,7 +12,7 @@ Check journal on Box for details.
  - Include western hemlock (and remember all the related price wrangling). (~)
  - Costs!
 
- - Add 2025 NDVI via GEE now, to set up minimal ML workflow for harvest detection. 
+ - Add 2025 NDVI via GEE now, to set up minimal ML workflow for harvest detection. (~)
 
  - Lags now. 1, 2, 3, 4, 5, 10, 15, 20, 30. (~)
 
