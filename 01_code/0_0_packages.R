@@ -17,3 +17,7 @@ library(tidyterra)
 library(viridis)
 library(patchwork)
 library(ggridges)
+
+#  Statistics and Econometrics
+
+library(fixest)

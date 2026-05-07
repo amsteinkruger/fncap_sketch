@@ -16,9 +16,11 @@ Check journal on Box for details.
 
  - Lags now. 1, 2, 3, 4, 5, 10, 15, 20, 30. (~)
 
- - Try distance to fires as an alternative to doughnuts. 
+ - Try distance to fires as an alternative to doughnuts. (Don't, per CW's note.)
 
 With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
  - Losing only a few hundred more with speciation. 
 
 16530 is quite a bit better than 15039. 
+
+8820 after overzealous filtering for harvest detection. 

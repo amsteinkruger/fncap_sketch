@@ -1,6 +1,4 @@
-# Detect clearcuts, thinning, and salvage. 
-
-#  Fresh start with 2015-2025 in NDVI only. 
+# Detect clearcuts (and, later, thinning and salvage).  
 
 #  Clear the environment.
 
@@ -31,43 +29,125 @@ dat_notifications_more =
 
 # NDVI
 
-dat_join_ndvi_read = "03_intermediate/dat_ndvi.tif" %>% rast
+dat_ndvi = "03_intermediate/dat_ndvi.tif" %>% rast
 
-# Get an easy subset to work with. 
+# Just go ahead and extract over the full set, I guess. Expecting ~4h. 
 
-#  Extract NDVI to notifications, then subset results for comparisons of interest.
+time_start = Sys.time()
 
-dat_join_ndvi_annual = 
-  dat_join_ndvi_read %>% 
-  extract(., 
-          dat_notifications_less_1, 
-          mean, 
-          na.rm = TRUE) %>% 
-  bind_cols((dat_notifications_less_1$UID %>% tibble(UID = .))) %>% 
+dat_notifications_ndvi = 
+  dat_notifications_less %>% 
+  terra::extract(dat_ndvi, 
+                 ., 
+                 fun = mean,
+                 na.rm = TRUE) %T>% 
+  write_csv("03_intermediate/data_notifications_ndvi.csv")
+
+time_end = Sys.time()
+
+time_end - time_start
+
+# 2.7h!
+
+# NDVI to interannual change by quarter.  
+
+dat_notifications_ndvi_join = 
+  dat_notifications_ndvi %>% 
+  bind_cols(dat_notifications_less %>% as_tibble, .) %>% 
   select(-ID) %>% 
-  as_tibble %>% 
-  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
   pivot_longer(cols = starts_with("NDVI"),
                names_prefix = "NDVI_",
-               names_to = "Year",
+               names_to = "Year_Quarter",
                values_to = "NDVI") %>% 
+  arrange(UID, Year_Quarter) %>% 
   group_by(UID) %>% 
-  nest(data = c(Year, NDVI)) %>% 
+  mutate(across(NDVI, setNames(lapply(1:4, \(k) ~ lag(.x, k)), paste0("Lag_", 1:4)))) %>% 
   ungroup %>% 
-  left_join(dat_notifications_ndvi_annual, .) %>% 
-  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
-  select(-Year) %>% 
-  unnest(data) %>% 
-  mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
-  filter(Period == "After") %>% 
-  select(UID, NDVI_Change) 
+  drop_na(starts_with("NDVI")) %>% 
+  mutate(NDVI_Change = NDVI - NDVI_Lag_4) %>% 
+  select(UID, Year_Quarter, NDVI_Change)
 
+# NDVI to long notifications. 
+
+dat_notifications_labeled = 
+  dat_notifications_variant %>% 
+  select(UID, Year_Quarter = YearQuarter) %>% 
+  mutate(Year_Quarter = Year_Quarter %>% str_remove("Q")) %>% 
+  left_join(dat_notifications %>% 
+              as_tibble %>% 
+              select(UID, Completion, DateCompletion)) %>% 
+  mutate(Year = DateCompletion %>% year,
+         Month = DateCompletion %>% month,
+         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+         Year_Quarter_Completion = ifelse(!is.na(Quarter), paste0(Year, "_", Quarter), NA)) %>% 
+  select(UID, Year_Quarter, Year_Quarter_Completion, Completion) %>% 
+  filter(Completion %in% c("Completed", "Did Not Operate")) %>% 
+  mutate(Completion_Binary = ifelse(Year_Quarter == Year_Quarter_Completion, 1, 0)) %>% 
+  # Account for completion dates outside of the start-end range. Assume these are noise. 
+  group_by(UID) %>% 
+  filter(!(Completion == "Completed" & max(Completion_Binary) == 0)) %>% 
+  ungroup %>% 
+  left_join(dat_notifications_ndvi_join) %>% 
+  mutate(NDVI_Change = NDVI_Change %>% round(3))
+
+#  This brings us to a stupid problem:
+#  ODF's "completion" field is as unreliable as the federal alternative.
+#  So, what we actually have is just *whether* a notification was realized.
+#  One solution would be to use pre-notification mean NDVI changes for comparison.
+#  For now, I'll (1) model completion and then (2) pick the earliest quarter with completion. 
+#   wait actually use a cumulative minimum to get at the same thing
+
+dat_notifications_labeled_wrong = 
+  dat_notifications_labeled %>% 
+  arrange(UID, Year_Quarter) %>% 
+  group_by(UID, Completion) %>% 
+  summarize(NDVI_Change_Least = min(NDVI_Change)) %>% 
+  ungroup %>% 
+  mutate(Completion_Binary_Wrong = ifelse(Completion == "Completed", 1, 0))
+
+mod_wrong = 
+  dat_notifications_labeled_wrong %>% 
+  glm(Completion_Binary_Wrong ~ NDVI_Change_Least, 
+        data = .,
+        family = binomial(link = "probit"))
+
+par_wrong_0 = mod_wrong$coefficients[1]
+par_wrong_1 = mod_wrong$coefficients[2]
+
+# Model to all notifications; remember that this is the wrong workflow. 
+
+dat_notifications_predicted = 
+  dat_notifications_ndvi_join %>% 
+  semi_join(dat_notifications_variant %>% mutate(Year_Quarter = YearQuarter %>% str_remove("Q"))) %>% 
+  semi_join(dat_notifications %>% 
+              as_tibble %>% 
+              select(UID, DateStart, DateEnd) %>% 
+              filter(DateStart %>% year > 2014 & DateEnd %>% year < 2025)) %>% 
+  mutate(Completion_Predicted = predict(mod_wrong, select(., NDVI_Change_Least = NDVI_Change), type = "response"),
+         Completion_Predicted_Binary = ifelse(Completion_Predicted > 0.90, 1, 0)) %>% 
+  group_by(UID) %>% 
+  mutate(Completion_Predicted_Binary_Cumulative = Completion_Predicted_Binary %>% cummax) %>% 
+  ungroup
+
+dat_notifications_predicted_out = 
+  dat_notifications_predicted %>% 
+  group_by(UID) %>% 
+  mutate(Completion_Keep = cumsum(Completion_Predicted_Binary_Cumulative)) %>% 
+  ungroup %>% 
+  filter(Completion_Keep == 1) %>% 
+  select(UID, Year_Quarter)
 
 #  Export
 
 dat_notifications_out = 
   dat_notifications %>% 
-  # Join detection results. 
+  semi_join(dat_notifications_predicted_out) %>% 
+  left_join(dat_notifications_predicted_out) %>% 
+  left_join(dat_notifications_variant %>% 
+              mutate(Year_Quarter = YearQuarter %>% str_remove("Q"))) %>% 
+  select(-YearQuarter) %>% 
+  rename(QuarterCompletion = Year_Quarter) %>% 
+  relocate(QuarterCompletion, .after = DateCompletion) %T>% 
   # Export with spatial data. 
   writeVector("03_intermediate/dat_notifications_1_8.gdb") %>% 
   # Export without spatial data. 
@@ -79,235 +159,3 @@ dat_notifications_out =
 time_end = Sys.time()
 
 time_end - time_start
-
-# --- Code for reference starts here. ---
-
-# TCC
-
-#  Set up notifications to support comparisons between pre- and post-years.
-
-dat_notifications_tcc = 
-  dat_notifications %>% 
-  filter(Year_End < 2023) %>% 
-  as_tibble %>% 
-  mutate(Year_Before = Year_Start - 1,
-         Year_After = Year_End + 1) %>% 
-  select(UID, Year_Before, Year_After) %>% 
-  pivot_longer(starts_with("Year"),
-               names_prefix = "Year_",
-               names_to = "Period",
-               values_to = "Year")
-
-#  Extract TCC to notifications, then subset results for comparisons of interest.
-
-dat_join_tcc = 
-  "output/data_tcc.tif" %>% 
-  rast %>% 
-  extract(., 
-          dat_notifications, 
-          mean, 
-          na.rm = TRUE) %>% 
-  bind_cols((dat_notifications$UID %>% tibble(UID = .))) %>% 
-  select(-ID) %>% 
-  as_tibble %>% 
-  left_join((dat_notifications %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
-  pivot_longer(cols = starts_with("TCC"),
-               names_prefix = "TCC_",
-               names_to = "Year",
-               values_to = "TCC") %>% 
-  group_by(UID) %>% 
-  nest(data = c(Year, TCC)) %>% 
-  ungroup %>% 
-  left_join(dat_notifications_tcc, .) %>% 
-  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
-  select(-Year) %>% 
-  unnest(data) %>% 
-  mutate(TCC_Change = TCC - lag(TCC)) %>% 
-  filter(Period == "After") %>% 
-  select(UID, TCC_Change)
-
-# NDVI
-
-dat_join_ndvi_read = "output/data_ndvi.tif" %>% rast
-
-#  Annual
-
-#  Set up notifications to support comparisons between pre- and post-years.
-
-dat_notifications_ndvi_annual =
-  dat_notifications %>%
-  filter(Year_End < 2024) %>%
-  as_tibble %>%
-  mutate(Year_Before = Year_Start - 1,
-         Year_After = Year_End + 1) %>%
-  select(UID, Year_Before, Year_After) %>%
-  pivot_longer(starts_with("Year"),
-               names_prefix = "Year_",
-               names_to = "Period",
-               values_to = "Year")
-
-#  Extract NDVI to notifications, then subset results for comparisons of interest.
-
-# Remember to add a switch here to read output if output exists and otherwise annualize data and export.
-
-dat_join_ndvi_annual = "output/data_ndvi_annual.tif" %>% rast
-
-dat_join_ndvi_annual = 
-  # tibble(year = 2014:2024) %>% 
-  # mutate(string = paste0("NDVI_", year)) %>% 
-  # mutate(data = string %>% map( ~ { dat_join_ndvi_read %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
-  # mutate(data = 
-  #          data %>% 
-  #          map2(.x = ., 
-  #               .y = string, 
-  #               ~ {
-  #                 names(.x) <- as.character(.y)
-  #                 .x
-  #               })) %>% # Restore names.
-  # magrittr::extract2("data") %>% # Equivalent to .$data.
-  # reduce(c) %>% 
-  # export and switch goes here
-  dat_join_ndvi_annual %>% 
-  extract(., 
-          dat_notifications_less_1, 
-          mean, 
-          na.rm = TRUE) %>% 
-  bind_cols((dat_notifications_less_1$UID %>% tibble(UID = .))) %>% 
-  select(-ID) %>% 
-  as_tibble %>% 
-  left_join(dat_notifications_less_1 %>% as_tibble, ., by = "UID") %>% 
-  pivot_longer(cols = starts_with("NDVI"),
-               names_prefix = "NDVI_",
-               names_to = "Year",
-               values_to = "NDVI") %>% 
-  group_by(UID) %>% 
-  nest(data = c(Year, NDVI)) %>% 
-  ungroup %>% 
-  left_join(dat_notifications_ndvi_annual, .) %>% 
-  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
-  select(-Year) %>% 
-  unnest(data) %>% 
-  mutate(NDVI_Change = NDVI - lag(NDVI)) %>% 
-  filter(Period == "After") %>% 
-  select(UID, NDVI_Change) 
-
-# Harvest Detection
-
-#  Get public timber sales in a convenient format.
-
-crs_usfs = 
-  "data/USFS_Harvest/Actv_TimberHarvest.gdb" %>% 
-  vect %>% 
-  crs
-
-dat_bounds_usfs = dat_bounds %>% project(crs_usfs)
-  
-dat_detect_usfs = 
-  "data/USFS_Harvest/Actv_TimberHarvest.gdb" %>% 
-  vect %>% 
-  select(ADMIN_FOREST_NAME,
-         ACTIVITY_CN,
-         ACTIVITY_UNIT_CN,
-         ACTIVITY_CODE,
-         ACTIVITY_NAME,
-         TREATMENT_TYPE,
-         DATE_PLANNED,
-         DATE_AWARDED,
-         DATE_COMPLETED,
-         METHOD_CODE,
-         METHOD_DESC,
-         EQUIPMENT_CODE,
-         EQUIPMENT_DESC,
-         LAND_SUITABILITY_CLASS_CODE, 
-         LAND_SUITABILITY_CLASS_DESC, 
-         PRODUCTIVITY_CLASS_CODE, 
-         PRODUCTIVITY_CLASS_DESC, 
-         OWNERSHIP_CODE, 
-         OWNERSHIP_DESC, 
-         ASPECT, 
-         ELEVATION, 
-         SLOPE, 
-         STATE_ABBR) %>% 
-  filter(STATE_ABBR == "OR") %>% 
-  filter(ACTIVITY_NAME == "Commercial Thin") %>% 
-  filter(year(DATE_COMPLETED) %in% 2015:2024) %>%
-  filter(year(DATE_COMPLETED) - year(DATE_AWARDED) == 0) %>% 
-  crop(dat_bounds_usfs) %>% 
-  project("EPSG:2992") %>% 
-  mutate(UID = row_number())
-
-#  Get TCC for public timber sales.
-
-#   Set up public timber sales in a convenient format for TCC extraction.
-
-# dat_detect_usfs_tcc = 
-#   dat_detect_usfs %>% 
-#   as_tibble %>% 
-#   mutate(Year = DATE_COMPLETED %>% year,
-#          Activity = 1) %>% 
-#   filter(Year %in% 2015:2023) %>% 
-#   select(UID, Year, Activity)
-
-#   Handle TCC.
-
-# dat_detect_tcc = 
-#   "output/data_tcc.tif" %>% 
-#   rast %>% 
-#   extract(.,
-#           dat_detect_usfs, 
-#           mean, 
-#           na.rm = TRUE) %>% 
-#   bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>% 
-#   select(-ID) %>% 
-#   as_tibble %>% 
-#   left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>% 
-#   pivot_longer(cols = starts_with("TCC"),
-#                names_prefix = "TCC_",
-#                names_to = "Year",
-#                values_to = "TCC") %>% 
-#   mutate(Year = Year %>% as.numeric) %>% 
-#   left_join(dat_detect_usfs_tcc) %>% 
-#   mutate(Activity = ifelse(is.na(Activity), 0, Activity)) %>% 
-#   group_by(UID) %>% 
-#   mutate(TCC_Change = TCC - ifelse(is.na(lag(TCC, n = 2)), lag(TCC), (lag(TCC) + lag(TCC, n = 2)) / 2)) %>% 
-#   ungroup %>% 
-#   drop_na(TCC_Change)
-
-#  Get NDVI for public timber sales.
-
-#   Set up public timber sales in a convenient format for NDVI extraction.
-
-dat_detect_usfs_ndvi =
-  dat_detect_usfs %>%
-  as_tibble %>%
-  mutate(Year_Before = DATE_AWARDED %>% year %>% `-` (1),
-         Year_Complete = DATE_COMPLETED %>% year,
-         Years = map2(Year_Before, Year_Complete, ~ seq(.x, .y))) %>%
-  filter(Year_Before %in% 2014:2024 & Year_Complete %in% 2014:2024) %>%
-  select(UID, Years) %>%
-  unnest(Years)
-
-#   Handle NDVI.
-
-dat_detect_ndvi =
-  "output/data_ndvi_annual.tif" %>%
-  rast %>%
-  extract(.,
-          dat_detect_usfs,
-          mean,
-          na.rm = TRUE) %>%
-  bind_cols((dat_detect_usfs %>% as_tibble %>% select(UID))) %>%
-  select(-ID) %>%
-  as_tibble %>%
-  left_join((dat_detect_usfs %>% as_tibble %>% select(UID)), ., by = "UID") %>%
-  pivot_longer(cols = starts_with("NDVI"),
-               names_prefix = "NDVI_",
-               names_to = "Year",
-               values_to = "NDVI") %>%
-  mutate(Year = Year %>% as.numeric) %>%
-  semi_join(dat_detect_usfs_ndvi, by = c("UID", "Year" = "Years")) %>%
-  group_by(UID) %>%
-  mutate(NDVI_Change = NDVI - lag(NDVI),
-         NDVI_Detect = ifelse(NDVI_Change == min(NDVI_Change, na.rm = TRUE) & min(NDVI_Change, na.rm = TRUE) < 0, 1, 0)) %>%
-  drop_na(NDVI_Change) %>%
-  ungroup
