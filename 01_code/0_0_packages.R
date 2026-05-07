@@ -1,4 +1,4 @@
-# Preliminaries | Packages
+# Packages
 
 #  General
 

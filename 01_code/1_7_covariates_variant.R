@@ -159,85 +159,36 @@ dat_join_mtbs =
 
 # VPD
 
-#  Problems:
-#   (1) Need 2025.
-#   (2) Want all months.
-#   (3) No idea what the code is doing.
-#   (4) No idea what to do for lags with extraction. 
-
 dat_vpd = "03_intermediate/dat_vpd.tif" %>% rast
 
-# dat_vpd_annual = 
-#   tibble(year = 1984:2024) %>%
-#   mutate(string = paste0("VPD_", year)) %>%
-#   mutate(data = string %>% map( ~ { dat_vpd %>% select(starts_with(.x)) %>% mean(na.rm = TRUE) })) %>% # Get annual means.
-#   mutate(data =
-#            data %>%
-#            map2(.x = .,
-#                 .y = string,
-#                 ~ {
-#                   names(.x) <- as.character(.y)
-#                   .x
-#                 })) %>% # Restore names.
-#   magrittr::extract2("data") %>% # Equivalent to .$data.
-#   reduce(c) 
+dat_notifications_vpd = 
+  dat_notifications_less %>% 
+  terra::extract(dat_vpd, 
+                 ., 
+                 fun = mean,
+                 na.rm = TRUE) %T>% 
+  write_csv("03_intermediate/data_notifications_vpd.csv")
 
 dat_join_vpd = 
-  tibble(year = 2014:2025) %>% 
-  mutate(string = paste0("VPD_", year),
-         years = year %>% map(~ seq(.x - 30, .x - 1)) %>% map(as.character),
-         data = 
-           years %>% 
-           map( ~ dat_vpd_annual %>% select(ends_with(.x)) %>% mean(na.rm = TRUE)) %>% 
-           map2(.x = .,
-                .y = string,
-                ~ {
-                  names(.x) <- as.character(.y)
-                  .x
-                })) %>% 
-  magrittr::extract2("data") %>% # Equivalent to .$data.
-  reduce(c) %>% 
-  extract(., 
-          dat_notifications_less, 
-          mean, 
-          na.rm = TRUE) %>% 
-  bind_cols((dat_notifications_less$UID %>% tibble(UID = .))) %>% 
+  dat_notifications_vpd %>% 
+  bind_cols(dat_notifications_less %>% as_tibble,
+            .) %>% 
   select(-ID) %>% 
-  as_tibble %>% 
-  left_join((dat_notifications_less %>% as_tibble), ., by = "UID") %>% 
   pivot_longer(cols = starts_with("VPD"),
                names_prefix = "VPD_",
-               names_to = "Year",
+               names_to = "Year_Month",
                values_to = "VPD") %>% 
+  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
+         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
+         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  group_by(UID, Year_Quarter) %>% 
+  summarize(VPD = mean(VPD, na.rm = TRUE)) %>% 
   group_by(UID) %>% 
-  nest(data = c(Year, VPD)) %>% 
-  ungroup %>% 
-  left_join(dat_notifications %>% 
-              as_tibble %>% 
-              mutate(Year = DateStart %>% year) %>% 
-              select(UID, Year), 
-            .) %>% 
-  mutate(data = data %>% map2(.x = ., .y = Year, .f = ~ filter(.x, Year == .y))) %>% 
-  select(-Year) %>% 
-  unnest(data) %>% 
-  select(UID, VPD)
+  mutate(across(VPD, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  ungroup
 
 # Prices
-
-#  Get notifications by quarter. 
-
-dat_notifications_quarters = 
-  dat_notifications %>% 
-  mutate(Year_Quarter = 
-           paste0(DateStart %>% 
-                    year, 
-                  "_Q", 
-                  DateStart %>% 
-                    month %>% 
-                    multiply_by(1 / 3) %>% 
-                    ceiling)) %>% 
-  select(UID, Year_Quarter) %>% 
-  as_tibble
 
 #  Indexes
 
@@ -326,7 +277,7 @@ dat_price_lumber =
 
 dat_join_price = 
   dat_notifications_quarters %>% 
-  select(UID, Year_Quarter = YearQuarter) %>% # Ridiculous. 
+  select(UID, Year_Quarter = YearQuarter) %>% 
   left_join(dat_price_stumpage) %>% 
   left_join(dat_price_lumber)
 
@@ -353,7 +304,8 @@ dat_join_rate =
 
 dat_notifications_out = 
   dat_join_mtbs %>% 
-  # left_join(dat_join_vpd) %>% 
+  left_join(dat_join_vpd %>% rename(YearQuarter = Year_Quarter),
+            by = c("UID", "YearQuarter")) %>% 
   left_join(dat_join_price %>% rename(YearQuarter = Year_Quarter), 
             by = c("UID", "YearQuarter")) %>% 
   left_join(dat_join_rate %>% rename(YearQuarter = Year_Quarter), 
