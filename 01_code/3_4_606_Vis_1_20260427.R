@@ -5,37 +5,26 @@ dat_bounds =
   vect
 
 dat = 
-  "03_intermediate/dat_notifications_1_6.gdb" %>% 
+  "03_intermediate/dat_notifications_1_8.gdb" %>% 
   vect %>% 
   mutate(Year = DateStart %>% year,
          Month = DateStart %>% month,
          Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
          Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  filter(DateStart %>% year > 2014 & DateEnd %>% year < 2025) %>% 
-  filter(ProportionDouglasFir > 0.50) %>% 
-  filter(MBF > quantile(MBF, 0.01) & MBF < quantile(MBF, 0.99) &
-           Acres > quantile(Acres, 0.01) & Acres < quantile(Acres, 0.99) &
-           MBF_Acre > quantile(MBF_Acre, 0.01) & MBF_Acre < quantile(MBF_Acre, 0.99)) %>% 
-  select(Year, MBF, MBF_Acre, Landowner) %>% 
+  mutate(Restrict_MBF_Lower = MBF_2_DouglasFir > quantile(MBF_2_DouglasFir, 0.01),
+         Restrict_MBF_Upper = MBF_2_DouglasFir < quantile(MBF_2_DouglasFir, 0.99),
+         Restrict_Acres_Lower = Acres_1 > quantile(Acres_1, 0.01),
+         Restrict_Acres_Upper = Acres_1 < quantile(Acres_1, 0.99),
+         Restrict_MBFAcre_Lower = MBF_Acre_2_DouglasFir > quantile(MBF_Acre_2_DouglasFir, 0.01),
+         Restrict_MBFAcre_Upper = MBF_Acre_2_DouglasFir < quantile(MBF_Acre_2_DouglasFir, 0.99)) %>% 
+  filter(if_all(starts_with("Restrict"), ~ .x == TRUE)) %>% 
+  select(Year, MBF_2_DouglasFir, MBF_Acre_2_DouglasFir, Landowner) %>% 
   mutate(Landowner = Landowner %>% factor %>% as.numeric)
   
 
 # Figure 1: production, yield, firms in space
 
 # Geodata
-
-# dat_polygons = 
-#   "output/dat_notifications_more_polygons.gdb" %>% 
-#   vect
-
-# Set up for rasterization.
-
-#  Vectors
-
-# dat_join = 
-#   dat_polygons %>% 
-#   semi_join(dat %>% select(UID)) %>% 
-#   left_join(dat %>% select(UID, Year = Year_Start, MBF, MBF_Acre, Company))
 
 #  Raster
 
@@ -54,7 +43,7 @@ for (i in 1:nrow(dat)) {
   polygon <- dat[i, ]
   
   # Assign 1 to cells in polygons.
-  r <- rasterize(polygon, dat_rast, field = "MBF", background = NA, touches = TRUE)
+  r <- rasterize(polygon, dat_rast, field = "MBF_2_DouglasFir", background = NA, touches = TRUE)
   
   # Name layers.
   names(r) <- paste0("polygon_", i)
@@ -76,7 +65,7 @@ for (i in 1:nrow(dat)) {
   polygon <- dat[i, ]
   
   # Assign 1 to cells in polygons.
-  r <- rasterize(polygon, dat_rast, field = "MBF_Acre", background = NA, touches = TRUE)
+  r <- rasterize(polygon, dat_rast, field = "MBF_Acre_2_DouglasFir", background = NA, touches = TRUE)
   
   # Name layers.
   names(r) <- paste0("polygon_", i)
@@ -191,28 +180,3 @@ ggsave("04_out/vis_1_20260428.png",
        dpi = 300,
        width = 6.5,
        height = 4.5)
-
-# Figure 2: production by firm, yield by firm, firm counts in time
-
-
-
-# Figure 3: stumpage and federal funds rate in time
-
-
-
-# Figure 4: wildfires in space and firm exposure to wildfires in time
-
-
-
-# Figure 5: VPD in space and firm exposure to VPD in time
-
-
-
-# Figure 6: MBF ~ Price, MBF ~ VPD
-
-
-
-# Figure 7: MBF ~ Wildfires * 3
-
-
-

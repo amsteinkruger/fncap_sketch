@@ -22,22 +22,20 @@ dat_mtbs =
            fct_rev)
 
 dat = 
-  "03_intermediate/dat_notifications_1_6.csv" %>% 
+  "03_intermediate/dat_notifications_1_8.csv" %>% 
   read_csv %>% 
-  mutate(Year = DateStart %>% year,
-         Month = DateStart %>% month,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  filter(DateStart %>% year > 2014 & DateEnd %>% year < 2025) %>% 
-  filter(ProportionDouglasFir > 0.50) %>% 
-  filter(MBF > quantile(MBF, 0.01) & MBF < quantile(MBF, 0.99) &
-           Acres > quantile(Acres, 0.01) & Acres < quantile(Acres, 0.99) &
-           MBF_Acre > quantile(MBF_Acre, 0.01) & MBF_Acre < quantile(MBF_Acre, 0.99)) %>% 
+  mutate(Restrict_MBF_Lower = MBF_2_DouglasFir > quantile(MBF_2_DouglasFir, 0.01),
+         Restrict_MBF_Upper = MBF_2_DouglasFir < quantile(MBF_2_DouglasFir, 0.99),
+         Restrict_Acres_Lower = Acres_1 > quantile(Acres_1, 0.01),
+         Restrict_Acres_Upper = Acres_1 < quantile(Acres_1, 0.99),
+         Restrict_MBFAcre_Lower = MBF_Acre_2_DouglasFir > quantile(MBF_Acre_2_DouglasFir, 0.01),
+         Restrict_MBFAcre_Upper = MBF_Acre_2_DouglasFir < quantile(MBF_Acre_2_DouglasFir, 0.99)) %>% 
+  filter(if_all(starts_with("Restrict"), ~ .x == TRUE)) %>% 
   group_by(Landowner) %>% 
-  summarize(Fire_0 = Fire_0 %>% weighted.mean(na.rm = TRUE, w = MBF),
-            Fire_15 = Fire_15 %>% weighted.mean(na.rm = TRUE, w = MBF),
-            Fire_30 = Fire_30 %>% weighted.mean(na.rm = TRUE, w = MBF)) %>% 
+  summarize(across(starts_with("Fire"), 
+                   ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir))) %>% 
   ungroup %>% 
+  select(Landowner, Fire_0, Fire_15, Fire_30) %>% 
   pivot_longer(cols = c(Fire_0, Fire_15, Fire_30))
 
 # MTBS

@@ -23,4 +23,5 @@ With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1.
 
 16530 is quite a bit better than 15039. 
 
-8820 after overzealous filtering for harvest detection. 
+8820 after overzealous filtering for harvest detection.
+8447 after intersecting outlier checks.  
