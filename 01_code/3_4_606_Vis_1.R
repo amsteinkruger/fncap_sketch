@@ -109,8 +109,8 @@ vis_production =
   geom_spatvector(data = dat_bounds, fill = "NA", color = "black") +
   scale_fill_distiller(palette = "Greens",
                        direction = 1,
-                       limits = c(0, NA),
-                       breaks = c(0, 5),
+                       limits = c(0, 1),
+                       breaks = c(0, 1),
                        guide = guide_colorbar(title.position = "top"),
                        na.value = NA) +
   # scale_fill_viridis(option = "D", 
@@ -156,8 +156,8 @@ vis_companies =
   geom_spatraster(data = dat_raster_companies_count) +
   scale_fill_distiller(palette = "Oranges",
                        direction = 1,
-                       limits = c(0, NA),
-                       breaks = c(0, 13),
+                       limits = c(0, 10),
+                       breaks = c(0, 10),
                        guide = guide_colorbar(title.position = "top"),
                        na.value = NA) +
   labs(fill = "Total Active Firms") +

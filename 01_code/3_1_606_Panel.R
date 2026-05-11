@@ -1,16 +1,12 @@
-# Estimate something for 2YP.
+# Aggregate over the panel of notifications by firm-year-quarter.
 
 #  Clear the environment.
 
 rm(list = ls())
 
-#  Start timing. 
-
-time_start = Sys.time()
-
 #  Get data. 
 
-dat = 
+dat_implicit = 
   "03_intermediate/dat_notifications_1_8.csv" %>% 
   read_csv %>% 
   mutate(Restrict_MBF_Lower = MBF_2_DouglasFir > quantile(MBF_2_DouglasFir, 0.01),
@@ -35,30 +31,24 @@ dat =
                    ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir))) %>% 
   ungroup %>% 
   mutate(Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric) %>% 
-  rename(MBF = MBF_Firm)
+  rename(MBF = MBF_Firm) %T>% 
+  # Export.
+  write_csv("03_intermediate/dat_firms_implicit_3_1.csv")
 
-# Linear Models
+# Complete the data with implicit zero-production decisions. 
 
-mod_1 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30_Doughnut + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1,
-        cluster = ~ Landowner,
-        data = dat)
-
-mod_2 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30_Doughnut + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1 | Quarter,
-        cluster = ~ Landowner,
-        data = dat)
-
-mod_3 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30_Doughnut + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1 | Landowner,
-        cluster = ~ Landowner,
-        data = dat)
-
-mod_4 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30_Doughnut + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1 | Landowner + Quarter,
-        cluster = ~ Landowner,
-        data = dat)
-
-etable(mod_1, mod_2, mod_3, mod_4, tex = FALSE)
-
-# Hurdle Models?
+dat_explicit = 
+  dat_implicit %>% 
+  select(Landowner, QuarterCompletion) %>%
+  complete(Landowner, QuarterCompletion) %>% 
+  left_join(dat_implicit %>% 
+              select(-c(Landowner, MBF, Acres, Quarter)) %>% 
+              group_by(QuarterCompletion) %>% 
+              summarize(across(everything(), ~ mean(.x, na.rm = TRUE)))) %>% 
+  anti_join(dat_implicit, by = c("Landowner", "QuarterCompletion")) %>% 
+  bind_rows(dat_implicit, .) %>% 
+  arrange(Landowner, QuarterCompletion) %>% 
+  mutate(Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric,
+         across(c(MBF, Acres), ~ replace_na(.x, 0))) %T>% 
+  # Export.
+  write_csv("03_intermediate/dat_firms_explicit_3_1.csv")
