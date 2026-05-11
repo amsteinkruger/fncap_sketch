@@ -1,6 +1,6 @@
 # Estimate something for 2YP.
 
-#  Get data, then reduce to the descriptive staistics of interest. 
+#  Get data, then reduce to the descriptive statistics of interest. 
 
 dat = 
   "03_intermediate/dat_notifications_1_8.csv" %>% 
