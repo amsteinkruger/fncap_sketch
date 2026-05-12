@@ -21,3 +21,4 @@ library(ggridges)
 #  Statistics and Econometrics
 
 library(fixest)
+library(broom)
