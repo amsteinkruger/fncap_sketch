@@ -1,6 +1,7 @@
 # Count notifications by county and pyrome. 
 
 library(tidyverse)
+library(magrittr)
 library(terra)
 library(tidyterra)
 library(viridis)
@@ -49,6 +50,16 @@ dat_pyromes_more =
             Count_Pyrome = n() / 10) %>% 
   ungroup %>% 
   left_join(dat_pyrome, .)
+
+# Tables
+
+dat_counties_more %>% 
+  as_tibble %>% 
+  write_csv("04_out/dat_counts_counties.csv")
+
+dat_pyromes_more %>% 
+  as_tibble %>% 
+  write_csv("04_out/dat_pyromes_counties.csv")
 
 # Visualization
 
