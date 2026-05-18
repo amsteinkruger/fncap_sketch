@@ -1,22 +1,27 @@
-2026/04/30
+2026/05/17
 
 Check journal on Box for details. 
 
  - Notifications on 07/01. 
- - Roads now, and remember the inventory. 
- - PRISM now, and remember John's input. 
+ - (x) Roads now, and remember the inventory. 
+ - (~) PRISM now. Including VPDMax, PPT, TMax, TMean.
+    - Pull in TMean, update script for VPDMax to see if it works, extend to other variables. 
+ - John's input (CWD?). 
  - Large Fire Probability now (but last). 
  - Mills now, and remember multiple forms of state and federal licensing. 
     - Also private data. 
+ - ODF regions now. 
  - Growth!
  - Include western hemlock (and remember all the related price wrangling). (~)
+ - Include alternative lumber price series.
+ - Extend lags, especially for prices.
+ - Add commercial thinning and salvage. 
  - Costs!
-
- - Add 2025 NDVI via GEE now, to set up minimal ML workflow for harvest detection. (~)
-
- - Lags now. 1, 2, 3, 4, 5, 10, 15, 20, 30. (~)
-
- - Try distance to fires as an alternative to doughnuts. (Don't, per CW's note.)
+ - Switch from restrictions on harvest detection model to:
+    (1) assign harvest to quarter with least interannual NDVI change by quarter
+    (2) restrict to polygons with any NDVI decrease
+     -  Point being, this is a model-free approach. 
+ - Set up the data smorgasboard: for n in [1, N], univariate, space, time, bivariate for n variables. 
 
 With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
  - Losing only a few hundred more with speciation. 
@@ -25,3 +30,7 @@ With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1.
 
 8820 after overzealous filtering for harvest detection.
 8447 after intersecting outlier checks.  
+
+To minimize data loss, switch to using harvest detection just to identify quarter of harvest.
+
+See LandTrendr's GEE implementation to work out state of the art without starting from scratch. 

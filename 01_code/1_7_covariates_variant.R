@@ -273,8 +273,6 @@ dat_price_lumber =
 
 #  Join
 
-#   Anyhow: 
-
 dat_join_price = 
   dat_notifications_quarters %>% 
   select(UID, Year_Quarter = YearQuarter) %>% 

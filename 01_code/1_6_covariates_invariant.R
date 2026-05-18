@@ -236,7 +236,7 @@ dat_join_mills =
 #   Roads
 
 dat_roads = 
-  "02_data/1_6_5_NAR_Roads/NAR.gdb" %>% 
+  "02_data/1_6_5_ODT_Roads/All_Public_Roads.geojson" %>% 
   vect %>% 
   crop(dat_bounds %>% project("EPSG:4326")) %>% 
   project("EPSG:2992")
@@ -244,16 +244,11 @@ dat_roads =
 dat_join_roads = 
   dat_notifications_less %>% 
   centroids %>% 
-  distance(dat_roads) %>% 
-  as.data.frame %>% 
-  bind_cols(dat_notifications_less %>% as_tibble, .) %>% 
-  pivot_longer(cols = starts_with("V")) %>% 
-  group_by(UID) %>% 
-  filter(value == min(value)) %>% 
-  ungroup %>% 
-  distinct(UID, value) %>% 
-  mutate(value = value / 5280) %>% 
-  select(UID, Distance_Road = value)
+  nearest(dat_roads) %>% 
+  as_tibble %>% 
+  mutate(Distance_Road = distance / 5280,
+         .keep = "none") %>% 
+  bind_cols(dat_notifications_less %>% as_tibble, .)
 
 #   Cities
 

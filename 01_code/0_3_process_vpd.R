@@ -1,5 +1,7 @@
 # VPD
 
+#  Remember that paths related to PRISM are broken at the moment. 
+
 #  Bounds
 
 dat_bounds_vpd = "03_intermediate/dat_bounds.gdb" %>% vect %>% project("EPSG:4269")
