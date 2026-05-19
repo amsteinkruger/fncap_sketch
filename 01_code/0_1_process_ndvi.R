@@ -1,11 +1,11 @@
 # NDVI
-#  93 minutes and 63 GB in memory for 2014-2024 (2026/01/02).
+
 #  103 minutes and 74 GB in memory for 2014-2025 (2026/05/06). 
 
 dat_ndvi = 
-  list.files("02_data/0_1_1_NDVI") %>% 
+  list.files("02_data/0_1_NDVI") %>% 
   tibble(file = .) %>% 
-  mutate(path = paste0("02_data/0_1_1_NDVI/", file),
+  mutate(path = paste0("02_data/0_1_NDVI/", file),
          quarter_relative = file %>% str_remove("landsat_quarter_") %>% str_remove(".tif") %>% as.numeric,
          year_relative = quarter_relative %>% `/` (4) %>% floor,
          quarter = quarter_relative - year_relative * 4 + 1, 

@@ -1,16 +1,16 @@
 2026/05/17
 
-Check journal on Box for details. 
+Check journal on Box for details. Note that PRISM and CWD are processed but not joined to notifications.  
 
  - Notifications on 07/01. 
  - (x) Roads now, and remember the inventory. 
- - (~) PRISM now. Including VPDMax, PPT, TMax, TMean.
-    - Pull in TMean, update script for VPDMax to see if it works, extend to other variables. 
- - John's input (CWD?). 
- - Large Fire Probability now (but last). 
- - Mills now, and remember multiple forms of state and federal licensing. 
+ - (x) PRISM now. Including VPDMax, PPT, TMax, TMean.
+ - (x) John's input (CWD?). Note annual problem. 
+ - (o) John's input on species (GNN). 
+ - (~) Large Fire Probability now (but last). 
+ - ( ) Mills now, and remember multiple forms of state and federal licensing. 
     - Also private data. 
- - ODF regions now. 
+ - (x) ODF regions now. 
  - Growth!
  - Include western hemlock (and remember all the related price wrangling). (~)
  - Include alternative lumber price series.

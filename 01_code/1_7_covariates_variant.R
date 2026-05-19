@@ -71,7 +71,7 @@ dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
 # MTBS
 
 dat_mtbs = 
-  "02_data/1_6_2_MTBS/Perimeters" %>% 
+  "02_data/1_7_1_MTBS/Perimeters" %>% 
   vect %>% 
   project("EPSG:2992") %>% 
   makeValid %>% 
@@ -195,7 +195,7 @@ dat_join_vpd =
 #   PPI (Timber)
 
 dat_ppi_timber = 
-  "02_data/1_6_7_BLS/data_ppi_timber.csv" %>% 
+  "02_data/1_7_2_BLS/data_ppi_timber.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,
@@ -213,7 +213,7 @@ dat_ppi_timber =
 #   PPI (Lumber)
 
 dat_ppi_lumber =
-  "02_data/1_6_7_BLS/data_ppi_lumber.csv" %>%
+  "02_data/1_7_2_BLS/data_ppi_lumber.csv" %>%
   read_csv %>%
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,
@@ -237,7 +237,7 @@ dat_ppi = full_join(dat_ppi_lumber, dat_ppi_timber)
 #    Stumpage, LogLines/FastMarkets
 
 dat_price_stumpage = 
-  "02_data/1_6_8_FastMarkets/data_stumpage.csv" %>% 
+  "02_data/1_7_3_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
   rename(Stumpage_Nominal = 2) %>% 
   mutate(Year_Quarter = 
@@ -255,7 +255,7 @@ dat_price_stumpage =
 #   Lumber Prices, FastMarkets
 
 dat_price_lumber =
-  "02_data/1_6_8_FastMarkets/data_pull_filter.csv" %>%
+  "02_data/1_7_3_FastMarkets/data_pull_filter.csv" %>%
   read_csv %>%
   select(1:2, Lumber_Nominal = 4) %>% 
   mutate(Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
@@ -282,7 +282,7 @@ dat_join_price =
 #  Effective Federal Funds Rate
 
 dat_join_rate = 
-  "02_data/1_6_9_FRED/FEDFUNDS.csv" %>% 
+  "02_data/1_7_4_FRED/FEDFUNDS.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,

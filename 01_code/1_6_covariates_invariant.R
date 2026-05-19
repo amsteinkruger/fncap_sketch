@@ -17,6 +17,7 @@ time_start = Sys.time()
 #    Flow Lines
 #    Steep Slopes
 #    Pyromes
+#    ODF Private Forest Districts
 #    Counties
 #    Distances
 
@@ -193,6 +194,22 @@ dat_join_pyrome =
   intersect(dat_pyrome) %>% 
   as_tibble
 
+#  ODF Private Forest Districts
+
+dat_districts = 
+  "02_data/1_6_7_ODF_Districts/District_Boundaries.geojson" %>%
+  vect %>%
+  select(District = pf_dist) %>%
+  project("EPSG:2992") %>%
+  makeValid(buffer = TRUE) %>%
+  crop(dat_bounds)
+  
+dat_join_districts = 
+  dat_notifications_less %>% 
+  centroids(inside = TRUE) %>% 
+  intersect(dat_districts) %>% 
+  as_tibble
+
 #  Counties
 
 dat_counties = 
@@ -289,8 +306,9 @@ dat_notifications_out =
   left_join(dat_join_roughness) %>% 
   # FPA
   left_join(dat_join_pyrome) %>% 
-  left_join(dat_join_distance) %>% 
-  left_join(dat_join_counties) %T>% 
+  left_join(dat_join_districts) %>%
+  left_join(dat_join_counties) %>% 
+  left_join(dat_join_distance) %T>% 
   # Export with spatial data. 
   writeVector("03_intermediate/dat_notifications_1_6.gdb") %>% 
   # Export without spatial data. 
