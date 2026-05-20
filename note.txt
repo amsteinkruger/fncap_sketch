@@ -6,10 +6,13 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - (x) Roads now, and remember the inventory. 
  - (x) PRISM now. Including VPDMax, PPT, TMax, TMean.
  - (x) John's input (CWD?). Note annual problem. 
- - (o) John's input on species (GNN). 
+ - (o) John's input on species (GNN). Problem: from rast of categories into layered rasterstack
  - (~) Large Fire Probability now (but last). 
- - ( ) Mills now, and remember multiple forms of state and federal licensing. 
+ - (o) Mills now, and remember multiple forms of state and federal licensing. 
     - Also private data. 
+    - Forisk might be accessible through a demo (or through asking via DK).
+    - DEQ Online returns a reasonable number of results, but these require .pdf wrangling for NAICS, periods. 
+       - Bonus: business mapping. 
  - (x) ODF regions now. 
  - Growth!
  - Include western hemlock (and remember all the related price wrangling). (~)
@@ -34,3 +37,5 @@ With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1.
 To minimize data loss, switch to using harvest detection just to identify quarter of harvest.
 
 See LandTrendr's GEE implementation to work out state of the art without starting from scratch. 
+
+"Extracted" might be a nice alternative to "Uncompressed."
