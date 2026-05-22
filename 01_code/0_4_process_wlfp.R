@@ -19,20 +19,36 @@ dat_wlfp =
                 .y = path_uncompressed,
                 .f = ~ unzip(.x, exdir = .y)))
   
-# dat_look = 
-#   "02_data/0_4_WLFP/Uncompressed/2010_WFPI-based_Large_Fire_Probability_Forecast_1_DATA.zip" %>% 
-#   list.files %>% 
-#   tibble(file = .) %>% 
-#   filter(file %>% str_sub(-3, -1) == "zip") %>% 
-#   slice_head(n = 10) %>% 
-#   mutate(data_zip = paste0("/vsizip/02_data/0_4_WLFP/Uncompressed/2010_WFPI-based_Large_Fire_Probability_Forecast_1_DATA.zip/", file), #,
-#          data_tiff = paste0("wlfp_", data_zip %>% str_sub(-26, -1), ".tiff"), 
-#          data_rast = 
-#            map2(~ unzip(.x, files = )) %>% 
-#            map())
-
-# check whether vsizip enables skipping intermediate steps for all raster handling (PRISM)
-# then generalize this to get monthly results to match PRISM
-# then add to 1_7 and handle PRISM at the same time
-
-rast("/vsizip/02_data/0_4_WLFP/Uncompressed/2010_WFPI-based_Large_Fire_Probability_Forecast_1_DATA.zip/wlfp-forecast-1_data_20100101_20100101.zip/wlfp_data_20100101_20100101.tiff") %>% plot
+dat_look =
+  "02_data/0_4_WLFP/Uncompressed/2010_WFPI-based_Large_Fire_Probability_Forecast_1_DATA.zip" %>%
+  list.files %>%
+  tibble(file = .) %>%
+  filter(file %>% str_sub(-3, -1) == "zip") %>%
+  slice_head(n = 10) %>%
+  # Get the data.
+  mutate(year = file %>% str_sub(-21, -18) %>% as.numeric,
+         month = file %>% str_sub(-17, -16) %>% as.numeric,
+         day = file %>% str_sub(-15, -14) %>% as.numeric,
+         quarter = month %>% as.numeric %>% multiply_by(1 / 3) %>% ceiling,
+         zip = paste0("/vsizip/02_data/0_4_WLFP/Uncompressed/2010_WFPI-based_Large_Fire_Probability_Forecast_1_DATA.zip/", file), 
+         tiff = paste0("wlfp_", zip %>% str_sub(-26, -5), ".tiff"),
+         path = paste0(zip, "/", tiff),
+         data = map(path, rast)) %>% 
+  # Drop sentinel values.
+  mutate(data = 
+           data %>% 
+           map(~ rename(.x, WLFP = 1)) %>% 
+           map(~ filter(.x, WLFP < 100))) %>% 
+  # Stack rasters by month.
+  group_by(year, quarter) %>% 
+  summarize(
+    data = 
+      list({data %>% rast})
+  ) %>% 
+  ungroup %>% 
+  # Take means by quarter. 
+  mutate(data = data %>% map(~ mean(.x, na.rm = TRUE))) %>% 
+  # Wait maybe stack first? Probably stack first
+  # Crop to region of interest.
+  # Reproject.
+  # Stack for export. 
