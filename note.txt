@@ -7,23 +7,23 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - (x) PRISM now. Including VPDMax, PPT, TMax, TMean.
  - (x) John's input (CWD?). Note annual problem. 
  - (o) John's input on species (GNN). Problem: from rast of categories into layered rasterstack
- - (~) Large Fire Probability now (but last). 
+ - (o) Large Fire Probability now (but last). 
  - (o) Mills now, and remember multiple forms of state and federal licensing. 
     - Also private data. 
     - Forisk might be accessible through a demo (or through asking via DK).
     - DEQ Online returns a reasonable number of results, but these require .pdf wrangling for NAICS, periods. 
        - Bonus: business mapping. 
  - (x) ODF regions now. 
- - Growth!
- - Include western hemlock (and remember all the related price wrangling). (~)
- - Include alternative lumber price series.
- - Extend lags, especially for prices.
- - Add commercial thinning and salvage. 
- - Costs!
+ - ( ) Include western hemlock (and remember all the related price wrangling). 
+ - ( ) Include alternative lumber price series.
+ - ( ) Extend lags, especially for prices.
+ - ( ) Add commercial thinning and salvage. 
  - Switch from restrictions on harvest detection model to:
     (1) assign harvest to quarter with least interannual NDVI change by quarter
     (2) restrict to polygons with any NDVI decrease
      -  Point being, this is a model-free approach. 
+ - Growth?
+ - Costs?
  - Set up the data smorgasboard: for n in [1, N], univariate, space, time, bivariate for n variables. 
 
 With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
