@@ -10,11 +10,13 @@ time_start = Sys.time()
 
 #  Set up data. Filtering here is clumsy but convenient.  
 
+vec_activities = c("Clearcut/Overstory Removal", "Commercial Thinning/Selective Cutting", "Salvage")
+
 dat_prepare = 
   "03_intermediate/dat_notifications_1_3.gdb" %>% 
   vect %>% 
   filter((DateStart %>% year) %in% 2015:2025 & (DateEnd %>% year) %in% 2015:2025) %>% 
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% # Implicit in 1_3. 
+  filter(ActivityType %in% vec_activities) %>% 
   filter(ActivityUnit == "MBF") %>%
   filter(str_sub(OperationName, 1, 10) != "do not use") %>% 
   mutate(Acres = expanse(., unit = "ha") * 2.47105381,
@@ -27,6 +29,7 @@ dat_prepare =
          DateEnd,
          DateCompletion,
          Completion = ActivityStatus,
+         Activity = ActivityType,
          Acres,
          MBF,
          MBF_Acre)
@@ -46,6 +49,7 @@ dat_order =
   arrange(desc(DateStart),
           desc(DateEnd),
           desc(DateSubmit),
+          Activity,
           desc(MBF),
           desc(Acres),
           desc(MBF_Landowner),
@@ -110,6 +114,7 @@ dat_clean =
          DateEnd,
          DateCompletion,
          Completion,
+         Activity,
          Acres_0 = Acres,
          MBF_0 = MBF,
          MBF_Acre_0 = MBF_Acre,

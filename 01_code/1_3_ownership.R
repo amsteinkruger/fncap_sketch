@@ -11,6 +11,9 @@
 #   Pencil in "Trust" for "Trust."
 #   Note "Family Limited Partnerships."
 
+#  Eventually:
+#   Reconcile notifications with records of land ownership. 
+
 #  Clear the environment.
 
 rm(list = ls())
@@ -23,10 +26,12 @@ time_start = Sys.time()
 
 #   Use a subset for the problem at hand. 
 
+vec_activities = c("Clearcut/Overstory Removal", "Commercial Thinning/Selective Cutting", "Salvage")
+
 dat_owners_out =
   "03_intermediate/dat_notifications_1_2.csv" %>%
   read_csv %>%
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  filter(ActivityType %in% vec_activities) %>% 
   select(Landowner_Company) %>%
   distinct %>%
   arrange(Landowner_Company) %T>%
@@ -38,15 +43,15 @@ dat_owners_out =
 
 dat_owners_in = 
   "03_intermediate/dat_owners_in.xlsx" %>% 
-  read_xlsx %>% 
-  drop_na(Landowner_Company_Reviewed) %>% 
+  read_xlsx %>%
   filter(Landowner_Private == 1) %>%
+  drop_na(Landowner_Company_Reviewed) %>%
   select(1:2)
 
 dat_notifications = 
   "03_intermediate/dat_notifications_1_2.gdb" %>% 
   vect %>% 
-  filter(ActivityType == "Clearcut/Overstory Removal") %>% 
+  filter(ActivityType %in% vec_activities) %>% 
   semi_join(dat_owners_in) %>%
   left_join(dat_owners_in) %T>% 
   # Export with spatial data. 

@@ -1,13 +1,5 @@
 # Join data on forest type to restrict the data to Douglas fir.
 
-#  The ideal here might be to: 
-#   Get the subset of cells in each rasterized polygon that are forest/timber. 
-#   Get the proportions of forest/timber cells that are Douglas fir or hemlock. 
-#   Transform MBF into Douglas fir, western hemlock, and "other" timber. 
-#   Note that condition-level forest type != proportions of trees in tree table. 
-
-#  No idea how to defend that, but it's a cleaner connection between FIA and FERNS. 
-
 #  Clear the environment.
 
 rm(list = ls())
@@ -20,9 +12,9 @@ time_start = Sys.time()
 
 dat_notifications = 
   "03_intermediate/dat_notifications_1_4.gdb" %>% 
-  vect # %>% 
-  # makeValid(buffer = TRUE) %>% 
-  # filter(is.valid(.))
+  vect %>% 
+  makeValid(buffer = TRUE) %>%
+  filter(is.valid(.))
 
 dat_notifications_less = 
   dat_notifications %>% 
@@ -198,6 +190,7 @@ dat_notifications_treemap =
          DateEnd,
          DateCompletion,
          Completion,
+         Activity,
          starts_with("Acres"),
          starts_with("MBF_"),
          starts_with("MBF_Acre"),
