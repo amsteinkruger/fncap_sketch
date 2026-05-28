@@ -1,9 +1,5 @@
 # Join time-variant covariates to notifications.
 
-#  Goal: data object with time-variant covariates for all quarters of notifications
-#  then in 1_8, use those to identify first harvest quarter, then reduce to only harvest quarters
-#  (remember one-year lag to get minimal interannual NDVI comparison by quarters)
-
 #  Clear the environment.
 
 rm(list = ls())
@@ -14,8 +10,16 @@ time_start = Sys.time()
 
 #  TOC:
 
+#   Spatial
+
 #    MTBS
 #    VPD
+#    Temperature
+#    Precipitation
+#    CWD
+
+#   Not Spatial
+
 #    Prices
 #    Effective Federal Funds Rate
 
@@ -89,10 +93,17 @@ dat_join_mtbs_0 =
   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
-  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
-  group_by(UID, YearQuarter) %>% 
-  summarize(Fire_0 = n()) %>% 
+  mutate(Quarters = Year * 4 + Quarter,
+         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
+         across(Quarters, lapply(0:20, \(k) ~ .x - k))) %>% 
+  select(UID, YearQuarter, starts_with("Quarters_")) %>% 
+  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
+               names_to = "Lag",
+               values_to = "Quarters") %>% 
+  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
+         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
+  group_by(UID, YearQuarter, Lag) %>% 
+  summarize(Fire_0 = sum(Check)) %>% 
   ungroup
 
 #  15km Buffer
@@ -104,10 +115,17 @@ dat_join_mtbs_15 =
   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
-  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
-  group_by(UID, YearQuarter) %>% 
-  summarize(Fire_15 = n()) %>% 
+  mutate(Quarters = Year * 4 + Quarter,
+         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
+         across(Quarters, lapply(0:20, \(k) ~ .x - k))) %>% 
+  select(UID, YearQuarter, starts_with("Quarters_")) %>% 
+  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
+               names_to = "Lag",
+               values_to = "Quarters") %>% 
+  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
+         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
+  group_by(UID, YearQuarter, Lag) %>% 
+  summarize(Fire_15 = sum(Check)) %>% 
   ungroup
 
 #  30km Buffer
@@ -119,30 +137,37 @@ dat_join_mtbs_30 =
   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
   intersect(dat_mtbs) %>% 
   as_tibble %>% 
-  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
-  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
-  group_by(UID, YearQuarter) %>% 
-  summarize(Fire_30 = n()) %>% 
+  mutate(Quarters = Year * 4 + Quarter,
+         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
+         across(Quarters, lapply(0:20, \(k) ~ .x - k))) %>% 
+  select(UID, YearQuarter, starts_with("Quarters_")) %>% 
+  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
+               names_to = "Lag",
+               values_to = "Quarters") %>% 
+  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
+         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
+  group_by(UID, YearQuarter, Lag) %>% 
+  summarize(Fire_30 = sum(Check)) %>% 
   ungroup
 
-#  Proportion within fire perimeters. 
+#  Proportion within fire perimeters. Skipping this to avoid geospatial pain. 
 
-dat_join_mtbs_proportion = 
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
-  full_join(dat_notifications_quarters) %>% 
-  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-  intersect(dat_mtbs) %>% 
-  filter(Year_MTBS > (Year_MTBS - 30)) %>% 
-  filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
-  select(UID, YearQuarter, Acres_1) %>% 
-  aggregate(by = c("UID", "YearQuarter", "Acres_1")) %>% 
-  mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381,
-         Fire_Proportion = Acres_Burnt / Acres_1) %>% 
-  select(UID, YearQuarter, Fire_Proportion) %>% 
-  as_tibble %>% 
-  # Band-Aid for upstream polygon handling issues. Remember to fix those. 
-  mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
+# dat_join_mtbs_proportion = 
+#   dat_notifications_less %>% 
+#   left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
+#   full_join(dat_notifications_quarters) %>% 
+#   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
+#   intersect(dat_mtbs) %>% 
+#   filter(Year_MTBS > (Year_MTBS - 30)) %>% 
+#   filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
+#   select(UID, YearQuarter, Acres_1) %>% 
+#   aggregate(by = c("UID", "YearQuarter", "Acres_1")) %>% 
+#   mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381,
+#          Fire_Proportion = Acres_Burnt / Acres_1) %>% 
+#   select(UID, YearQuarter, Fire_Proportion) %>% 
+#   as_tibble %>% 
+#   # Band-Aid for upstream polygon handling issues. Remember to fix those. 
+#   mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
 
 # Combine
 
