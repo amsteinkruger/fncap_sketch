@@ -16,7 +16,7 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - (x) ODF regions now. 
  - ( ) Include western hemlock (and remember all the related price wrangling). 
  - ( ) Include alternative lumber price series.
- - ( ) Extend lags, especially for prices.
+ - (~) Extend lags, especially for prices.
  - (~) Add commercial thinning and salvage. 
  - Switch from restrictions on harvest detection model to:
     (1) assign harvest to quarter with least interannual NDVI change by quarter
@@ -25,6 +25,8 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - Growth?
  - Costs?
  - Set up the data smorgasboard: for n in [1, N], univariate, space, time, bivariate for n variables. 
+
+fix stupid filenames (dat_ vs data_) for climate vars
 
 With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
  - Losing only a few hundred more with speciation. 

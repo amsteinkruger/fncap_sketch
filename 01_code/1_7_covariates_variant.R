@@ -172,15 +172,16 @@ dat_join_mtbs_30 =
 # Combine
 
 dat_join_mtbs = 
-  dat_notifications_quarters %>% 
-  as_tibble %>% 
-  left_join(dat_join_mtbs_0) %>% 
+  dat_join_mtbs_0 %>% 
   left_join(dat_join_mtbs_15) %>% 
   left_join(dat_join_mtbs_30) %>% 
-  left_join(dat_join_mtbs_proportion) %>% 
-  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)),
-         Fire_15_Doughnut = Fire_15 - Fire_0,
-         Fire_30_Doughnut = Fire_30 - Fire_15)
+  mutate(Fire_15_Doughnut = Fire_15 - Fire_0,
+         Fire_30_Doughnut = Fire_30 - Fire_15) %>% 
+  pivot_wider(names_from = Lag,
+              names_prefix = "Lag_",
+              values_from = starts_with("Fire")) %>% 
+  left_join(dat_notifications_quarters %>% as_tibble, .) %>% 
+  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)))
 
 # VPD
 
@@ -212,6 +213,114 @@ dat_join_vpd =
   group_by(UID) %>% 
   mutate(across(VPD, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
   ungroup
+
+# Temperature
+
+#  Mean
+
+dat_tmean = "03_intermediate/data_tmean.tif" %>% rast
+
+dat_notifications_tmean = 
+  dat_notifications_less %>% 
+  terra::extract(dat_tmean, 
+                 ., 
+                 fun = mean,
+                 na.rm = TRUE) %T>% 
+  write_csv("03_intermediate/data_notifications_tmean.csv")
+
+dat_join_tmean = 
+  dat_notifications_tmean %>% 
+  bind_cols(dat_notifications_less %>% as_tibble,
+            .) %>% 
+  select(-ID) %>% 
+  pivot_longer(cols = starts_with("TMean"),
+               names_prefix = "TMean_",
+               names_to = "Year_Month",
+               values_to = "TMean") %>% 
+  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
+         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
+         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  group_by(UID, Year_Quarter) %>% 
+  summarize(TMean = mean(TMean, na.rm = TRUE)) %>% 
+  group_by(UID) %>% 
+  mutate(across(TMean, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  ungroup
+
+
+#  Max
+
+dat_tmax = "03_intermediate/data_tmax.tif" %>% rast
+
+dat_notifications_tmax = 
+  dat_notifications_less %>% 
+  terra::extract(dat_tmax, 
+                 ., 
+                 fun = mean,
+                 na.rm = TRUE) %T>% 
+  write_csv("03_intermediate/data_notifications_tmax.csv")
+
+dat_join_tmax = 
+  dat_notifications_tmax %>% 
+  bind_cols(dat_notifications_less %>% as_tibble,
+            .) %>% 
+  select(-ID) %>% 
+  pivot_longer(cols = starts_with("TMax"),
+               names_prefix = "TMax_",
+               names_to = "Year_Month",
+               values_to = "TMax") %>% 
+  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
+         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
+         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  group_by(UID, Year_Quarter) %>% 
+  summarize(TMax = mean(TMax, na.rm = TRUE)) %>% 
+  group_by(UID) %>% 
+  mutate(across(TMax, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  ungroup
+
+# Precipitation
+
+dat_ppt = "03_intermediate/data_ppt.tif" %>% rast
+
+dat_notifications_ppt = 
+  dat_notifications_less %>% 
+  terra::extract(dat_ppt, 
+                 ., 
+                 fun = mean,
+                 na.rm = TRUE) %T>% 
+  write_csv("03_intermediate/data_notifications_ppt.csv")
+
+dat_join_ppt = 
+  dat_notifications_ppt %>% 
+  bind_cols(dat_notifications_less %>% as_tibble,
+            .) %>% 
+  select(-ID) %>% 
+  pivot_longer(cols = starts_with("PPT"),
+               names_prefix = "PPT_",
+               names_to = "Year_Month",
+               values_to = "PPT") %>% 
+  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
+         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
+         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  group_by(UID, Year_Quarter) %>% 
+  summarize(PPT = mean(PPT, na.rm = TRUE)) %>% 
+  group_by(UID) %>% 
+  mutate(across(PPT, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  ungroup
+
+# CWD
+
+dat_cwd = "03_intermediate/data_cwd.tif" %>% rast
+
+dat_notifications_cwd = 
+  dat_notifiations_less %>% 
+  terra::extract(dat_cwd,
+                 .,
+                 fun = mean,
+                 na.rm = TRUE) %T>% 
+  write_csv("03_intermediate/data_notifications_cwd.csv")
 
 # Prices
 
