@@ -315,12 +315,29 @@ dat_join_ppt =
 dat_cwd = "03_intermediate/data_cwd.tif" %>% rast
 
 dat_notifications_cwd = 
-  dat_notifiations_less %>% 
+  dat_notifications_less %>% 
   terra::extract(dat_cwd,
                  .,
                  fun = mean,
                  na.rm = TRUE) %T>% 
   write_csv("03_intermediate/data_notifications_cwd.csv")
+
+dat_join_cwd = 
+  dat_notifications_cwd %>% 
+  bind_cols(dat_notifications_less %>% as_tibble,
+            .) %>% 
+  select(-ID) %>% 
+  pivot_longer(cols = !UID,
+               names_to = "Year",
+               values_to = "CWD") %>% 
+  mutate(Year = Year %>% as.numeric) %>% 
+  full_join(tibble(Year = rep(2010:2025, each = 4), 
+                   Quarter = rep(1:4, length(2010:2025))),
+            relationship = "many-to-many") %>% 
+  mutate(Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  group_by(UID) %>% 
+  mutate(across(CWD, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  ungroup
 
 # Prices
 

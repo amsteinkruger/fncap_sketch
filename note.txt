@@ -17,10 +17,10 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - ( ) Include western hemlock (and remember all the related price wrangling). 
  - ( ) Include alternative lumber price series.
  - (~) Extend lags, especially for prices.
- - (~) Add commercial thinning and salvage. 
- - Switch from restrictions on harvest detection model to:
-    (1) assign harvest to quarter with least interannual NDVI change by quarter
-    (2) restrict to polygons with any NDVI decrease
+ - (x) Add commercial thinning and salvage. 
+ - (x) Switch from restrictions on harvest detection model to:
+        (1) assign harvest to quarter with least interannual NDVI change by quarter
+        (2) restrict to polygons with any NDVI decrease
      -  Point being, this is a model-free approach. 
  - Growth?
  - Costs?
