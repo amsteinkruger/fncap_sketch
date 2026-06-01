@@ -12,79 +12,56 @@ time_start = Sys.time()
 
 dat = 
   "03_intermediate/dat_firms_implicit_3_1.csv" %>% 
-  read_csv
+  read_csv %>% 
+  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock)
 
 dat_explicit = 
   "03_intermediate/dat_firms_explicit_3_1.csv" %>% 
   read_csv %>% 
-  mutate(MBF_Bin = ifelse(MBF > 0, 1, 0)) %>% 
-  relocate(MBF_Bin, .after = "MBF")
+  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
+  mutate(MBF_Bin = ifelse(MBF_Both > 0, 1, 0)) %>% 
+  relocate(MBF_Bin, MBF_Both, .after = "Count")
+
+# Do:
+
+# (1) Hurdle, No Inventory
+# (2) Hurdle, Inventory
+# (3) Hurdle, Inventory, Small Firms Only
+# (4) Hurdle, Inventory, Large Firms Only (Preferred)
+
+# AME, SE via Delta
+
+# (1) Linear
+# (2) Tobit
+# (3) Heckit
+# (4) Craggit
+
+# AME, SE via Delta
+
+# More specifications with more/fewer covariates?
+
+# Demo
 
 # Linear Models
 
-#  Simple
-
-mod_1 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30 + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1,
-        cluster = ~ Landowner,
-        data = dat)
-
-mod_2 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30 + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1 | Landowner,
-        cluster = ~ Landowner,
-        data = dat)
-
-mod_3 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30 + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1 | Quarter,
-        cluster = ~ Landowner,
-        data = dat)
-
-mod_4 = 
-  feols(log(MBF) ~ log(Stumpage_Lag_1) + log(Lumber_Lag_1) + Fire_15_Doughnut + Fire_30 + Fire_Proportion + log(VPD_Lag_1) + Rate_Lag_1 | Landowner + Quarter,
-        cluster = ~ Landowner,
-        data = dat)
-
-etable(mod_1, mod_2, mod_3, mod_4, tex = FALSE)
-
-#  Lags
-
-mod_5 = feols(log(MBF) ~ Stumpage_Lag_.[1:20] + Lumber_Lag_.[1:20] + Rate_Lag_.[1:20] + VPD_Lag_.[1:20] + Fire_30 + Fire_Proportion,
+mod_1 = feols(log(MBF_Both) ~ 
+                SiteClassMode +
+                Elevation + 
+                Distance_Mill +
+                # MBF_Standing_Forward +
+                Stumpage_Lag_.[c(1, 5, 9)] +
+                Stumpage_Mean_20 +
+                Rate_Lag_.[c(1, 5, 9)] +
+                Rate_Mean_20 +
+                VPD_Lag_.[c(1, 5, 9)] +
+                VPD_Mean_20 +
+                Fire_30_Doughnut_Lag_1 # +
+                # Fire30Doughnut_Mean_20
+                | Landowner + Year,
               cluster = ~ Landowner,
               data = dat)
 
-mod_6 = feols(log(MBF) ~ Stumpage_Lag_.[1:20] + Lumber_Lag_.[1:20] + Rate_Lag_.[1:20] + VPD_Lag_.[1:20] + Fire_30 + Fire_Proportion | Landowner,
-              cluster = ~ Landowner,
-              data = dat)
-
-mod_7 = feols(log(MBF) ~ Stumpage_Lag_.[1:20] + Lumber_Lag_.[1:20] + Rate_Lag_.[1:20] + VPD_Lag_.[1:20] + Fire_30 + Fire_Proportion | Quarter,
-              cluster = ~ Landowner,
-              data = dat)
-
-mod_8 = feols(log(MBF) ~ Stumpage_Lag_.[1:20] + Lumber_Lag_.[1:20] + Rate_Lag_.[1:20] + VPD_Lag_.[1:20] + Fire_30 + Fire_Proportion | Landowner + Quarter,
-              cluster = ~ Landowner,
-              data = dat)
-
-etable(mod_5, mod_6, mod_7, mod_8, tex = FALSE)
-
-# Means
-
-mod_9 = feols(log(MBF) ~ Stumpage_Mean_.[c(4, 8, 12, 16, 20)] + Lumber_Mean_.[c(4, 8, 12, 16, 20)] + Rate_Mean_.[c(4, 8, 12, 16, 20)] + VPD_Mean_.[c(4, 8, 12, 16, 20)] + Fire_30 + Fire_Proportion,
-              cluster = ~ Landowner,
-              data = dat)
-
-mod_10 = feols(log(MBF) ~ Stumpage_Mean_.[c(4, 8, 12, 16, 20)] + Lumber_Mean_.[c(4, 8, 12, 16, 20)] + Rate_Mean_.[c(4, 8, 12, 16, 20)] + VPD_Mean_.[c(4, 8, 12, 16, 20)] + Fire_30 + Fire_Proportion | Landowner,
-               cluster = ~ Landowner,
-               data = dat)
-
-mod_11 = feols(log(MBF) ~ Stumpage_Mean_.[c(4, 8, 12, 16, 20)] + Lumber_Mean_.[c(4, 8, 12, 16, 20)] + Rate_Mean_.[c(4, 8, 12, 16, 20)] + VPD_Mean_.[c(4, 8, 12, 16, 20)] + Fire_30 + Fire_Proportion | Quarter,
-               cluster = ~ Landowner,
-               data = dat)
-
-mod_12 = feols(log(MBF) ~ Stumpage_Mean_.[c(4, 8, 12, 16, 20)] + Lumber_Mean_.[c(4, 8, 12, 16, 20)] + Rate_Mean_.[c(4, 8, 12, 16, 20)] + VPD_Mean_.[c(4, 8, 12, 16, 20)] + Fire_30 + Fire_Proportion | Landowner + Quarter,
-               cluster = ~ Landowner,
-               data = dat)
-
-etable(mod_9, mod_10, mod_11, mod_12, tex = FALSE)
+etable(mod_1)
 
 # Hurdle Models?
 

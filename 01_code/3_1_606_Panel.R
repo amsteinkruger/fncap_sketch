@@ -93,9 +93,10 @@ dat_implicit =
                 Acres),
               ~ sum(.x, na.rm = TRUE))) %>%
   ungroup %>% 
-  # Sneak in a quarter variable.
-  mutate(Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric) %>% 
-  relocate(Quarter, .after = "QuarterCompletion")
+  # Sneak in quarter and year variables.
+  mutate(Year = QuarterCompletion %>% str_split_i("_", 1) %>% as.numeric,
+         Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric) %>% 
+  relocate(c(Year, Quarter), .after = "QuarterCompletion")
 
 dat_implicit_mean = 
   dat_implicit %>% 
@@ -138,6 +139,7 @@ dat_implicit_out =
          Pyrome,
          County,
          QuarterCompletion,
+         Year,
          Quarter,
          Count,
          MBF_DouglasFir,
