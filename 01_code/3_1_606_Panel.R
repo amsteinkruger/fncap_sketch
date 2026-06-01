@@ -67,20 +67,31 @@ dat_implicit =
   ungroup %>% 
   select(-Pyrome_Count, -County_Count) %>% 
   # Handle continuous variables. Assign production-weighted means by firm. 
+  rename(MBF_DouglasFir = MBF_2_DouglasFir,
+         MBF_WesternHemlock = MBF_2_WesternHemlock,
+         Acres = Acres_1) %>% 
+  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
   group_by(Landowner, QuarterCompletion, Pyrome, County) %>% 
-  summarize(MBF_DouglasFir = MBF_2_DouglasFir %>% sum(na.rm = TRUE),
-            MBF_WesternHemlock = MBF_2_WesternHemlock %>% sum(na.rm = TRUE),
-            Acres = Acres_1 %>% sum(na.rm = TRUE),
-            across(starts_with("Lumber"), 
-                   ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir)),
-            across(starts_with("Stumpage"), 
-                   ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir)),
-            across(starts_with("Fire"), 
-                   ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir)),
-            across(starts_with("VPD"), 
-                   ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir)),
-            across(starts_with("Rate"), 
-                   ~ weighted.mean(.x, na.rm = TRUE, w = MBF_2_DouglasFir))) %>% 
+  # Note that sums follow means to avoid quiet failure on weighting by a sum. 
+  summarize(Count = n(),
+            across(
+              c(SiteClassMode,
+                Elevation,
+                Slope,
+                Roughness,
+                starts_with("Distance"),
+                starts_with("Stumpage"),
+                starts_with("Lumber"),
+                starts_with("Rate"),
+                starts_with("Fire"),
+                starts_with("VPD")),
+              ~ weighted.mean(.x, na.rm = TRUE, w = MBF_Both)),
+            across(
+              c(MBF_DouglasFir,
+                MBF_WesternHemlock,
+                MBF_Both,
+                Acres),
+              ~ sum(.x, na.rm = TRUE))) %>%
   ungroup %>% 
   # Sneak in a quarter variable.
   mutate(Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric) %>% 
@@ -88,23 +99,29 @@ dat_implicit =
 
 dat_implicit_mean = 
   dat_implicit %>% 
-  select(-MBF_DouglasFir, 
-         -MBF_WesternHemlock,
-         -Acres,
-         -starts_with("Fire"),
-         -Lumber,
+  # Drop non-lagged variables so that selecting lags is easier. 
+  select(-Lumber,
          -Stumpage,
          -Rate,
+         -ends_with("Lag_0"), # Fire
          -VPD) %>% 
-  pivot_longer(starts_with(c("Lumber", "Stumpage", "Rate", "VPD")),
+  # Standardize names between fire and other variables. 
+  rename_with(~ gsub("^Fire_(\\d+)_Doughnut_Lag_(\\d+)$", "Fire\\1Doughnut_Lag_\\2", .x),
+              matches("^Fire_\\d+_Doughnut_Lag_\\d+$")) %>% 
+  rename_with(~ gsub("^Fire_(\\d+)_Lag_(\\d+)$", "Fire\\1_Lag_\\2", .x),
+              matches("^Fire_\\d+_Lag_\\d+$")) %>% 
+  # Pivot. 
+  pivot_longer(starts_with(c("Lumber", "Stumpage", "Rate", "Fire", "VPD")),
                names_sep = "_",
                names_to = c("Which", "Label", "Lag"),
                values_to = "Value") %>% 
+  # Get means. 
   mutate(Mean_4 = ifelse(Lag < 5, Value, NA),
          Mean_8 = ifelse(Lag < 9, Value, NA),
          Mean_12 = ifelse(Lag < 13, Value, NA),
          Mean_16 = ifelse(Lag < 17, Value, NA),
          Mean_20 = Value) %>% 
+  # Pivot back. 
   select(-Value) %>% 
   group_by(Landowner, QuarterCompletion, Which) %>% 
   summarize(across(starts_with("Mean"), ~ mean(.x, na.rm = TRUE))) %>% 
@@ -122,11 +139,17 @@ dat_implicit_out =
          County,
          QuarterCompletion,
          Quarter,
+         Count,
          MBF_DouglasFir,
          MBF_WesternHemlock,
          MBF_Standing_Forward,
          Acres, 
          Acres_Standing_Forward,
+         SiteClassMode,
+         Elevation,
+         Slope,
+         Roughness,
+         starts_with("Distance"),
          starts_with("Stumpage"),
          starts_with("Lumber"),
          starts_with("Rate"),
@@ -148,13 +171,13 @@ dat_explicit =
               distinct) %>% 
   left_join(dat_standing_explicit) %>% 
   left_join(dat_implicit_out %>% 
-              select(-c(Landowner, Pyrome, County, starts_with("MBF"), starts_with("Acres"), Quarter)) %>% 
+              select(-c(Landowner, Pyrome, County, Count, starts_with("MBF"), starts_with("Acres"), Quarter)) %>% 
               group_by(QuarterCompletion) %>% 
               summarize(across(everything(), ~ mean(.x, na.rm = TRUE)))) %>% 
   anti_join(dat_implicit_out, by = c("Landowner", "QuarterCompletion")) %>% 
   bind_rows(dat_implicit_out, .) %>% 
   arrange(Landowner, QuarterCompletion) %>% 
   mutate(Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric,
-         across(starts_with(c("MBF", "Acres")), ~ replace_na(.x, 0))) %T>% 
+         across(c("Count", starts_with(c("MBF", "Acres"))), ~ replace_na(.x, 0))) %T>% 
   # Export.
   write_csv("03_intermediate/dat_firms_explicit_3_1.csv")

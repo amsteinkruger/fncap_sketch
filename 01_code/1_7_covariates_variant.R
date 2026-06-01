@@ -387,6 +387,8 @@ dat_ppi = full_join(dat_ppi_lumber, dat_ppi_timber)
 
 #    Stumpage, LogLines/FastMarkets
 
+# add Western hemlock here
+
 dat_price_stumpage = 
   "02_data/1_7_3_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
@@ -404,6 +406,8 @@ dat_price_stumpage =
   mutate(across(Stumpage, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20))))
 
 #   Lumber Prices, FastMarkets
+
+# add product forms and/or Western hemlock here
 
 dat_price_lumber =
   "02_data/1_7_3_FastMarkets/data_pull_filter.csv" %>%
@@ -454,6 +458,12 @@ dat_join_rate =
 dat_notifications_out = 
   dat_join_mtbs %>% 
   left_join(dat_join_vpd %>% rename(YearQuarter = Year_Quarter),
+            by = c("UID", "YearQuarter")) %>% 
+  left_join(dat_join_ppt %>% rename(YearQuarter = Year_Quarter),
+            by = c("UID", "YearQuarter")) %>% 
+  left_join(dat_join_tmean %>% rename(YearQuarter = Year_Quarter),
+            by = c("UID", "YearQuarter")) %>% 
+  left_join(dat_join_tmax %>% rename(YearQuarter = Year_Quarter),
             by = c("UID", "YearQuarter")) %>% 
   left_join(dat_join_price %>% rename(YearQuarter = Year_Quarter), 
             by = c("UID", "YearQuarter")) %>% 

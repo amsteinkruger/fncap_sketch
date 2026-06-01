@@ -5,6 +5,8 @@ dat_clean =
   vect %>% 
   # Reduce to quarters of completion.
   filter(Year_Quarter == QuarterCompletion) %>% 
+  # Reduce to pre-2025. Note that this should be resolved in 1_8 instead. 
+  filter(Year < 2025) %>% 
   # Handle percentile restrictions. 
   mutate(Restrict_Acres_Lower = Acres_1 > quantile(Acres_1, 0.01),
          Restrict_Acres_Upper = Acres_1 < quantile(Acres_1, 0.99),
@@ -21,7 +23,9 @@ dat_clean =
   filter(if_all(starts_with("Restrict"), ~ .x == TRUE)) %>% 
   select(-starts_with("Restrict")) %>% 
   # Move variables around for easier reading. 
-  relocate(QuarterCompletion, .after = DateCompletion) %T>%
+  select(-starts_with("Date"), -Completion) %>% 
+  rename(YearCompletion = Year) %>% 
+  relocate(ends_with("Completion"), .after = Landowner) %T>%
   # Export with spatial data.
   writeVector("03_intermediate/dat_notifications_1_9.gdb") %>% 
   # Export without spatial data.

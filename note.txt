@@ -16,6 +16,8 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - (x) ODF regions now. 
  - ( ) Include western hemlock (and remember all the related price wrangling). 
  - ( ) Include alternative lumber price series.
+ - ( ) Kick the 2025 drop back into 1_8.
+ - ( ) Fix the "fire proportion" variable and bring it through. 
  - (~) Extend lags, especially for prices.
  - (x) Add commercial thinning and salvage. 
  - (x) Switch from restrictions on harvest detection model to:
@@ -27,16 +29,7 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
  - Set up the data smorgasboard: for n in [1, N], univariate, space, time, bivariate for n variables. 
 
 fix stupid filenames (dat_ vs data_) for climate vars
-
-With overlaps resolved, 20054 -> 16530. This drops Acres_1 <= 1. 
- - Losing only a few hundred more with speciation. 
-
-16530 is quite a bit better than 15039. 
-
-8820 after overzealous filtering for harvest detection.
-8447 after intersecting outlier checks.  
-
-To minimize data loss, switch to using harvest detection just to identify quarter of harvest.
+figure out the yearquarter/year_quarter thing
 
 See LandTrendr's GEE implementation to work out state of the art without starting from scratch. 
 
