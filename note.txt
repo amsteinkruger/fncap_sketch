@@ -1,6 +1,9 @@
-2026/05/17
+2026/06/01
 
-Check journal on Box for details. Note that PRISM and CWD are processed but not joined to notifications.  
+The bottom line for 2YP results:
+
+ - Craggit AME/SE need more work and won't make it into this (Wednesday's) version of the paper.
+ - Craggit SE might be computed both by the delta method (Wu et al. 2026) and by bootstrapping.
 
  - Notifications on 07/01. 
  - (x) Roads now, and remember the inventory. 
@@ -14,8 +17,10 @@ Check journal on Box for details. Note that PRISM and CWD are processed but not 
     - DEQ Online returns a reasonable number of results, but these require .pdf wrangling for NAICS, periods. 
        - Bonus: business mapping. 
  - (x) ODF regions now. 
- - ( ) Include western hemlock (and remember all the related price wrangling). 
+ - (x) Include western hemlock (and remember all the related price wrangling). 
+        - ( ) But hemlock stumpage is missing. 
  - ( ) Include alternative lumber price series.
+ - ( ) Check whether it's reasonable to use the lumber PPI for timber to avoid a shortened time series. 
  - ( ) Kick the 2025 drop back into 1_8.
  - ( ) Fix the "fire proportion" variable and bring it through. 
  - (~) Extend lags, especially for prices.
@@ -34,3 +39,5 @@ figure out the yearquarter/year_quarter thing
 See LandTrendr's GEE implementation to work out state of the art without starting from scratch. 
 
 "Extracted" might be a nice alternative to "Uncompressed."
+
+Figures: (more, see ppt)

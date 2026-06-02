@@ -1,0 +1,44 @@
+
+#   Set up another dataframe.
+
+dat_predict = dat_explicit
+
+#   Proceeding from generated test code. 
+
+# predicted probabilities
+p <- predict(mod_hurdle_first_cherry, type = "response")
+
+# predicted conditional mean (log-linear case)
+mu <- exp(predict(mod_hurdle_second_cherry, newdata = dat_predict))
+
+# derivatives
+
+#  first stage
+
+beta <- coef(mod_hurdle_first_cherry)
+X <- model.matrix(mod_hurdle_first_cherry)
+
+dp_dx_1 <- p * (1 - p) * beta["log(Stumpage_Mean_20)"]
+dp_dx_2 <- p * (1 - p) * beta["log(VPD_Mean_4)"]
+dp_dx_3 <- p * (1 - p) * beta["Fire_30"]
+dp_dx_4 <- p * (1 - p) * beta["Fire_Proportion"]
+
+#  second stage
+
+gamma <- coef(mod_hurdle_second_cherry)
+
+dmu_dx_1 <- mu * gamma["log(Stumpage_Mean_20)"]
+dmu_dx_2 <- mu * gamma["log(VPD_Mean_4)"]
+dmu_dx_3 <- mu * gamma["Fire_30"]
+dmu_dx_4 <- mu * gamma["Fire_Proportion"]
+
+#  combine
+
+me_i_1 <- dp_dx_1 * mu + p * dmu_dx_1
+me_i_2 <- dp_dx_2 * mu + p * dmu_dx_2
+me_i_3 <- dp_dx_3 * mu + p * dmu_dx_3
+me_i_4 <- dp_dx_4 * mu + p * dmu_dx_4
+
+dat_ame = 
+  tibble(var = c("log(Stumpage_Mean_20)", "log(VPD_Mean_4)", "Fire_30", "Fire_Proportion"),
+         ame = c(mean(me_i_1), mean(me_i_2), mean(me_i_3), mean(me_i_4)))
