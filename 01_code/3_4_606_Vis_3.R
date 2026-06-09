@@ -1,7 +1,18 @@
 # Visualize parameter estimates with standard errors. 
 #  This requires outputs of 3_3_606. 
 
+mod_marginal_bind = 
+  mod_marginal %>% 
+  rename(term = Variable) %>% 
+  pivot_longer(cols = starts_with("Model"),
+               values_to = "estimate",
+               names_to = "Specification",
+               names_prefix = "Model") %>% 
+  mutate(Specification = Specification %>% as.numeric,
+         Stage = 3)
+
 #  Maybe normalize variable ranges and reestimate models for better comparisons. 
+#  Maybe split on variable groups to get a digestible plot. 
 
 vis_coef = 
   tibble(Stage = rep(1:2, each = 4),
@@ -18,14 +29,9 @@ vis_coef =
   mutate(Tidy = Models %>% map(tidy, conf.int = TRUE)) %>% 
   select(Stage, Specification, Tidy) %>% 
   unnest(Tidy) %>% 
-  # Names
-  # mutate(ID_Term = paste0(ID, "_", term),
-  #        Term_ID = paste0(term, "_", ID)) %>% 
-  # Formats
-  mutate(# ID = ID %>% factor,
-         term = term %>% factor,
-         # ID_Term = ID_Term %>% factor,
-         # Term_ID = Term_ID %>% factor,
+  bind_rows(mod_marginal_bind) %>% 
+  # filter(term %>% str_sub(1, 4) != "Rate") %>% 
+  mutate(Variable = term %>% factor %>% fct_rev,
          Stage = Stage %>% factor,
          Specification = Specification %>% factor) %>% 
   # filter(term %in% c("SiteClassMode", "Elevation")) %>% # Easier for demo. 
@@ -33,13 +39,15 @@ vis_coef =
   geom_vline(xintercept = 0, 
              linetype = "dashed") +
   geom_pointrange(aes(x = estimate,
-                      y = term,
+                      y = Variable,
                       xmin = conf.low,
                       xmax = conf.high,
                       color = Specification),
                   position = position_dodge(width = 0.75)) +
+  scale_color_brewer(palette = "Set1") +
   facet_wrap(~ Stage,
-             scales = "free_x")
+             scales = "free_x") +
+  theme_pubr()
 
 ggsave("04_out/Presentation/vis_2_coefficients.png",
        vis_coef,

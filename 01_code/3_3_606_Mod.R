@@ -248,7 +248,67 @@ etable(mod_hurdle_second_1, mod_hurdle_second_2, mod_hurdle_second_3, mod_hurdle
 
 #  AME
 
+fun_marginal <- 
+  function(var, first, second, data){
+    
+    # Stupid to get y_hat once for each variable. 
+    
+    # Estimate probabilities of production for each observation. (p)
+    
+    vec_predict_first <- 
+      predict(first, 
+              newdata = data,
+              type = "response") 
+    
+    # Estimate conditional production for each observation. (mu)
+    
+    vec_predict_second <- 
+      predict(second, 
+              newdata = data,
+              type = "response")
 
+    # Assign coefficient estimates.
+    val_gamma <- coef(first)[var]
+    val_beta  <- coef(second)[var]
+    
+    # Calculate AMEs.
+    val_ame <- vec_predict_first * (1 - vec_predict_first) * val_gamma * vec_predict_second + vec_predict_first * val_beta
+    
+    # Return.
+    tibble(Variable = var, AME = mean(val_ame, na.rm = TRUE))
+    
+  }
+
+mod_marginal = 
+  tibble(Specification = seq(1, 4),
+         Model_First = 
+           list(mod_hurdle_first_1,
+                mod_hurdle_first_2,
+                mod_hurdle_first_3,
+                mod_hurdle_first_4),
+         Model_Second = 
+           list(mod_hurdle_second_1,
+                mod_hurdle_second_2,
+                mod_hurdle_second_3,
+                mod_hurdle_second_4),
+         Covariates = 
+           mod_hurdle_first_1$coefficients %>% 
+           names %>% 
+           list) %>% 
+  unnest(Covariates) %>% 
+  mutate(AME = 
+           pmap(
+             .l = list(
+               first = Model_First, 
+               second = Model_Second, 
+               var = Covariates),
+             .f = fun_marginal,
+             data = dat_explicit)) %>% 
+  select(Specification, AME) %>% 
+  unnest(AME) %>% 
+  pivot_wider(values_from = AME, 
+              names_from = Specification,
+              names_prefix = "Model_")
 
 #  SE
 
@@ -278,6 +338,12 @@ modelsummary(
   output = "flextable") |> 
   autofit() |> 
   save_as_docx(path = "04_out/tab_second.docx")
+
+mod_marginal %>% 
+  mutate(across(starts_with("Model"), ~ round(.x, 5))) %>% 
+  flextable %>% 
+  autofit %>% 
+  save_as_docx(path = "04_out/tab_third.docx")
 
 # Checking out mhurdle: appears to throw computational errors pretty often.
 
