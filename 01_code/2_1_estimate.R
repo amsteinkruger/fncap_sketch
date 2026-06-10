@@ -1,379 +1,107 @@
 # Estimate simple linear models of MBF/Acre on a kitchen sink of variables.
 
-library(tidyverse)
-library(magrittr)
-library(plm)
-library(stargazer)
-library(sandwich)
-
 dat = 
-  "output/dat_notifications_more_annual.csv" %>% 
+  "03_intermediate/dat_notifications_1_9.csv" %>% 
   read_csv %>% 
-  mutate(Restriction_Overlaps = (Intersects == 0 | Intersect_Maximum < 0.99),
-         Restriction_DouglasFir = (ProportionDouglasFir > 0.50),
-         Restriction_NDVI = !is.na(NDVI_Change),
-         Restriction_PAD = TRUE,
-         Restriction_None = TRUE,
-         Restriction_Any = (Restriction_Overlaps == TRUE | Restriction_DouglasFir == TRUE | Restriction_NDVI == TRUE | Restriction_PAD == TRUE),
-         Restriction_All = (Restriction_Overlaps == TRUE & Restriction_DouglasFir == TRUE & Restriction_NDVI == TRUE & Restriction_PAD == TRUE)) %>% 
-  filter(Restriction_All == TRUE) %>% 
-  select(UID, 
-         Company,
-         Company_Percentile_Acres,
-         Company_Percentile_MBF,
-         Watershed,
-         County,
-         Year_Start, 
-         Month_Start, 
-         MBF, 
-         Acres, 
-         Elevation, 
-         Slope, 
-         Roughness, 
-         Pyrome, 
-         VPD, 
-         NDVI_Change,
-         NDVI_Detect,
-         starts_with("Fire"),
-         ProportionDouglasFir,
-         starts_with("SiteClass"),
-         starts_with("Distance"),
-         starts_with("FPA"),
-         starts_with("PAD"),
-         Watershed,
-         starts_with("Stumpage"),
-         starts_with("Delivered"),
-         Fed_Rate) %>% 
-  mutate(MBF_Acre = MBF / Acres) %>% 
-  filter(MBF < quantile(MBF, 0.99) & MBF > quantile(MBF, 0.01),
-         Acres < quantile(Acres, 0.99) & Acres > quantile(Acres, 0.01),
-         MBF_Acre < quantile(MBF_Acre, 0.99) & MBF_Acre > quantile(MBF_Acre, 0.01))
+  # Get a species-agnostic yield variable.
+  mutate(MBF_Acre_Both = MBF_Acre_2_DouglasFir + MBF_Acre_2_WesternHemlock) %>% 
+  # Get landowner percentiles by total production of both species.
+  group_by(Landowner) %>% 
+  mutate(MBF_Both_Total = sum(MBF_2_DouglasFir) + sum(MBF_2_WesternHemlock)) %>% 
+  ungroup %>% 
+  mutate(Landowner_MBF_Percentile = ntile(MBF_Both_Total, 100)) %>% 
+  # Get factors for some categorical variables.
+  mutate(Activity = Activity %>% factor,
+         Pyrome = Pyrome %>% factor,
+         County = County %>% factor,
+         District = District %>% factor)
 
 mod_1 = 
   dat %>% 
-  lm(MBF_Acre ~ 
-       Company_Percentile_MBF +
-       Elevation + 
-       Slope + 
-       VPD + 
-       ProportionDouglasFir + 
-       SiteClass_Mod + 
-       Distance_Place + 
-       Stumpage_Real_PPI_Timber + 
-       Fed_Rate, 
-     data = .)
+  feols(MBF_Acre_Both ~ 
+          # Landowner-varying
+          Landowner_MBF_Percentile +
+          # Notification-varying?
+          Activity +
+          # Space-varying
+          SiteClassMode +
+          Elevation +
+          Slope + 
+          # Roughness +
+          Distance_Road +
+          Distance_Mill +
+          Distance_Place +
+          ProportionDouglasFirTree +
+          # Time-varying
+          Stumpage_Lag_1 +
+          Lumber_Lag_1 +
+          Rate_Lag_1 +
+          # Time- and space-varying
+          Fire_0_Lag_1 +
+          Fire_15_Doughnut_Lag_1 +
+          Fire_30_Doughnut_Lag_1 +
+          VPD_Lag_1)
 
 mod_2 = 
   dat %>% 
-  lm(MBF_Acre ~ 
-       Company_Percentile_MBF +
-       Elevation + 
-       Slope + 
-       Roughness + 
-       Pyrome +
-       VPD + 
-       Fire_0 +
-       Fire_15_Doughnut + 
-       Fire_30_Doughnut +
-       ProportionDouglasFir + 
-       SiteClass_Min + 
-       SiteClass_Max + 
-       SiteClass_Med + 
-       SiteClass_Mod + 
-       Distance_Road +
-       Distance_Mill +
-       Distance_Place + 
-       Stumpage_Real_PPI_Timber + 
-       Delivered_Real_PPI_Timber +
-       Fed_Rate, 
-     data = .)
+  feols(MBF_Acre_Both ~ 
+          # Landowner-varying
+          Landowner_MBF_Percentile +
+          # Notification-varying?
+          Activity +
+          # Space-varying
+          SiteClassMode +
+          Elevation +
+          Slope + 
+          # Roughness +
+          Distance_Road +
+          Distance_Mill +
+          Distance_Place +
+          ProportionDouglasFirTree +
+          # Time-varying
+          Stumpage_Lag_1 +
+          Lumber_Lag_1 +
+          Rate_Lag_1 +
+          # Time- and space-varying
+          Fire_0_Lag_1 +
+          Fire_15_Doughnut_Lag_1 +
+          Fire_30_Doughnut_Lag_1 +
+          VPD_Lag_1 |
+          County)
+
 
 mod_3 = 
   dat %>% 
-  plm(MBF_Acre ~ 
-        Company_Percentile_MBF +
-        Elevation + 
-        Slope + 
-        Roughness + 
-        Pyrome +
-        VPD + 
-        Fire_0 +
-        Fire_15_Doughnut + 
-        Fire_30_Doughnut +
-        ProportionDouglasFir + 
-        SiteClass_Min + 
-        SiteClass_Max + 
-        SiteClass_Med + 
-        SiteClass_Mod + 
-        Distance_Road +
-        Distance_Mill +
-        Distance_Place + 
-        Stumpage_Real_PPI_Timber + 
-        Delivered_Real_PPI_Timber +
-        Fed_Rate, 
-      index = c("Year_Start"),
-      data = .)
+  feols(MBF_Acre_Both ~ 
+          # Landowner-varying
+          Landowner_MBF_Percentile +
+          # Notification-varying?
+          Activity +
+          # Space-varying
+          SiteClassMode +
+          Elevation +
+          Slope + 
+          # Roughness +
+          Distance_Road +
+          Distance_Mill +
+          Distance_Place +
+          ProportionDouglasFirTree +
+          # Time-varying
+          Stumpage_Lag_1 +
+          Lumber_Lag_1 +
+          Rate_Lag_1 +
+          # Time- and space-varying
+          Fire_0_Lag_1 +
+          Fire_15_Doughnut_Lag_1 +
+          Fire_30_Doughnut_Lag_1 +
+          VPD_Lag_1 |
+          District)
 
-mod_4 = 
-  dat %>% 
-  plm(MBF_Acre ~ 
-        Company_Percentile_MBF +
-        Elevation + 
-        Slope + 
-        Roughness + 
-        Pyrome +
-        VPD + 
-        Fire_0 +
-        Fire_15_Doughnut + 
-        Fire_30_Doughnut +
-        ProportionDouglasFir + 
-        SiteClass_Min + 
-        SiteClass_Max + 
-        SiteClass_Med + 
-        SiteClass_Mod + 
-        Distance_Road +
-        Distance_Mill +
-        Distance_Place + 
-        Stumpage_Real_PPI_Timber + 
-        Delivered_Real_PPI_Timber +
-        Fed_Rate, 
-      index = c("County"),
-      data = .)
-
-mod_5 = 
-  dat %>% 
-  plm(MBF_Acre ~ 
-        Company_Percentile_MBF +
-        Acres + 
-        Elevation + 
-        Slope + 
-        Roughness + 
-        Pyrome +
-        VPD + 
-        Fire_0 +
-        Fire_15_Doughnut + 
-        Fire_30_Doughnut +
-        ProportionDouglasFir + 
-        SiteClass_Min + 
-        SiteClass_Max + 
-        SiteClass_Med + 
-        SiteClass_Mod + 
-        Distance_Road +
-        Distance_Mill +
-        Distance_Place + 
-        Stumpage_Real_PPI_Timber + 
-        Delivered_Real_PPI_Timber +
-        Fed_Rate, 
-      index = c("County", "Year_Start"),
-      data = .)
-
-# Begin tabulation shenanigans.
-
-se_list <- list(
-  sqrt(diag(vcovHC(mod_1, type = "HC1"))),
-  sqrt(diag(vcovHC(mod_2, type = "HC1"))),
-  sqrt(diag(vcovHC(mod_3, type = "HC1", cluster = "group"))),
-  sqrt(diag(vcovHC(mod_4, type = "HC1", cluster = "group"))),
-  sqrt(diag(vcovHC(mod_5, type = "HC1", cluster = "group")))
-)
-
-stargazer(mod_1, mod_2, mod_3, mod_4, mod_5,
-          type = "html",
-          se = se_list,
-          column.labels = c("Less", "More", "Year FE", "County FE", "TWFE"),
-          keep.stat = c("n","rsq","adj.rsq","f"),
-          out = "output/estimates_20260311.html")
-
-# quick plots
-
-library(terra)
-library(tidyterra)
-
-dat_counties = 
-  dat %>% 
-  group_by(Year_Start, County) %>% 
-  summarize(Firms = n_distinct(Company),
-            Notifications = n(),
-            MBF = sum(MBF),
-            MBF_Acre = weighted.mean(MBF_Acre, Acres)) %>% 
-  group_by(County) %>% 
-  summarize(Firms = mean(Firms),
-            Notifications = mean(Notifications),
-            MBF = mean(MBF),
-            MBF_Acre = mean(MBF_Acre)) %>% 
-  left_join("data/TIGER.gdb" %>% 
-              vect(layer = "County") %>% 
-              select(County = NAMELSAD) %>% 
-              project("EPSG:2992"),
-            .) %>% 
-  crop(dat_bounds) %>% 
-  drop_na
-
-vis_counties_firms =
-  dat_counties %>% 
-  ggplot() +
-  geom_spatvector(aes(fill = Firms),
-                  color = "black",
-                  linewidth = 0.20) +
-  scale_fill_distiller(palette = "Oranges",
-                       direction = 1,
-                       limits = c(0, NA),
-                       # breaks = c(0, 200),
-                       guide = guide_colorbar(title.position = "top")) +
-  labs(fill = "Mean Annual Firms Harvesting") +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal",
-        legend.ticks = element_blank(),
-        legend.key.height = unit(0.25, "lines"),
-        legend.key.width = unit(1.5, "lines"),
-        legend.key = element_rect(fill = NA, color = "black"),
-        legend.text = element_text(size = 8),
-        legend.title = element_text(size = 9, hjust = 0.5))
-
-vis_counties_notifications =
-  dat_counties %>% 
-  ggplot() +
-  geom_spatvector(aes(fill = Notifications),
-                  color = "black",
-                  linewidth = 0.20) +
-  scale_fill_distiller(palette = "Blues",
-                       direction = 1,
-                       limits = c(0, NA),
-                       # breaks = c(0, 200),
-                       guide = guide_colorbar(title.position = "top")) +
-  labs(fill = "Mean Annual Notifications") +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal",
-        legend.ticks = element_blank(),
-        legend.key.height = unit(0.25, "lines"),
-        legend.key.width = unit(1.5, "lines"),
-        legend.key = element_rect(fill = NA, color = "black"),
-        legend.text = element_text(size = 8),
-        legend.title = element_text(size = 9, hjust = 0.5))
-
-vis_counties_mbf =
-  dat_counties %>% 
-  ggplot() +
-  geom_spatvector(aes(fill = MBF / 1000),
-                  color = "black",
-                  linewidth = 0.20) +
-  scale_fill_distiller(palette = "Greens",
-                       direction = 1,
-                       limits = c(0, NA),
-                       # breaks = c(0, 200),
-                       guide = guide_colorbar(title.position = "top")) +
-  labs(fill = "Mean Annual Board Feet (Millions)") +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal",
-        legend.ticks = element_blank(),
-        legend.key.height = unit(0.25, "lines"),
-        legend.key.width = unit(1.5, "lines"),
-        legend.key = element_rect(fill = NA, color = "black"),
-        legend.text = element_text(size = 8),
-        legend.title = element_text(size = 9, hjust = 0.5))
-
-vis_counties_yield =
-  dat_counties %>% 
-  ggplot() +
-  geom_spatvector(aes(fill = MBF_Acre),
-                  color = "black",
-                  linewidth = 0.20) +
-  scale_fill_distiller(palette = "Purples",
-                       direction = 1,
-                       limits = c(0, NA),
-                       # breaks = c(0, 200),
-                       guide = guide_colorbar(title.position = "top")) +
-  labs(fill = "Mean Annual Yield (MBF/Acre)") +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal",
-        legend.ticks = element_blank(),
-        legend.key.height = unit(0.25, "lines"),
-        legend.key.width = unit(1.5, "lines"),
-        legend.key = element_rect(fill = NA, color = "black"),
-        legend.text = element_text(size = 8),
-        legend.title = element_text(size = 9, hjust = 0.5))
-
-library(ggpubr)
-library(patchwork)
-
-vis_counties = vis_counties_firms + vis_counties_notifications + vis_counties_mbf + vis_counties_yield + plot_layout(nrow = 1, byrow = FALSE)
-
-ggsave("output/vis_counties_20260311.png",
-       vis_counties,
-       dpi = 300,
-       width = 8)
-
-# Correlogram
-
-# dat %>%
-#   select(where(is.numeric)) %>%
-#   select(-UID) %>% 
-#   cor(use = "pairwise.complete.obs") %>%
-#   as.data.frame() %>%
-#   rownames_to_column("var1") %>%
-#   pivot_longer(-var1, names_to = "var2", values_to = "Correlation") %>%
-#   ggplot(aes(var1, var2, fill = Correlation)) +
-#   geom_tile() +
-#   scale_fill_gradient2(limits = c(-1, 1), low = "orange", mid = "white", high = "#2166AC") +
-#   coord_equal() +
-#   theme_minimal(base_size = 12) +
-#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-#   labs(x = NULL, y = NULL, fill = "Correlation")
-# 
-# ggsave("output/corr_20260225.png",
-#        dpi = 300,
-#        width = 9,
-#        height = 9)
-
-# PCA Biplot
-
-# X <- 
-#   dat %>% 
-#   select(where(is.numeric)) %>% 
-#   select(-UID) %>% 
-#   tidyr::drop_na()
-
-# PCA
-# pca <- prcomp(X, scale. = TRUE)
-# ve  <- (pca$sdev^2) / sum(pca$sdev^2) 
-
-# Scores (observations) and loadings (variables)
-# scores <- 
-#   as_tibble(pca$x[, 1:2], .name_repair = "minimal") %>%
-#   rename(PC1 = 1, PC2 = 2)
-# 
-# loadings <- 
-#   as_tibble(pca$rotation[, 1:2], rownames = "var") %>%
-#   rename(PC1 = 2, PC2 = 3)
-
-# Scale loadings to the score range for a readable biplot
-# sf <- 0.8 * min(
-#   (max(scores$PC1) - min(scores$PC1)) / max(abs(loadings$PC1)),
-#   (max(scores$PC2) - min(scores$PC2)) / max(abs(loadings$PC2))
-# )
-# 
-# loadings_sc <- loadings %>% mutate(PC1 = PC1 * sf, PC2 = PC2 * sf)
-
-# Biplot
-
-# ggplot() +
-#   geom_point(data = scores, aes(PC1, PC2), alpha = 0.1, shape = 21, fill = NA, color = "black") +
-#   geom_segment(data = loadings_sc,
-#                aes(x = 0, y = 0, xend = PC1, yend = PC2),
-#                arrow = arrow(length = unit(0.02, "npc")), color = "#444444") +
-#   geom_text(data = loadings_sc, aes(PC1, PC2, label = var),
-#             hjust = 0.5, vjust = -0.7, size = 3.2) +
-#   coord_equal() +
-#   theme_minimal(base_size = 12) +
-#   labs(
-#     x = sprintf("PC1 (%.1f%%)", 100 * ve[1]),
-#     y = sprintf("PC2 (%.1f%%)", 100 * ve[2]))
-# 
-# ggsave("output/pca_20260225.png",
-#        dpi = 300,
-#        width = 9,
-#        height = 9)
+modelsummary(
+  list("No FE" = mod_1,
+       "County FE" = mod_2,
+       "District FE" = mod_3),
+  stars = TRUE, 
+  output = "flextable") |> 
+  autofit() |> 
+  save_as_docx(path = "04_out/Smorgasbord/tab_general.docx")

@@ -23,3 +23,8 @@ library(ggpubr)
 
 library(fixest)
 library(broom)
+
+#  Tables
+
+library(modelsummary)
+library(flextable)

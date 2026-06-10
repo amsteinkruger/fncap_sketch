@@ -1,5 +1,24 @@
 # Try out descriptive plots and tables.
 
+#  TOC
+
+#   Dimensions
+#   Data
+#   Bounds
+#   Firms, Time (Year)
+#   Firms, Time (Year-Quarter)
+#   Counts over Time by Mode
+#   Acres over Time by Mode
+#   MBF over Time by Mode 
+#   Modes over Space
+#   Site Class over Space by Mode
+
+#   Species over Time
+#   Species over Space
+#   Prices, Interest over Time
+#   Fire over Time
+#   Fire over Space
+
 # Dimensions
 
 width = 7.5
@@ -7,9 +26,11 @@ height = 7.5 / 1.618
 
 # Data
 
-dat = 
-  "03_intermediate/dat_notifications_1_9.gdb" %>% 
-  vect
+dat = "03_intermediate/dat_notifications_1_9.gdb" %>% vect
+
+# Bounds
+
+dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
 
 # Firms, Time (Year)
 
@@ -126,12 +147,12 @@ ggsave("04_out/Smorgasbord/vis_mbf_mode.png",
 
 # Modes over Space
 
-dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
-
-vis_space_mode = 
+dat_space_mode = 
   dat %>% 
   select(Activity) %>% 
-  centroids %>% 
+  centroids
+
+vis_space_mode = 
   ggplot() +
   geom_spatvector(data = dat_bounds) +
   geom_spatvector(data = dat_space_mode,
@@ -175,3 +196,114 @@ ggsave("04_out/Smorgasbord/vis_class_space.png",
        dpi = 300,
        width = width,
        height = height)
+
+#   Species over Time
+
+vis_species_time = 
+  dat %>% 
+  as_tibble %>% 
+  select(YearCompletion,
+         ProportionDouglasFirTree,
+         ProportionWesternHemlockTree) %>% 
+  pivot_longer(starts_with("Proportion"),
+               names_to = "Species",
+               names_prefix = "Proportion",
+               values_to = "Proportion") %>% 
+  mutate(Species = ifelse(Species == "DouglasFirTree", "Douglas fir", "Western hemlock")) %>% 
+  ggplot() +
+  geom_boxplot(aes(x = YearCompletion %>% factor,
+                   y = Proportion,
+                   color = Species),
+               shape = 21,
+               fill = NA) +
+  scale_x_discrete(breaks = c(2015, 2018, 2021, 2024)) +
+  labs(x = "Year (Estimated Completion)") +
+  facet_wrap(~ Species) +
+  theme_pubr() +
+  theme(legend.position = "none")
+
+ggsave("04_out/Smorgasbord/vis_species_time.png",
+       vis_species_time,
+       dpi = 300,
+       width = width,
+       height = height)
+
+#   Species over Space
+
+dat_species_space = 
+  dat %>% 
+  select(ProportionDouglasFirTree, ProportionWesternHemlockTree) %>% 
+  pivot_longer(everything(),
+               names_to = "Species",
+               names_prefix = "Proportion",
+               values_to = "Proportion") %>% 
+  mutate(Species = ifelse(Species == "DouglasFirTree", "Proportion Douglas fir", "Proportion Western hemlock")) %>% 
+  centroids 
+
+vis_species_space = 
+  ggplot() +
+  geom_spatvector(data = dat_bounds) +
+  geom_spatvector(data = dat_species_space,
+                  aes(color = Proportion),
+                  shape = 21,
+                  fill = NA,
+                  size = 0.50,
+                  alpha = 0.50) + 
+  facet_wrap(~ Species) +
+  scale_color_viridis(option = "F",
+                      limits = c(0, 1.00),
+                      breaks = c(0, 0.50, 1.00)) +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key.height = unit(0.50, "lines"),
+        legend.key.width = unit(5.00, "lines"),
+        legend.title = element_blank(),
+        legend.ticks = element_blank())
+
+ggsave("04_out/Smorgasbord/vis_species_space.png",
+       vis_species_space,
+       dpi = 300,
+       width = width,
+       height = height)
+
+#   Prices, Interest over Time
+
+vis_prices = 
+  dat %>% 
+  as_tibble %>% 
+  select(QuarterCompletion, Stumpage, Lumber, Rate) %>% 
+  pivot_longer(c(Stumpage, Lumber, Rate),
+               names_to = "Which",
+               values_to = "Value") %>% 
+  mutate(Facet = 
+           ifelse(Which == "Rate", "Effective Federal Funds Rate", "Price (USD2024Q4)") %>% 
+           factor %>% 
+           fct_relevel("Price (USD2024Q4)", "Effective Federal Funds Rate"),
+         Which = 
+           Which %>% 
+           factor %>% 
+           fct_relevel("Stumpage", "Lumber", "Rate")) %>% 
+  arrange(QuarterCompletion) %>% 
+  mutate(QuarterCompletion = QuarterCompletion %>% factor) %>% 
+  ggplot() + 
+  geom_line(aes(x = QuarterCompletion,
+                y = Value,
+                color = Which,
+                group = Which)) +
+  scale_x_discrete(breaks = c("2015_1", "2018_1", "2021_1", "2024_1")) +
+  facet_wrap(~ Facet,
+             scales = "free_y") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.50),
+        axis.title = element_blank(),
+        legend.title = element_blank())
+
+ggsave("04_out/Smorgasbord/vis_prices.png",
+       vis_prices,
+       dpi = 300,
+       width = width,
+       height = height)
+
+#   Fire over Time
+#   Fire over Space
