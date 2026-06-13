@@ -53,15 +53,27 @@ vis_log =
   geom_col(aes(x = MBF_Mean_Log_Bins_Neat,
                y = Firms,
                fill = Fire_Factor)) +
+  labs(x = "Log(Production)",
+       y = "Firms",
+       fill = "Firm Wildfire Exposure (Mean)") +
   scale_fill_manual(values = pal_fire) +
   scale_y_continuous(expand = c(0, 0)) +
-  theme_pubr()
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme_pubr() +
+  theme(axis.text.x = 
+          element_text(angle = 90, 
+                       hjust = 1,
+                       vjust = 0.50))
 
 #   Lorenz Curve
 
 vis_lor = 
   dat %>% 
-  mutate(MBF_Mean_Percentile = ntile(MBF_Mean, 100) %>% factor,
+  mutate(MBF_Mean_Percentile = 
+           ntile(MBF_Mean, 20) %>% 
+           `*` (5) %>% 
+           factor %>% 
+           fct_expand("0", after = 0),
          MBF_Mean_Percent = MBF_Mean / sum(MBF_Mean)) %>% 
   arrange(MBF_Mean_Percentile) %>% 
   group_by(MBF_Mean_Percentile, Fire_Factor) %>% 
@@ -83,18 +95,28 @@ vis_lor =
                y = MBF_Mean_Percent,
                fill = Fire_Factor),
            width = 1) +
-  geom_abline(intercept = 0, 
-              slope = 1, 
+  geom_abline(intercept = -5, 
+              slope = 5, 
               linetype = "dashed") +
+  labs(x = "Firm Percentile by Mean Production",
+       y = "Percent Cumulative Production",
+       fill = "Firm Wildfire Exposure (Mean)") +
   scale_fill_manual(values = pal_fire) +
-  scale_x_discrete(breaks = c(1, 25, 50, 75, 100)) +
+  scale_x_discrete(limits = seq(0, 100, by = 5) %>% as.character,
+                   breaks = c(0, 25, 50, 75, 100)) +
   scale_y_continuous(expand = c(0, 0),
                      position = "right") +
+  guides(fill = guide_legend(reverse = TRUE)) +
   theme_pubr()
 
-vis_both = vis_log + vis_lor
+vis_both = 
+  vis_log + 
+  vis_lor + 
+  plot_layout(guides = "collect") &
+  theme(legend.direction = "horizontal",
+        legend.position = "top")
 
-ggsave("04_out/Presentation/vis_2_curves.png",
+ggsave("04_out/Paper_FirmSupply/vis_2_curves.png",
        vis_both,
        dpi = 300,
        height = 4.5,
