@@ -28,3 +28,7 @@ library(broom)
 
 library(modelsummary)
 library(flextable)
+
+#  Negation
+
+`%!in%` <- Negate(`%in%`)
