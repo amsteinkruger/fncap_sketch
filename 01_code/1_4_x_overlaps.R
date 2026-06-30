@@ -1,6 +1,4 @@
-# Handle spatial overlaps among notifications; intersections go to later observations. 
-
-#  This version tests operations to intersect and erase by activity.
+# Handle spatial overlaps among notifications by activity; intersections go to later notifications. 
 
 #  Clear the environment.
 
@@ -35,6 +33,10 @@ dat_prepare =
          Acres,
          MBF,
          MBF_Acre)
+
+#  Set aside attributes. 
+
+dat_prepare_flat = dat_prepare %>% as_tibble
 
 #  Nest data.
 
@@ -96,28 +98,19 @@ dat_erase =
 
 #  Erase intersections from all but the latest notification, then export. 
 
-# problem: dat_order reference
-# solution: maybe set up a fresh listcol?
-
 dat_clean = 
   dat_order %>% 
-  as_tibble %>% 
-  mutate(data_original = 
-           UID %>% 
-           map(~ filter(dat_order, UID == .x)),
-         data_intersections = 
-           UID %>% 
-           map(~ filter(dat_erase, UID == .x)),
-         data_erase = 
-           map2(data_original,
-                data_intersections,
-                erase), 
-         data_null = 
-           map(data_erase,
-               ~ nrow(as_tibble(.x)))) %>% 
-  unnest(data_null) %>% 
-  filter(data_null > 0) %>% 
-  pull(data_erase) %>% 
+  mutate(Data = Data %>% map(as_tibble)) %>% 
+  left_join(dat_order %>% rename(Data_Order = Data)) %>% 
+  left_join(dat_erase %>% rename(Data_Erase = Data)) %>% 
+  unnest(Data) %>% 
+  mutate(Data_Original = map2(Data_Order, UID, ~ filter(.x, UID == .y)),
+         Data_Intersections = map2(Data_Erase, UID, ~ filter(.x, UID == .y)),
+         Data_Erase = map2(Data_Original, Data_Intersections, erase),
+         Data_Null = map(Data_Erase, ~ nrow(as_tibble(.x)))) %>% 
+  unnest(Data_Null) %>% 
+  filter(Data_Null > 0) %>% 
+  pull(Data_Erase) %>% 
   bind_spat_rows %>% 
   makeValid(buffer = TRUE) %>% 
   left_join(dat_prepare_flat) %>% 
@@ -143,10 +136,10 @@ dat_clean =
          MBF_1 = MBF_Less,
          MBF_Acre_1 = MBF_Acre_Less) %T>% 
   # Export with spatial data. 
-  writeVector("03_intermediate/dat_notifications_1_4.gdb") %>% 
+  writeVector("03_intermediate/dat_notifications_1_4_x.gdb") %>% 
   # Export without spatial data. 
   as_tibble %T>% 
-  write_csv("03_intermediate/dat_notifications_1_4.csv")
+  write_csv("03_intermediate/dat_notifications_1_4_x.csv")
 
 #  Stop timing. 
 

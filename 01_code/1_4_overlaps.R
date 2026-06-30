@@ -74,7 +74,7 @@ dat_erase =
   summarize() %>% 
   ungroup %>% 
   rename(UID = UID_2) %>% 
-  makeValid(buffer = TRUE) 
+  makeValid(buffer = TRUE)
 
 #  Erase intersections from all but the latest notification, then export. 
 
