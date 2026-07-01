@@ -10,7 +10,6 @@ time_start = Sys.time()
 
 #  TOC:
 
-#    Growth
 #    Elevation
 #    Slope
 #    Roughness
@@ -37,10 +36,6 @@ dat_notifications_less =
 #  Bounds
 
 dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
-
-#  Growth
-
-#  Pull growth work into an earlier script (0_*), then get parameters in here. 
 
 #  Elevation
 

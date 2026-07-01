@@ -1,4 +1,4 @@
-# Handle spatial overlaps among notifications; intersections go to later observations. 
+# Handle spatial overlaps among notifications by activity; intersections go to later notifications. 
 
 #  Clear the environment.
 
@@ -38,65 +38,79 @@ dat_prepare =
 
 dat_prepare_flat = dat_prepare %>% as_tibble
 
-#  Reorder data. 
+#  Nest data.
+
+dat_nest = 
+  vec_activities %>% 
+  as_tibble %>% 
+  rename(Activity = value) %>% 
+  mutate(Data = list(dat_prepare)) %>% 
+  mutate(Data = 
+           Data %>% 
+           map2(Activity,
+                ~ filter(.x, Activity == .y)))
+
+#  Reorder data.
 
 dat_order = 
-  dat_prepare %>% 
-  group_by(Landowner) %>% 
-  mutate(Acres_Landowner = Acres %>% sum,
-         MBF_Landowner = MBF %>% sum) %>% 
-  ungroup %>% 
-  arrange(desc(DateStart),
-          desc(DateEnd),
-          desc(DateSubmit),
-          Activity,
-          desc(MBF),
-          desc(Acres),
-          desc(MBF_Landowner),
-          desc(Acres_Landowner)) %>% 
-  select(UID) %>% 
-  makeValid(buffer = TRUE) 
+  dat_nest %>% 
+  mutate(Data = 
+           Data %>% 
+           map(~ group_by(.x, Landowner)) %>% 
+           map(~ mutate(.x,
+                        Acres_Landowner = Acres %>% sum,
+                        MBF_Landowner = MBF %>% sum)) %>% 
+           map(~ ungroup(.x)) %>% 
+           map(~ arrange(.x,
+                         desc(DateStart),
+                         desc(DateEnd),
+                         desc(DateSubmit),
+                         Activity,
+                         desc(MBF),
+                         desc(Acres),
+                         desc(MBF_Landowner),
+                         desc(Acres_Landowner))) %>% 
+           map(~ select(.x, UID)) %>% 
+           map(~ makeValid(.x, buffer = TRUE)))
 
 #  Intersect data. 
 
 dat_intersect = 
   dat_order %>% 
-  mutate(Order = row_number()) %>% # Standing in for dates, etc. 
-  intersect(., .) %>% 
-  makeValid(buffer = TRUE) 
+  mutate(Data = 
+           Data %>% 
+           map(~ mutate(.x, Order = row_number())) %>% 
+           map(~ intersect(.x, .x)) %>% 
+           map(~ makeValid(.x, buffer = TRUE)))
 
 #  Set aside intersections. 
 
 dat_erase = 
   dat_intersect %>% 
-  filter(Order_1 < Order_2) %>% # Get intersections where UID_1 is later. 
-  group_by(UID_2) %>% # Match those intersections to UID_2. 
-  summarize() %>% 
-  ungroup %>% 
-  rename(UID = UID_2) %>% 
-  makeValid(buffer = TRUE)
+  mutate(Data = 
+           Data %>% 
+           map(~ filter(.x, Order_1 < Order_2)) %>% 
+           map(~ group_by(.x, UID_2)) %>% 
+           map(~ summarize(.x)) %>% 
+           map(~ ungroup(.x)) %>% 
+           map(~ rename(.x, UID = UID_2)) %>% 
+           map(~ makeValid(.x, buffer = TRUE)))
 
 #  Erase intersections from all but the latest notification, then export. 
 
 dat_clean = 
   dat_order %>% 
-  as_tibble %>% 
-  mutate(data_original = 
-           UID %>% 
-           map(~ filter(dat_order, UID == .x)),
-         data_intersections = 
-           UID %>% 
-           map(~ filter(dat_erase, UID == .x)),
-         data_erase = 
-           map2(data_original,
-                data_intersections,
-                erase), 
-         data_null = 
-           map(data_erase,
-               ~ nrow(as_tibble(.x)))) %>% 
-  unnest(data_null) %>% 
-  filter(data_null > 0) %>% 
-  pull(data_erase) %>% 
+  mutate(Data = Data %>% map(as_tibble)) %>% 
+  left_join(dat_order %>% rename(Data_Order = Data)) %>% 
+  left_join(dat_erase %>% rename(Data_Erase = Data)) %>% 
+  unnest(Data) %>% 
+  mutate(Data_Original = map2(Data_Order, UID, ~ filter(.x, UID == .y)),
+         Data_Intersections = map2(Data_Erase, UID, ~ filter(.x, UID == .y)),
+         Data_Erase = map2(Data_Original, Data_Intersections, erase),
+         Data_Null = map(Data_Erase, ~ nrow(as_tibble(.x)))) %>% 
+  unnest(Data_Null) %>% 
+  filter(Data_Null > 0) %>% 
+  pull(Data_Erase) %>% 
   bind_spat_rows %>% 
   makeValid(buffer = TRUE) %>% 
   left_join(dat_prepare_flat) %>% 
@@ -122,10 +136,10 @@ dat_clean =
          MBF_1 = MBF_Less,
          MBF_Acre_1 = MBF_Acre_Less) %T>% 
   # Export with spatial data. 
-  writeVector("03_intermediate/dat_notifications_1_4.gdb") %>% 
+  writeVector("03_intermediate/dat_notifications_1_4_x.gdb") %>% 
   # Export without spatial data. 
   as_tibble %T>% 
-  write_csv("03_intermediate/dat_notifications_1_4.csv")
+  write_csv("03_intermediate/dat_notifications_1_4_x.csv")
 
 #  Stop timing. 
 
