@@ -1,0 +1,7 @@
+* Handle a difficult .dta.
+
+* reading code goes here
+
+keep clip previousclip apnparcelnumberunformatted onlineformattedparcelid alternateparcelid previousparcelnumber previousparcelsequencenumber previousparcelnumberformatted censusid landusecode countyusedescription stateusedescription zoningcode zoningcodedescription blocklevellatitude blocklevellongitude parcellevellatitude parcellevellongitude legaldescription owner*
+
+export delimited owners.csv
