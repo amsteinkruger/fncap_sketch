@@ -48,6 +48,8 @@ dat_parcels =
 
 #   join dat_owners onto the spatially joined result
 
+#   what about calculating polygon centroids then joining on point-point NN?
+
 #  Clean?
 
 #  Export

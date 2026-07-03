@@ -1,3 +1,18 @@
+2026/07/03
+
+--- Begin Cotality ---
+
+The previousparcelnumber* variables could be helpful. Is there a way to get dates for them?
+Could transaction data fill in for parcel  lineages?
+
+Looking through data and metadata suggests previousparcel stuff cannot help (except for ballparking).
+
+The structure of transaction data and cleaning code suggest a parcels-ownership-transaction merge could work.
+
+A relatively effort-intensive next step would be to test that with coastal residential properties/transactions.
+
+--- End Cotality ---
+
 2026/06/01
 
 The bottom line for 2YP results:
