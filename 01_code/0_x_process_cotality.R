@@ -20,6 +20,7 @@ dat_owners =
 
 vis = 
   dat_owners |> 
+  filter(ctyfips == 39) |> 
   select(starts_with("parcel") & (ends_with("latitude") | ends_with("longitude"))) |> 
   ggplot() + 
   geom_point(aes(x = parcellevellongitude, 
@@ -53,5 +54,61 @@ dat_parcels =
 #  Clean?
 
 #  Export
+
+# Scratch: 
+
+dat_parcels_less =
+  dat_parcels |> 
+  filter(County == 20) # %in% c(4, 29, 21, 20, 10, 6, 8)
+
+dat_parcels_less |> 
+  slice_sample(n = 10000) |> 
+  makeValid() |> 
+  ggplot() + 
+  geom_spatvector(aes(fill = Shape_Area), color = NA)
+
+dat_parcels_summarize = 
+  dat_parcels_less |> 
+  makeValid() |> 
+  summarize(Shape_Area = sum(Shape_Area)) |> 
+  fillHoles()
+
+# owners to parcels by (1) intersection and (2) centroid nearest-neighbor
+
+dat_owners_less = dat_owners |> filter(ctyfips == 39) |> select(clip, starts_with("parcellevel"))
+
+dat_owners_less_spatial = 
+  dat_owners_less |> 
+  vect(geom = c("parcellevellongitude", "parcellevellatitude")) |> 
+  project("EPSG:3857")
+
+ggplot() + 
+  geom_spatvector(data = dat_parcels_less, fill = "red", alpha = 0.25) +
+  geom_spatvector(data = dat_owners_less_spatial, alpha = 0.25)
+
+dat_owners_parcels_extract = terra::extract(dat_parcels_less, dat_owners_less_spatial)
+
+dat_owners_parcels_extract |> head()
+
+# things to check: 
+#  are all matches 1-to-1?
+#  are some matches missing?
+#  if yes and no, then use id.y-OBJECTID pairs to join owner information onto parcels
+
+# dat_owners_parcels_relate = 
+#   terra::relate(
+#     dat_owners_less_spatial, 
+#     dat_parcels_less, 
+#     relation = "within",
+#     pairs = TRUE
+#     )
+
+# then check for conflicts
+
+# then do something to resolve conflicts
+
+# figure out land use code
+
+# check whether forest/timberland parcels are all within relevant ODF spatial definition
 
 # timer stops here
