@@ -32,11 +32,6 @@ vis =
 #   However, land use codes are complex: there are a lot, many apply, and many are missing. 
 #   Could be worth checking out land use change codes (not in this excerpt), but that's gravy. 
 
-# dat_owners_vect = 
-# reduce to parcels of interest 
-# reduce to a unique ID and parcel centroid coordinates
-# then turn into a spatvector
-
 #  Parcels
 
 dat_parcels = 
@@ -44,16 +39,6 @@ dat_parcels =
   vect
 
 #  Spatial Join
-
-#   centroid coordinates to polygon identification
-
-#   join dat_owners onto the spatially joined result
-
-#   what about calculating polygon centroids then joining on point-point NN?
-
-#  Clean?
-
-#  Export
 
 # Scratch: 
 
@@ -88,27 +73,81 @@ ggplot() +
 
 dat_owners_parcels_extract = terra::extract(dat_parcels_less, dat_owners_less_spatial)
 
+# Check the result.
+
 dat_owners_parcels_extract |> head()
 
-# things to check: 
-#  are all matches 1-to-1?
-#  are some matches missing?
-#  if yes and no, then use id.y-OBJECTID pairs to join owner information onto parcels
+# Clean up for checks and joins.
 
-# dat_owners_parcels_relate = 
-#   terra::relate(
-#     dat_owners_less_spatial, 
-#     dat_parcels_less, 
-#     relation = "within",
-#     pairs = TRUE
-#     )
+dat_owners_parcels_extract_less = 
+  dat_owners_parcels_extract |> 
+  select(ID_Parcel = OBJECTID,
+         ID_Owner = id.y)
 
-# then check for conflicts
+# Check.
 
-# then do something to resolve conflicts
+dat_owners_parcels_extract_less |> nrow() # 185168. Note multiple matches.
+dat_owners_parcels_extract_less |> drop_na(ID_Owner) |> nrow() # 185168
+dat_owners_parcels_extract_less |> drop_na(ID_Parcel) |> nrow() # 180578. So, 2.8% missing.
+
+dat_owners_parcels_extract_less |> 
+  group_by(ID_Owner) |> 
+  summarize(Count = n()) |> 
+  group_by(Count) |> 
+  summarize(Counter = n()) |> 
+  ungroup() |> 
+  arrange(desc(Counter))
+
+# 177385 owner records have only one parcel matches. So, 4.2% (?) matches are problematic. 
+
+dat_owners_parcels_extract_less |> 
+  group_by(ID_Parcel) |> 
+  summarize(Count = n()) |> 
+  group_by(Count) |> 
+  summarize(Counter = n()) |> 
+  ungroup() |> 
+  arrange(desc(Counter))
+
+# 133874 of 154058 (87%) have only one owner match. Does that line up with the previous result?
+
+# What about counting 1-1 matches?
+
+dat_owners_parcels_clean = 
+  dat_owners_parcels_extract_less |> 
+  drop_na() |> 
+  group_by(ID_Parcel) |> 
+  mutate(Count_Parcel = n()) |> 
+  group_by(ID_Owner) |> 
+  mutate(Count_Owner = n()) |> 
+  ungroup() |> 
+  filter(Count_Parcel == 1) |> 
+  filter(Count_Owner == 1)
+
+# 132902 (71%) of 185168 matches are 1-1. Centroid methods are a first suspect.
+
+# (centroid NN goes here)
+
+# Suppose these matches are fine, though. Go ahead with the join.
+
+dat_owners_parcels_join = 
+  dat_owners_parcels_clean |> 
+  select(starts_with("ID")) |> 
+  left_join(dat_owners_less |> 
+              mutate(ID_Owner = row_number()) |> 
+              select(ID_Owner, clip)) |> 
+  select(-ID_Owner) %>% # magrittr pipe matters here. 
+  left_join(dat_parcels_less |> select(ID_Parcel = OBJECTID), .) |> 
+  drop_na(clip) |> 
+  left_join(dat_owners)
+  
+# nice
 
 # figure out land use code
 
 # check whether forest/timberland parcels are all within relevant ODF spatial definition
 
+# figure out transaction join to transform ownership into a panel
+  
+#  Export
+  
 # timer stops here
