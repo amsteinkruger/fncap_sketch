@@ -144,7 +144,7 @@ dat_treemap_proportionwesternhemlock =
   as.matrix %>% 
   classify(dat_treemap, .)
 
-#  Extract both results onto notifications for later joins.
+#  Extract results onto notifications.
 
 dat_join_treemap_fortypcd = 
   dat_notifications_less %>% 

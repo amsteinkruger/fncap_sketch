@@ -6,6 +6,7 @@ library(tidyverse)
 library(readxl)
 library(writexl)
 library(magrittr)
+library(scriptName) # This will someday be useful for generating logs. 
 
 #  Spatial
 
