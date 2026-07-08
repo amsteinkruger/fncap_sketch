@@ -142,12 +142,220 @@ dat_owners_parcels_join =
   
 # nice
 
-# figure out land use code
-
 # check whether forest/timberland parcels are all within relevant ODF spatial definition
 
+# should be overlaps rather than intersects?
+
+dat_odf = 
+  "02_data/3_4_ODF_Ownership/Ownership.gdb" %>% 
+  vect %>% 
+  select(Owner = LandManager) %>% 
+  project("EPSG:3857") %>% 
+  group_by(Owner) %>% 
+  summarize %>% 
+  ungroup |> 
+  makeValid(buffer = TRUE)
+
+dat_owners_parcels_odf = 
+  dat_owners_parcels_join |> 
+  # slice_head(n = 100) |>
+  makeValid(buffer = TRUE) |> 
+  is.related(dat_odf, "intersects") |> 
+  tibble() |> 
+  rename(intersects = 1) %>%
+  bind_spat_cols(dat_owners_parcels_join, .) |> #  |> slice_head(n = 100)
+  filter(intersects)
+
+dat_owners_parcels_other = 
+  dat_owners_parcels_join |> 
+  # slice_head(n = 100) |>
+  anti_join(dat_owners_parcels_odf |> as_tibble() |> select(clip))
+
+# land use codes in forest/timberland (counts by occurrences and area)
+
+dat_owners_parcels_odf |> 
+  as_tibble() |> 
+  group_by(stateusedescription) |> 
+  summarize(count = n()) |> 
+  ungroup() |> 
+  arrange(desc(count)) |> 
+  slice_head(n = 10)
+
+# land use codes outside of forest/timberland (counts by occurrences and area)
+
+dat_owners_parcels_other |> 
+  as_tibble() |> 
+  group_by(stateusedescription) |> 
+  summarize(count = n()) |> 
+  ungroup() |> 
+  arrange(desc(count)) |> 
+  slice_head(n = 10)
+
+# owners
+
+dat_owners_parcels_odf |> 
+  as_tibble() |> 
+  group_by(owner1fullname) |> 
+  summarize(count = n()) |> 
+  ungroup() |> 
+  arrange(desc(count)) |> 
+  slice_head(n = 10)
+
+dat_owners_parcels_other |> 
+  as_tibble() |> 
+  group_by(owner1fullname) |> 
+  summarize(count = n()) |> 
+  ungroup() |> 
+  arrange(desc(count)) |> 
+  slice_head(n = 10)
+
 # figure out transaction join to transform ownership into a panel
+
+# note that this is only the file for Lane County
+
+# note a problem: if owner data came from 1/1/2025, good; if 12/31/2024, then one day of checking transactions against owners
+# since in fact it's ~8/2024, then quite a few cases of needing to check transaction parties against owners
+
+dat_transactions = 
+  "02_data/0_0_0_Cotality/Transactions/Lane_Res_clean_v2026.dta" |> 
+  read_dta()
+
+dat_transactions_less =
+  dat_transactions |> 
+  select(clip, starts_with("parcel_"), year_sold, ends_with("_1_full_name")) |> 
+  filter(year_sold %in% 2015:2024)
+
+dat_transactions_spatial = 
+  dat_transactions_less |> 
+  select(clip, starts_with("parcel_")) |> 
+  vect(geom = c("parcel_longitude", "parcel_latitude")) |> 
+  project("EPSG:3857")
   
+dat_owners_transactions_extract = 
+  dat_owners_parcels_join |> 
+  select(clip) |> 
+  terra::extract(dat_transactions_spatial) |> 
+  rename(clip_owner = clip)
+
+dat_owners_transactions_pivot = 
+  dat_transactions_less |> 
+  rename(clip_transaction = clip) |> 
+  mutate(id.y = row_number()) |> 
+  left_join(dat_owners_transactions_extract) |> 
+  select(-id.y, -starts_with("parcel_")) |> 
+  drop_na(clip_owner) # |> 
+  # pivot_wider() # Kidding?
+
+# problem: panelizing a spatvector
+# so we start with the pseudo-knowledge that each property was owned by its 2024 owner from 2015 on
+# then we add the actual knowledge that some properties were owned by other owners
+# so create both panels (pseudo, actual), left join actual onto pseudo, then reconcile columns
+# and get all of that out of spatial formats for easier handling, then join back onto spatial data for export?
+# or stick to two separate exports as in the time-variant variable case for later scripts
+  
+# full join to get incomplete panel: 2024 plus sale years
+# then arrange by year, clip_owner
+# then mutate out a lagged year_sold (plus one?) to get the start of each owner's tenure
+# then nest/expand/unnest or something to get a row for each year within each tenure w/o overlaps in tenure
+# note subannual challenge
+
+
+# dat_owners_transactions_pivot
+# dat_owners_parcels_join
+# clip_owner, clip_transaction, ID_Parcel, year, landusecode, stateusedescription, countyusedescription, owner1fullname
+# note trickery with parcel identification: depends on filtering to 1-1 matches, messy otherwise
+
+
+dat_owners_panel_set = 
+  dat_owners_parcels_join |> 
+  as_tibble() |> 
+  select(clip_owner = clip,
+         parcel = ID_Parcel,
+         landusecode,
+         stateusedescription,
+         countyusedescription,
+         owner = owner1fullname) |> 
+  mutate(year = 2024)
+
+dat_transactions_panel_set = 
+  dat_owners_transactions_pivot |> 
+  drop_na(clip_owner) |> 
+  select(clip_owner,
+         clip_transaction,
+         year = year_sold,
+         owner = seller_1_full_name)
+
+dat_panel_set = bind_rows(dat_owners_panel_set, dat_transactions_panel_set)
+
+# panel, but with missing years (no interpolation) and duplicate years (owner and transaction)
+
+dat_panel = 
+  dat_panel_set |> 
+  relocate(year, .before = owner) |> 
+  arrange(clip_owner, desc(year), parcel)
+
+# handle complex observations -- here, "handle" means "drop"
+# so, with all the other conditions in place, this:
+#  discards properties/parcels with multiple transactions in one year
+#  discards properties/parcels with a transaction in 2024
+# this is dumb but a lot easier than reconciling multiple transactions within years. 
+
+dat_panel_check = 
+  dat_panel |> 
+  group_by(clip_owner, year) |> 
+  mutate(count = n()) |> 
+  group_by(clip_owner) |> 
+  mutate(count_max = count |> max()) |> 
+  ungroup() |> 
+  mutate(count_check = (count == count_max)) |> 
+  filter(count_max == 1) |> 
+  mutate(which = ifelse(is.na(parcel), "transaction", "owner")) |> 
+  select(clip_owner, which, year, owner) |> 
+  pivot_wider(names_from = which,
+              values_from = owner) |> 
+  mutate(which = ifelse(is.na(owner), "transaction", "ownership"),
+         owner_combine = ifelse(is.na(owner), transaction, owner)) |> 
+  select(-owner, -transaction)
+
+dat_panel_complete = 
+  dat_panel_check |> 
+  select(clip_owner, year) |> 
+  distinct() |> 
+  complete(clip_owner, year) |> 
+  left_join(dat_panel_check)
+
+fun_fill = 
+  function(owner_0, owner_1){
+    
+    ifelse(!is.na(owner_0) & is.na(owner_1), 
+           owner_0,
+           owner_1)
+    
+  }
+
+dat_panel_filled =
+  dat_panel_complete |> 
+  arrange(clip_owner, desc(year)) |> 
+  group_by(clip_owner) |> 
+  mutate(owner_fill = accumulate(owner_combine, ~ fun_fill(.x, .y))) |> 
+  ungroup() |> 
+  mutate(owner = owner_fill,
+         which = ifelse(is.na(which), "inferred", which)) |> 
+  select(-c(owner_combine, owner_fill))
+
+# bottom line for now: with 72% of owner records accounted for,
+# 23% of owner records relate to one or more sales.
+# but this is with only residential transactions.
+# so, this is useful for the gentrification stuff
+# but also could resolve the snapshot-panel dilemma for timber supply accounting. 
+# open questions: what's going on with the 28% of difficult owner records? 
+# and what would it take to get all transactions or all timberland transactions?
+# resolve land use code stuff before proceeding to emails
+#  what proportion of ODF-designated private forest/timberland is accounted for in parcels?
+#  "" but for ownership records
+#  what proportion of parcels in forest-related land uses falls outside of ODF-designated private forest/timberland?
+#  who are the owners of parcels in forest/timberland? Do they roughly match to notifications?
+
 #  Export
-  
+
 # timer stops here
