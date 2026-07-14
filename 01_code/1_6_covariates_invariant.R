@@ -72,50 +72,47 @@ dat_join_slope =
   rename(Slope = 2) %>%
   as_tibble
 
-# Roughness
-
-dat_roughness = dat_elevation %>% terrain(v = "roughness")
-
-dat_join_roughness = 
-  dat_notifications_less %>% 
-  extract(x = dat_roughness,
-          y = .,
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE,
-          na.rm = TRUE) %>%
-  rename(Roughness = 2) %>%
-  as_tibble
-
 # Riparian Zones and Slopes
 
 #  Flow Lines
 
-# dat_fpa_1 =
-#   "02_data/1_6_3_FPA/Hydrography_Flow_Line.geojson" %>%
-#   vect %>% # 5'
-#   select(OBJECTID,
-#          FishPresence,
-#          SSBTStatus,
-#          DistanceToFish,
-#          DistanceToSSBT,
-#          Barrier,
-#          FPAStreamSize,
-#          StreamName,
-#          StreamPermanence,
-#          StreamTermination,
-#          StreamWaterUse,
-#          HUC8Name,
-#          HUC8) %>%
-#   crop(dat_bounds %>% project("EPSG:4326")) %>% # 112'
-#   project("EPSG:2992") %>%
-#   intersect(dat_notifications_less, .) %>%
-#   select(UID) %>%
-#   as_tibble %>%
-#   mutate(FPA_1 = 1) %>%
-#   left_join(dat_notifications_less, .) %>% 
-#   distinct %>% 
-#   mutate(FPA_1 = FPA_1 %>% replace_na(0))
+dat_join_riparian =
+  # "02_data/1_6_3_FPA/Hydrography_Flow_Line.geojson" %>%
+  "02_data/1_6_3_FPA/Hydrography_Flow_Line.gdb" %>%
+  vect %>% # 5'
+  select(FPAStreamSize,
+         StreamName,
+         StreamPermanence,
+         StreamTermination,
+         StreamWaterUse,
+         FishPresence,
+         SSBTStatus,
+         DistanceToFish,
+         DistanceToSSBT) %>%
+  crop(dat_bounds) %>% 
+  # This is where you could split the spatvector by stream attributes for different buffer widths. 
+  buffer(20) %>% 
+  # Find intersections. 
+  intersect(dat_notifications, .) %>%
+  # Combine intersections. This is important because intersections can overlap. 
+  group_by(UID, Acres_1) %>%
+  summarize %>%
+  ungroup %>%
+  # Calculate areas of intersections. 
+  mutate(Acres_Riparian = expanse(., unit = "ha") * 2.47105381) %>% 
+  as_tibble %>% 
+  # Calculate proportional areas of intersections.
+  mutate(Acres_Riparian_Proportion = Acres_Riparian / Acres_1) %>% 
+  # Correct for one oddball case.
+  mutate(Acres_Riparian_Proportion = ifelse(Acres_Riparian_Proportion > 1, 1, Acres_Riparian_Proportion)) %>% 
+  # Tag on to all notifications and add a binary variable.
+  left_join(dat_notifications_less, .) %>% 
+  mutate(Acres_Riparian = Acres_Riparian %>% replace_na(0),
+         Acres_Riparian_Proportion = Acres_Riparian_Proportion %>% replace_na(0),
+         Acres_Riparian_Binary = ifelse(Acres_Riparian > 0, 1, 0)) %>% 
+  # Tidy up.
+  as_tibble %>% 
+  select(-Acres_1)
 
 #  Sediment Source Areas
 
@@ -301,7 +298,7 @@ dat_notifications_out =
   left_join(dat_join_elevation) %>% 
   left_join(dat_join_slope) %>% 
   left_join(dat_join_roughness) %>% 
-  # FPA
+  left_join(dat_join_riparian) %>% 
   left_join(dat_join_pyrome) %>% 
   left_join(dat_join_districts) %>%
   left_join(dat_join_counties) %>% 

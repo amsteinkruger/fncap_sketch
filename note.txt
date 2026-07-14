@@ -12,6 +12,7 @@ The structure of transaction data and cleaning code suggest a parcels-ownership-
 A relatively effort-intensive next step would be to test that with coastal residential properties/transactions.
 
 For that: is the clip (CLIP?) in the sales data the same as the one in the ownership data? (Deeds and taxes?)
+ - really doesn't seem like it. Could be worth checking previousclip in case that explains something. 
 
 Why transactions? Sales would be a less weird word to use. 
 
