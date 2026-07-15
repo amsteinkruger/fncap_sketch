@@ -8,6 +8,9 @@ dat_clean =
   # Reduce to pre-2025. Note that this should be resolved in 1_8 instead. 
   filter(Year < 2025) %>% 
   # Handle percentile restrictions. 
+  
+  # Could make more sense to keep Douglas fir and western hemlock combined (or combine them) for restrictions. 
+  
   mutate(Restrict_Acres_Lower = Acres_1 > quantile(Acres_1, 0.01),
          Restrict_Acres_Upper = Acres_1 < quantile(Acres_1, 0.99),
          Restrict_MBF_Lower = MBF_1 > quantile(MBF_1, 0.01),
