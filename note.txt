@@ -38,12 +38,12 @@ The bottom line for 2YP results:
        - Bonus: business mapping. 
  - (x) ODF regions now. 
  - (x) Include western hemlock (and remember all the related price wrangling). 
-        - ( ) But hemlock stumpage is missing. 
- - ( ) Get FPA layers (streams, slides) back in.
+        - (x) But hemlock stumpage is missing. 
+ - (x) Get FPA layers (streams, slides) back in.
  - ( ) Include alternative lumber price series.
- - ( ) Check whether it's reasonable to use the lumber PPI for timber to avoid a shortened time series. 
+ - (x) Check whether it's reasonable to use the lumber PPI for timber to avoid a shortened time series. 
  - ( ) Kick the 2025 drop back into 1_8.
- - ( ) Fix the "fire proportion" variable and bring it through. 
+ - (x) Fix the "fire proportion" variable and bring it through. 
  - (~) Extend lags, especially for prices.
  - (x) Add commercial thinning and salvage. 
  - (x) Switch from restrictions on harvest detection model to:

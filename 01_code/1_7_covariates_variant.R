@@ -95,7 +95,7 @@ dat_join_mtbs_0 =
   as_tibble %>% 
   mutate(Quarters = Year * 4 + Quarter,
          Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:20, \(k) ~ .x - k))) %>% 
+         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
   select(UID, YearQuarter, starts_with("Quarters_")) %>% 
   pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
                names_to = "Lag",
@@ -117,7 +117,7 @@ dat_join_mtbs_15 =
   as_tibble %>% 
   mutate(Quarters = Year * 4 + Quarter,
          Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:20, \(k) ~ .x - k))) %>% 
+         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
   select(UID, YearQuarter, starts_with("Quarters_")) %>% 
   pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
                names_to = "Lag",
@@ -139,7 +139,7 @@ dat_join_mtbs_30 =
   as_tibble %>% 
   mutate(Quarters = Year * 4 + Quarter,
          Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:20, \(k) ~ .x - k))) %>% 
+         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
   select(UID, YearQuarter, starts_with("Quarters_")) %>% 
   pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
                names_to = "Lag",
@@ -152,22 +152,41 @@ dat_join_mtbs_30 =
 
 #  Proportion within fire perimeters. Skipping this to avoid geospatial pain. 
 
-# dat_join_mtbs_proportion = 
-#   dat_notifications_less %>% 
-#   left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
-#   full_join(dat_notifications_quarters) %>% 
-#   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-#   intersect(dat_mtbs) %>% 
-#   filter(Year_MTBS > (Year_MTBS - 30)) %>% 
-#   filter(Year_MTBS < Year | (Year_MTBS == Year & Quarter_MTBS < Quarter)) %>% 
-#   select(UID, YearQuarter, Acres_1) %>% 
-#   aggregate(by = c("UID", "YearQuarter", "Acres_1")) %>% 
-#   mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381,
-#          Fire_Proportion = Acres_Burnt / Acres_1) %>% 
-#   select(UID, YearQuarter, Fire_Proportion) %>% 
-#   as_tibble %>% 
-#   # Band-Aid for upstream polygon handling issues. Remember to fix those. 
-#   mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
+dat_join_mtbs_proportion =
+  dat_notifications_less %>% 
+  left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
+  full_join(dat_notifications_quarters) %>% 
+  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
+  intersect(dat_mtbs) %>% 
+  mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381) %>% # Get acres burnt.
+  # Dissolve multiple fires in the same notification in the same quarter.
+  #  This doesn't happen empirically, does it?
+  group_by(UID,
+           YearQuarter,
+           Year,
+           Quarter,
+           Year_MTBS,
+           Quarter_MTBS,
+           Acres_1) %>% 
+  summarize(Acres_Burnt = sum(Acres_Burnt)) %>% 
+  ungroup %>% 
+  #  This does not happen empirically.
+  as_tibble %>% 
+  mutate(Quarters = Year * 4 + Quarter,
+         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
+         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
+  select(UID, YearQuarter, starts_with("Quarters_"), starts_with("Acres_")) %>% 
+  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
+               names_to = "Lag",
+               values_to = "Quarters") %>% 
+  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
+         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
+  filter(Check) %>% 
+  mutate(Fire_Proportion = Acres_Burnt / Acres_1) %>% 
+  group_by(UID, YearQuarter, Lag) %>% 
+  summarize(Fire_Proportion = max(Fire_Proportion)) %>% # Using max() is subjective. 
+  ungroup %>% 
+  mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
 
 # Combine
 
@@ -177,6 +196,7 @@ dat_join_mtbs =
   left_join(dat_join_mtbs_30) %>% 
   mutate(Fire_15_Doughnut = Fire_15 - Fire_0,
          Fire_30_Doughnut = Fire_30 - Fire_15) %>% 
+  left_join(dat_join_mtbs_proportion) %>% 
   pivot_wider(names_from = Lag,
               names_prefix = "Lag_",
               values_from = starts_with("Fire")) %>% 
@@ -211,7 +231,7 @@ dat_join_vpd =
   group_by(UID, Year_Quarter) %>% 
   summarize(VPD = mean(VPD, na.rm = TRUE)) %>% 
   group_by(UID) %>% 
-  mutate(across(VPD, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  mutate(across(VPD, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
   ungroup
 
 # Temperature
@@ -244,7 +264,7 @@ dat_join_tmean =
   group_by(UID, Year_Quarter) %>% 
   summarize(TMean = mean(TMean, na.rm = TRUE)) %>% 
   group_by(UID) %>% 
-  mutate(across(TMean, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  mutate(across(TMean, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
   ungroup
 
 
@@ -276,7 +296,7 @@ dat_join_tmax =
   group_by(UID, Year_Quarter) %>% 
   summarize(TMax = mean(TMax, na.rm = TRUE)) %>% 
   group_by(UID) %>% 
-  mutate(across(TMax, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  mutate(across(TMax, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
   ungroup
 
 # Precipitation
@@ -307,7 +327,7 @@ dat_join_ppt =
   group_by(UID, Year_Quarter) %>% 
   summarize(PPT = mean(PPT, na.rm = TRUE)) %>% 
   group_by(UID) %>% 
-  mutate(across(PPT, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  mutate(across(PPT, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
   ungroup
 
 # CWD
@@ -336,87 +356,84 @@ dat_join_cwd =
             relationship = "many-to-many") %>% 
   mutate(Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
   group_by(UID) %>% 
-  mutate(across(CWD, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20)))) %>% 
+  mutate(across(CWD, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
   ungroup
 
 # Prices
 
-#  Indexes
+#  Producer Price Index, BLS via FRED
+#   Note that this is the only available timber/lumber series with reasonable coverage. 
 
-#   PPI (Timber)
-
-dat_ppi_timber = 
-  "02_data/1_7_2_BLS/data_ppi_timber.csv" %>% 
+dat_ppi = 
+  "02_data/1_7_2_BLS/data_ppi_lumber.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,
          Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
          Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  filter(Year %in% 2012:2025) %>% # Note that this product originates in 2011.
+  filter(Year %in% 2005:2025) %>% 
   group_by(Year_Quarter) %>% 
-  summarize(PPI_Timber = WPU08510502 %>% mean) %>% 
+  summarize(PPI_Timber = WPU08 %>% mean) %>% 
   ungroup %>% 
   mutate(Check = Year_Quarter == max(Year_Quarter),
          Reference = ifelse(Check, PPI_Timber, NA) %>% max(na.rm = TRUE),
          Factor_PPI_Timber = Reference / PPI_Timber) %>% 
   select(Year_Quarter, Factor_PPI_Timber)
 
-#   PPI (Lumber)
-
-dat_ppi_lumber =
-  "02_data/1_7_2_BLS/data_ppi_lumber.csv" %>%
-  read_csv %>%
-  mutate(Year = observation_date %>% year,
-         Month = observation_date %>% month,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>%
-  filter(Year %in% 2010:2025) %>%
-  group_by(Year_Quarter) %>%
-  summarize(PPI_Lumber = WPU0811 %>% max) %>%
-  ungroup %>%
-  mutate(Check = Year_Quarter == max(Year_Quarter),
-         Reference = ifelse(Check, PPI_Lumber, NA) %>% max(na.rm = TRUE),
-         Factor_PPI_Lumber = Reference / PPI_Lumber) %>%
-  select(Year_Quarter, Factor_PPI_Lumber)
-
-#   Join.
-
-dat_ppi = full_join(dat_ppi_lumber, dat_ppi_timber)
-
-#   Prices
-
-#    Stumpage, LogLines/FastMarkets
-
-# add Western hemlock here
+#  Stumpage, LogLines/FastMarkets
 
 dat_price_stumpage = 
   "02_data/1_7_3_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
-  rename(Stumpage_Nominal = 2) %>% 
+  rename(Stumpage_DouglasFir_Nominal = 2,
+         Stumpage_WesternHemlock_Nominal = 3) %>% 
   mutate(Year_Quarter = 
            paste0(str_sub(Quarter, 1, 4), 
                   "_", 
                   str_sub(Quarter, -2, -1))) %>% 
-  select(Year_Quarter, Stumpage_Nominal) %>% 
-  filter(Year_Quarter > "2011_Q4" & Year_Quarter < "2025_Q1") %>% 
+  select(Year_Quarter, starts_with("Stumpage_")) %>% 
+  filter(Year_Quarter > "2004_Q4" & Year_Quarter < "2025_Q1") %>% 
   left_join(dat_ppi) %>% 
-  mutate(Stumpage_Real = Stumpage_Nominal * Factor_PPI_Timber) %>% 
-  select(Year_Quarter, Stumpage = Stumpage_Real) %>% 
+  mutate(Stumpage_DouglasFir_Real = Stumpage_DouglasFir_Nominal * Factor_PPI_Timber,
+         Stumpage_WesternHemlock_Real = Stumpage_WesternHemlock_Nominal * Factor_PPI_Timber) %>% 
+  select(Year_Quarter, starts_with("Stumpage_") & ends_with("_Real")) %>% 
   arrange(Year_Quarter) %>% 
-  mutate(across(Stumpage, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20))))
+  mutate(across(starts_with("Stumpage_"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40))))
 
-#   Lumber Prices, FastMarkets
-
-# add product forms and/or Western hemlock here
+#  Lumber Prices, FastMarkets
 
 dat_price_lumber =
-  "02_data/1_7_3_FastMarkets/data_pull_filter.csv" %>%
+  "02_data/1_7_3_FastMarkets/data_lumber.csv" %>%
   read_csv %>%
-  select(1:2, Lumber_Nominal = 4) %>% 
+  rename(Logs_Sawmill_2_Columbia = 2,
+         Logs_Sawmill_3_Columbia = 3,
+         Logs_Sawmill_4_Columbia = 4,
+         Logs_Sawmill_2_Southern = 5,
+         Logs_Sawmill_3_Southern = 6,
+         Logs_Sawmill_4_Southern = 7,
+         Logs_Pulp_Southern = 8,
+         Lumber_Kiln_2x6_20 = 9,
+         Lumber_Kiln_2x8_20 = 10,
+         Lumber_Kiln_2x10_20 = 11,
+         Lumber_Kiln_2x12_20 = 12,
+         Lumber_Kiln_2x6_RL = 13,
+         Lumber_Kiln_2x8_RL = 14,
+         Lumber_Kiln_2x10_RL = 15,
+         Lumber_Kiln_2x12_RL = 16,
+         Lumber_Green_2x6_20 = 17,
+         Lumber_Green_2x8_20 = 18,
+         Lumber_Green_2x10_20 = 19,
+         Lumber_Green_2x12_20 = 20,
+         Lumber_Green_2x6_RL = 21,
+         Lumber_Green_2x8_RL = 22,
+         Lumber_Green_2x10_RL = 23,
+         Lumber_Green_2x12_RL = 24) %>% 
+  mutate("means by first two words of string names") %>% 
+  mutate("quarters")
   mutate(Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
          Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
   select(Year_Quarter, Lumber_Nominal) %>% 
-  filter(Year_Quarter > "2009_Q4" & Year_Quarter < "2025_Q1") %>% 
+  filter(Year_Quarter > "2004_Q4" & Year_Quarter < "2025_Q1") %>% 
   left_join(dat_ppi) %>% 
   mutate(Lumber_Real = Lumber_Nominal * Factor_PPI_Lumber) %>% 
   select(Year_Quarter, Lumber = Lumber_Real) %>% 
@@ -424,7 +441,7 @@ dat_price_lumber =
   summarize(across(everything(), ~ mean(.x))) %>% 
   ungroup %>% 
   arrange(Year_Quarter) %>% 
-  mutate(across(Lumber, setNames(lapply(1:20, \(k) ~ lag(.x, k)), paste0("Lag_", 1:20))))
+  mutate(across(Lumber, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40))))
 
 #  Join
 

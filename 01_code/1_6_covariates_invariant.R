@@ -12,7 +12,6 @@ time_start = Sys.time()
 
 #    Elevation
 #    Slope
-#    Roughness
 #    Flow Lines
 #    Steep Slopes
 #    Pyromes
@@ -297,7 +296,6 @@ dat_notifications_out =
   # Growth
   left_join(dat_join_elevation) %>% 
   left_join(dat_join_slope) %>% 
-  left_join(dat_join_roughness) %>% 
   left_join(dat_join_riparian) %>% 
   left_join(dat_join_pyrome) %>% 
   left_join(dat_join_districts) %>%
