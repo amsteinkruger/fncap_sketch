@@ -61,7 +61,7 @@ dat_notifications_ndvi_join =
 
 dat_notifications_out = 
   dat_notifications_variant %>% 
-  mutate(Year_Quarter = YearQuarter %>% str_remove("Q")) %>% 
+  mutate(Year_Quarter = Year_Quarter %>% str_remove("Q")) %>% 
   left_join(dat_notifications_ndvi_join) %>% 
   select(UID, Year_Quarter, NDVI_Change) %>% 
   group_by(UID) %>% 
@@ -71,9 +71,10 @@ dat_notifications_out =
   select(-Completion) %>% 
   rename(QuarterCompletion = Year_Quarter) %>% 
   inner_join(dat_notifications, .) %>% 
-  left_join(dat_notifications_variant %>%
-              mutate(Year_Quarter = YearQuarter %>% str_remove("Q"))) %>%
-  select(-YearQuarter) %>%
+  filter(QuarterCompletion < "2025_1") %>% 
+  left_join(dat_notifications_variant %>% 
+              mutate(Year_Quarter = Year_Quarter %>% str_remove("Q")),
+            by = c("UID", "QuarterCompletion" = "Year_Quarter")) %>%
   relocate(QuarterCompletion, .after = DateCompletion) %T>%
   # Export with spatial data.
   writeVector("03_intermediate/dat_notifications_1_8.gdb") %>%

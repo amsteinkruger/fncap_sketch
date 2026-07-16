@@ -1,3 +1,7 @@
+2026/07/15
+
+Grab PRISM data, etc. for longer (>5Y) lags.
+
 2026/07/03
 
 --- Begin Cotality ---
@@ -40,7 +44,7 @@ The bottom line for 2YP results:
  - (x) Include western hemlock (and remember all the related price wrangling). 
         - (x) But hemlock stumpage is missing. 
  - (x) Get FPA layers (streams, slides) back in.
- - ( ) Include alternative lumber price series.
+ - (x) Include alternative lumber price series.
  - (x) Check whether it's reasonable to use the lumber PPI for timber to avoid a shortened time series. 
  - ( ) Kick the 2025 drop back into 1_8.
  - (x) Fix the "fire proportion" variable and bring it through. 
