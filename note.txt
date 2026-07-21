@@ -1,5 +1,6 @@
 2026/07/15
 
+Clean up scripts >1.
 Grab PRISM data, etc. for longer (>5Y) lags.
 
 2026/07/03
@@ -30,9 +31,6 @@ The bottom line for 2YP results:
  - Craggit SE might be computed both by the delta method (Wu et al. 2026) and by bootstrapping.
 
  - Notifications on 07/01. 
- - (x) Roads now, and remember the inventory. 
- - (x) PRISM now. Including VPDMax, PPT, TMax, TMean.
- - (x) John's input (CWD?). Note annual problem. 
  - (o) John's input on species (GNN). Problem: from rast of categories into layered rasterstack
  - (o) Large Fire Probability now (but last). 
  - (o) Mills now, and remember multiple forms of state and federal licensing. 
@@ -40,17 +38,7 @@ The bottom line for 2YP results:
     - Forisk might be accessible through a demo (or through asking via DK).
     - DEQ Online returns a reasonable number of results, but these require .pdf wrangling for NAICS, periods. 
        - Bonus: business mapping. 
- - (x) ODF regions now. 
- - (x) Include western hemlock (and remember all the related price wrangling). 
-        - (x) But hemlock stumpage is missing. 
- - (x) Get FPA layers (streams, slides) back in.
- - (x) Include alternative lumber price series.
- - (x) Check whether it's reasonable to use the lumber PPI for timber to avoid a shortened time series. 
- - ( ) Kick the 2025 drop back into 1_8.
- - (x) Fix the "fire proportion" variable and bring it through. 
- - (~) Extend lags, especially for prices.
- - (x) Add commercial thinning and salvage. 
- - (x) Switch from restrictions on harvest detection model to:
+
         (1) assign harvest to quarter with least interannual NDVI change by quarter
         (2) restrict to polygons with any NDVI decrease
      -  Point being, this is a model-free approach. 
@@ -64,7 +52,6 @@ The bottom line for 2YP results:
  - Set up the data smorgasboard: for n in [1, N], univariate, space, time, bivariate for n variables. 
 
 fix stupid filenames (dat_ vs data_) for climate vars
-figure out the yearquarter/year_quarter thing
 
 See LandTrendr's GEE implementation to work out state of the art without starting from scratch. 
 
