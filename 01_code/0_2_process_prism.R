@@ -1,5 +1,7 @@
 # Process monthly climate data from PRISM.
 
+#  Note that compression is handled with /vsizip/ via GDAL. 
+
 #  Set up bounds. 
 
 dat_bounds_prism = "03_intermediate/dat_bounds.gdb" %>% vect %>% project("EPSG:4269")
@@ -7,23 +9,22 @@ dat_bounds_prism = "03_intermediate/dat_bounds.gdb" %>% vect %>% project("EPSG:4
 #  Vapor Pressure Deficit, Maximum (VPD)
 
 dat_vpd = 
-  list.files("02_data/0_2_PRISM/VPD_Compressed") %>% 
+  list.files("02_data/0_2_PRISM/VPD") %>% 
   tibble(file = .) %>% 
-  mutate(path_compressed = paste0("02_data/0_2_PRISM/VPD_Compressed/", file),
-         path_uncompressed = paste0("02_data/0_2_PRISM/VPD_Uncompressed/", file) %>% str_sub(1, -5),
-         year = file %>% str_sub(-10, -7) %>% as.numeric,
+  mutate(year = file %>% str_sub(-10, -7) %>% as.numeric,
          month = file %>% str_sub(-6, -5) %>% as.numeric,
-         layer = paste0("VPD_", year, "_", month)) %>% 
+         layer = paste0("VPD_", year, "_", month),
+         path = 
+           paste0(
+             "/vsizip/02_data/0_2_PRISM/VPD/",
+             file,
+             "/",
+             file %>% str_replace_all(".zip", ".tif")
+             )) %>% 
   arrange(year, month) %>% 
-  filter(year %in% 2010:2025) %T>% 
-  # filter(month %in% 4:7) %T>% 
+  filter(year %in% 2005:2025) %>% 
   mutate(data = 
-           map2(.x = path_compressed, 
-                .y = path_uncompressed,
-                .f = ~ unzip(.x, exdir = .y))) %>% 
-  mutate(data = 
-           path_uncompressed %>% 
-           paste0(., "/", str_replace(file, ".zip", ".tif")) %>% 
+           path %>% 
            map(rast) %>% 
            map(crop, dat_bounds_prism, mask = TRUE) %>% 
            map2(.x = ., 
@@ -41,23 +42,22 @@ dat_vpd =
 # Precipitation (PPT)
 
 dat_ppt = 
-  list.files("02_data/0_2_PRISM/PPT_Compressed") %>% 
+  list.files("02_data/0_2_PRISM/PPT") %>% 
   tibble(file = .) %>% 
-  mutate(path_compressed = paste0("02_data/0_2_PRISM/PPT_Compressed/", file),
-         path_uncompressed = paste0("02_data/0_2_PRISM/PPT_Uncompressed/", file) %>% str_sub(1, -5),
-         year = file %>% str_sub(-10, -7) %>% as.numeric,
+  mutate(year = file %>% str_sub(-10, -7) %>% as.numeric,
          month = file %>% str_sub(-6, -5) %>% as.numeric,
-         layer = paste0("PPT_", year, "_", month)) %>% 
+         layer = paste0("PPT_", year, "_", month),
+         path = 
+           paste0(
+             "/vsizip/02_data/0_2_PRISM/PPT/",
+             file,
+             "/",
+             file %>% str_replace_all(".zip", ".tif")
+           )) %>% 
   arrange(year, month) %>% 
-  filter(year %in% 2010:2025) %T>% 
-  # filter(month %in% 4:7) %T>% 
+  filter(year %in% 2005:2025) %>% 
   mutate(data = 
-           map2(.x = path_compressed, 
-                .y = path_uncompressed,
-                .f = ~ unzip(.x, exdir = .y))) %>% 
-  mutate(data = 
-           path_uncompressed %>% 
-           paste0(., "/", str_replace(file, ".zip", ".tif")) %>% 
+           path %>% 
            map(rast) %>% 
            map(crop, dat_bounds_prism, mask = TRUE) %>% 
            map2(.x = ., 
@@ -75,23 +75,22 @@ dat_ppt =
 # Temperature, Maximum (TMax)
 
 dat_tmax = 
-  list.files("02_data/0_1_2_PRISM/TMax_Compressed") %>% 
+  list.files("02_data/0_2_PRISM/TMax") %>% 
   tibble(file = .) %>% 
-  mutate(path_compressed = paste0("02_data/0_2_PRISM/TMax_Compressed/", file),
-         path_uncompressed = paste0("02_data/0_2_PRISM/TMax_Uncompressed/", file) %>% str_sub(1, -5),
-         year = file %>% str_sub(-10, -7) %>% as.numeric,
+  mutate(year = file %>% str_sub(-10, -7) %>% as.numeric,
          month = file %>% str_sub(-6, -5) %>% as.numeric,
-         layer = paste0("TMax_", year, "_", month)) %>% 
+         layer = paste0("TMax_", year, "_", month),
+         path = 
+           paste0(
+             "/vsizip/02_data/0_2_PRISM/TMax/",
+             file,
+             "/",
+             file %>% str_replace_all(".zip", ".tif")
+           )) %>% 
   arrange(year, month) %>% 
-  filter(year %in% 2010:2025) %T>% 
-  # filter(month %in% 4:7) %T>% 
+  filter(year %in% 2005:2025) %>% 
   mutate(data = 
-           map2(.x = path_compressed, 
-                .y = path_uncompressed,
-                .f = ~ unzip(.x, exdir = .y))) %>% 
-  mutate(data = 
-           path_uncompressed %>% 
-           paste0(., "/", str_replace(file, ".zip", ".tif")) %>% 
+           path %>% 
            map(rast) %>% 
            map(crop, dat_bounds_prism, mask = TRUE) %>% 
            map2(.x = ., 
@@ -109,23 +108,22 @@ dat_tmax =
 # Temperature, Mean (TMean)
 
 dat_tmean = 
-  list.files("02_data/0_1_2_PRISM/TMean_Compressed") %>% 
+  list.files("02_data/0_2_PRISM/TMean") %>% 
   tibble(file = .) %>% 
-  mutate(path_compressed = paste0("02_data/0_2_PRISM/TMean_Compressed/", file),
-         path_uncompressed = paste0("02_data/0_2_PRISM/TMean_Uncompressed/", file) %>% str_sub(1, -5),
-         year = file %>% str_sub(-10, -7) %>% as.numeric,
+  mutate(year = file %>% str_sub(-10, -7) %>% as.numeric,
          month = file %>% str_sub(-6, -5) %>% as.numeric,
-         layer = paste0("TMean_", year, "_", month)) %>% 
+         layer = paste0("TMean_", year, "_", month),
+         path = 
+           paste0(
+             "/vsizip/02_data/0_2_PRISM/TMean/",
+             file,
+             "/",
+             file %>% str_replace_all(".zip", ".tif")
+           )) %>% 
   arrange(year, month) %>% 
-  filter(year %in% 2010:2025) %T>% 
-  # filter(month %in% 4:7) %T>% 
+  filter(year %in% 2005:2025) %>% 
   mutate(data = 
-           map2(.x = path_compressed, 
-                .y = path_uncompressed,
-                .f = ~ unzip(.x, exdir = .y))) %>% 
-  mutate(data = 
-           path_uncompressed %>% 
-           paste0(., "/", str_replace(file, ".zip", ".tif")) %>% 
+           path %>% 
            map(rast) %>% 
            map(crop, dat_bounds_prism, mask = TRUE) %>% 
            map2(.x = ., 

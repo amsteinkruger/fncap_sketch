@@ -426,27 +426,6 @@ dat_use_really =
       )
   )
 
-
-  # Price_Logs_DouglasFir_Sawmill_Lag_1
-  # Price_Logs_DouglasFir_Pulp_Lag_1
-  # Price_Lumber_HemFir_Kiln_20_Lag_1
-  # Price_Lumber_HemFir_Kiln_RL_Lag_1
-  # Price_Lumber_DouglasFir_Green_20_Lag_1
-  # Price_Lumber_DouglasFir_Green_RL_Lag_1
-  # Price_Composite_Lag_1
-  # Price_Composite_DouglasFir_Green_Lag_1
-  # Rate_Lag_1
-  # VPD_Lag_1
-  # PPT_Lag_1
-  # TMean_Lag_1
-  # TMax_Lag_1
-  # CWD_Lag_1
-  
-# Drop extraneous lags. 
-
-# keep if it ends with _Lag_# or drop if it otherwise includes _Lag_
-# love regex
-
 # Estimate.
 
 mod_1 = 
