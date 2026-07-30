@@ -4,17 +4,17 @@
 
 #  Packages
 
-library(tidyverse) # General
-library(gt) # Tables
-library(stargazer) # Regression Tables
-library(magrittr) # Pipes
-
-color_beav = "#D73F09" # In the absence of a beav theme.
+# library(tidyverse) # General
+# library(gt) # Tables
+# library(stargazer) # Regression Tables
+# library(magrittr) # Pipes
+# 
+# color_beav = "#D73F09" # In the absence of a beav theme.
 
 #  Data
 
 dat_condition =
-  "data/OR_COND.csv" %>%
+  "02_data/1_5_1_FIA/OR_COND.csv" %>%
   read_csv %>%
   select(INVYR,
          PLT_CN,
@@ -23,17 +23,74 @@ dat_condition =
          FORTYPCD,
          SITECLCD)
 
+# OWNGRPCD
+# STDAGE
+# SITECLCD
+# CONDPROP_UNADJ
+
+
+dat_condition_alt = 
+  "02_data/1_5_1_FIA/OR_COND.csv" %>%
+  read_csv %>%
+  filter(OWNGRPCD == 40) %>% 
+  filter(STDAGE %!in% c(0, 998, 999))
+  
+
 dat_tree =
-  "data/OR_TREE.csv" %>%
+  "02_data/1_5_1_FIA/OR_TREE.csv" %>%
   read_csv %>%
   select(INVYR,
          PLT_CN,
          TRE_CN = CN,
          CONDID,
          SPGRPCD)
+  
+dat_tree_alt =
+  "02_data/1_5_1_FIA/OR_TREE.csv" %>%
+  read_csv # %>% 
+  
+dat_tree_alt = 
+  dat_tree %>% 
+  select(
+    INVYR,
+    PLT_CN,
+    CONDID,
+    TRE_CN = CN,
+    TPA_UNADJ,
+    BHAGE,
+    VOLBFNET,
+    SPCD) %>% 
+  # filter(!is.na(BHAGE)) %>% 
+  filter(!is.na(VOLBFNET)) %>% 
+  filter(SPCD %in% c(201, 263)) # %>% 
+  left_join(
+    dat_condition %>% 
+      select(
+        INVYR,
+        PLT_CN,
+        CONDID,
+        OWNGRPCD,
+        SITECLCD
+      )
+    ) %>% 
+  filter(OWNGRPCD == 40) # %>% 
+
+# substantial problem: what to do about multiple ages at the condition level?
+# condition stdage with tree volbfnet?
+# weighted mean of tree bhage?
+# condition stdage with all tree volbfnet so that bhage isn't a limiting factor?
+#  this might be most useful in retaining data
+
+  group_by(INVYR, PLT_CN, CONDID, SPCD, OWNGRPCD, SITECLCD)
+  
+# couple things:
+#  need another filter for forestland/timberland?
+#  does reducing by BHAGE mean TPA_UNADJ is wrong b/c BHAGE trees are a subsample?
+#  also check whether FERNS is in scribner or the other system for FIA variable selection
+
 
 dat_growth =
-  "data/OR_TREE_GRM_ESTN.csv" %>%
+  "02_data/1_5_1_FIA/OR_TREE_GRM_ESTN.csv" %>%
   read_csv %>%
   select(INVYR,
          PLT_CN,
@@ -78,7 +135,7 @@ dat_growth =
          MBF_Annual = ANN_NET_GROWTH_ACRE_PLOT / 1000) %>% 
   select(-ends_with("_PLOT")) %T>% 
   # Export
-  write_csv("data/dat_processed.csv")
+  write_csv("03_intermediate/data_fia_growth.csv")
 
 dat = dat_growth # Band-Aid for name issues
 
