@@ -1,13 +1,15 @@
 2026/07/28
 
+Bonus: fix Mean_1Y variables. 
+
 1. (x) Update PRISM. Backdate, really.
     - (x) Remember that this means rerunning prep scripts. 
     - (x) Also remember to replace the extract/read/write workflow with all-in-one reading for smaller files. 
-2. Visualize lags and means for prices.
+2. (~) Visualize lags and means for prices.
 3. Ditto climate/weather, but as distributions to subsume space?
 (x) Bonus: housekeeping for scripts >1. 
-4. County models with pyrome dummies. 
-5. Actually model growth.
+4. (x) County models with pyrome dummies. 
+5. (~) Actually model growth.
 6. Work out something with Landtrendr.
 7. Fun coastal stuff.
 8. Fun fisheries stuff. 

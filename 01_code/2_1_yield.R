@@ -527,7 +527,9 @@ mod_1 =
           #  5-Year Mean
           # CWD_Mean_5Y +
           #  10-Year Mean
-          CWD_Mean_10Y
+          CWD_Mean_10Y +
+          # Pyrome
+          Pyrome
           )
 
 mod_2 = 
@@ -560,7 +562,9 @@ mod_2 =
           TMean_Mean_10Y +
           TMax_Mean_10Y +
           # CWD
-          CWD_Mean_10Y |
+          CWD_Mean_10Y +
+          # Pyrome
+          Pyrome |
           County)
 
 mod_3 = 
@@ -593,7 +597,9 @@ mod_3 =
           TMean_Mean_10Y +
           TMax_Mean_10Y +
           # CWD
-          CWD_Mean_10Y |
+          CWD_Mean_10Y +
+          # Pyrome
+          Pyrome |
           County + Landowner)
 
 modelsummary(
@@ -615,13 +621,13 @@ fun_model =
       feols(MBF_Acre_Both ~ 
               # Landowner-varying
               Landowner_MBF_Percentile +
-              Landowner_MBF_Standing +
+              # Landowner_MBF_Standing +
               # Space-varying
               SiteClassMode +
               Elevation +
               Slope + 
-              Distance_Road +
-              Distance_Mill +
+              # Distance_Road +
+              # Distance_Mill +
               Distance_Place +
               ProportionDouglasFirTree +
               Acres_Riparian_Proportion +
@@ -630,17 +636,18 @@ fun_model =
               Rate_Mean_10Y +
               # Time- and space-varying
               #  MTBS
-              Fire_0_Lag_1 +
-              Fire_15_Doughnut_Lag_1 +
+              # Fire_0_Lag_1 +
+              # Fire_15_Doughnut_Lag_1 +
               Fire_30_Doughnut_Lag_1 +
-              Fire_Proportion_Lag_1 +
+              # Fire_Proportion_Lag_1 +
               #  PRISM
-              VPD_Mean_10Y +
-              PPT_Mean_10Y +
-              TMean_Mean_10Y +
-              TMax_Mean_10Y +
-              # CWD
-              CWD_Mean_10Y)
+              # VPD_Mean_10Y +
+              # PPT_Mean_10Y +
+              # TMean_Mean_10Y +
+              # TMax_Mean_10Y +
+              #  CWD
+              CWD_Mean_10Y
+            )
     
     return(model)
 
@@ -700,7 +707,6 @@ dat_pyrome =
   nest %>% 
   ungroup %>% 
   arrange(desc(MBF_Pyrome)) %>% 
-  slice_head(n = 3) %>% 
   mutate(path = 
            paste0(
              "04_out/Smorgasbord/Table_", 
