@@ -1,167 +1,207 @@
 # Wrangle FIA and estimate growth models.
 
-#  Set up as a standalone, needs to be folded in. Note FIA format. 
-
-#  Packages
-
-# library(tidyverse) # General
-# library(gt) # Tables
-# library(stargazer) # Regression Tables
-# library(magrittr) # Pipes
-# 
-# color_beav = "#D73F09" # In the absence of a beav theme.
+# Grab disturbance and treatment variables, then reduce meaningfully. 
 
 #  Data
 
+#   Bounds
+
+dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
+
+#   Plots
+
+dat_plot = 
+  "02_data/1_5_1_FIA/OR_PLOT.csv" %>%
+  read_csv %>% 
+  select(
+    INVYR,
+    MEASYEAR,
+    PLT_CN = CN,
+    STATECD,
+    COUNTYCD,
+    LAT,
+    LON
+  )
+
+#   Conditions
+  
 dat_condition =
   "02_data/1_5_1_FIA/OR_COND.csv" %>%
   read_csv %>%
-  select(INVYR,
-         PLT_CN,
-         CONDID,
-         OWNGRPCD,
-         FORTYPCD,
-         SITECLCD)
+  select(
+    INVYR,
+    PLT_CN,
+    CON_CN = CN,
+    CONDID,
+    STDAGE,
+    SITECLCD,
+    OWNGRPCD
+  )
 
-# OWNGRPCD
-# STDAGE
-# SITECLCD
-# CONDPROP_UNADJ
-
-
-dat_condition_alt = 
-  "02_data/1_5_1_FIA/OR_COND.csv" %>%
-  read_csv %>%
-  filter(OWNGRPCD == 40) %>% 
-  filter(STDAGE %!in% c(0, 998, 999))
-  
+#   Trees
 
 dat_tree =
   "02_data/1_5_1_FIA/OR_TREE.csv" %>%
-  read_csv %>%
-  select(INVYR,
-         PLT_CN,
-         TRE_CN = CN,
-         CONDID,
-         SPGRPCD)
-  
-dat_tree_alt =
-  "02_data/1_5_1_FIA/OR_TREE.csv" %>%
-  read_csv # %>% 
-  
-dat_tree_alt = 
-  dat_tree %>% 
+  read_csv %>% 
   select(
     INVYR,
     PLT_CN,
     CONDID,
     TRE_CN = CN,
     TPA_UNADJ,
-    BHAGE,
     VOLBFNET,
-    SPCD) %>% 
-  # filter(!is.na(BHAGE)) %>% 
-  filter(!is.na(VOLBFNET)) %>% 
-  filter(SPCD %in% c(201, 263)) # %>% 
-  left_join(
-    dat_condition %>% 
-      select(
-        INVYR,
-        PLT_CN,
-        CONDID,
-        OWNGRPCD,
-        SITECLCD
-      )
-    ) %>% 
-  filter(OWNGRPCD == 40) # %>% 
+    SPCD)
 
-# substantial problem: what to do about multiple ages at the condition level?
-# condition stdage with tree volbfnet?
-# weighted mean of tree bhage?
-# condition stdage with all tree volbfnet so that bhage isn't a limiting factor?
-#  this might be most useful in retaining data
+#   Wrangling
 
-  group_by(INVYR, PLT_CN, CONDID, SPCD, OWNGRPCD, SITECLCD)
-  
-# couple things:
-#  need another filter for forestland/timberland?
-#  does reducing by BHAGE mean TPA_UNADJ is wrong b/c BHAGE trees are a subsample?
-#  also check whether FERNS is in scribner or the other system for FIA variable selection
-
-
-dat_growth =
-  "02_data/1_5_1_FIA/OR_TREE_GRM_ESTN.csv" %>%
-  read_csv %>%
-  select(INVYR,
-         PLT_CN,
-         TRE_CN,
-         LAND_BASIS,
-         ESTIMATE,
-         COMPONENT,
-         SUBPTYP_GRM,
-         REMPER,
-         TPAGROW_UNADJ,
-         ANN_NET_GROWTH,
-         EST_BEGIN,
-         EST_END) %>%
-  filter(LAND_BASIS == "TIMBERLAND") %>% # Subset to timberland
-  filter(SUBPTYP_GRM == 1) %>% # Subset to subplots
-  filter(ESTIMATE == "VOLBFNET") %>% # Subset to net board feet
-  filter(COMPONENT == "SURVIVOR") %>% # Subset to surviving trees
-  select(-ESTIMATE, -COMPONENT, -LAND_BASIS) %>%
-  left_join(dat_tree) %>%
-  filter(SPGRPCD == 10) %>% # Subset to Douglas fir species
-  left_join(dat_condition) %>%
-  filter(OWNGRPCD == 40) %>% # Subset to private owners
-  filter(FORTYPCD %in% 200:203) %>% # Subset to Douglas fir conditions
-  # Board feet/acre
-  mutate(EST_BEGIN_ACRE = EST_BEGIN * TPAGROW_UNADJ,
-         EST_END_ACRE = EST_END * TPAGROW_UNADJ,
-         ANN_NET_GROWTH_ACRE = ANN_NET_GROWTH * TPAGROW_UNADJ) %>% 
-  # Board feet/acre by plot
-  group_by(INVYR, PLT_CN, REMPER, SITECLCD) %>%
-  summarize(EST_BEGIN_ACRE_PLOT = sum(EST_BEGIN_ACRE),
-            EST_END_ACRE_PLOT = sum(EST_END_ACRE),
-            ANN_NET_GROWTH_ACRE_PLOT = sum(ANN_NET_GROWTH_ACRE)) %>%
+dat_use = 
+  # Handle tree data.
+  dat_tree %>% 
+  filter(!is.na(VOLBFNET)) %>%
+  filter(SPCD %in% c(202, 263)) %>%
+  mutate(VOLBFNET_ACRE = VOLBFNET * TPA_UNADJ) %>% 
+  group_by(
+    INVYR,
+    PLT_CN,
+    CONDID,
+    SPCD
+  ) %>% 
+  summarize(VOLBFNET_ACRE = sum(VOLBFNET_ACRE, na.rm = TRUE)) %>% 
   ungroup %>% 
-  # Drop outliers
-  filter(ntile(ANN_NET_GROWTH_ACRE_PLOT, 100) %in% 2:99) %>% 
-  filter(ntile(EST_BEGIN_ACRE_PLOT, 100) %in% 2:99) %>% 
-  filter(ntile(EST_END_ACRE_PLOT, 100) %in% 2:99) %>% 
-  # Site classes into bins and BF to MBF. 
-  mutate(SITECLCD_Bin = ifelse(SITECLCD < 4, 0, 1),
-         MBF_0 = EST_BEGIN_ACRE_PLOT / 1000,
-         MBF_1 = EST_END_ACRE_PLOT / 1000,
-         MBF_Annual = ANN_NET_GROWTH_ACRE_PLOT / 1000) %>% 
-  select(-ends_with("_PLOT")) %T>% 
-  # Export
-  write_csv("03_intermediate/data_fia_growth.csv")
+  # Handle condition data.
+  left_join(dat_condition) %>% 
+  filter(OWNGRPCD == 40) %>% 
+  filter(STDAGE %!in% c(NA, 0, 998, 999)) %>% 
+  # Handle plot data.
+  left_join(dat_plot) %>% 
+  # Explicate spatial data and reduce to region of interest.
+  vect(
+    geom = c("LON", "LAT"),
+    crs = "EPSG:4326"
+    ) %>% 
+  project("EPSG:2992") %>% 
+  crop(dat_bounds) %>% 
+  # Handle older-than-useful conditions.
+  filter(ntile(STDAGE, 100) <= 99) %>% 
+  # Handle outliers.
+  filter(ntile(VOLBFNET_ACRE, 100) %in% 2:99)
 
-dat = dat_growth # Band-Aid for name issues
+# This returns 2356 observations for INVYR 1999-2021, MEASYEAR 1995-2023. 
+# 1802 Douglas fir, 554 western hemlock. 
+#  Note that this is not the latest FIA release, so updating the data could help.
+
+# For comparison, Chisholm and Gray get 747, 1767 for INVYR 2010-2019 for a larger region. 
 
 # Visualization
 
-vis_2 = 
-  dat %>% 
-  ggplot(aes(x = MBF_0,
-             y = MBF_Annual,
-             color = SITECLCD_Bin %>% factor(labels = c("1-3", "4-6")))) + 
-  geom_point(shape = 21,
-             fill = NA) +
-  geom_rug() +
-  scale_color_manual(values = c("black", color_beav)) +
-  labs(x = "Initial MBF/Acre",
-       y = "Annualized Growth in MBF/Acre",
-       color = "Site Class") +
+vis_1 = 
+  dat_use %>%
+  as_tibble %>% 
+  ggplot(aes(x = STDAGE,
+             y = VOLBFNET_ACRE)) + 
+  geom_point(alpha = 0.25) +
+  facet_wrap(~ SPCD) +
   theme_minimal() 
 
-ggsave("out/vis_2.png",
-       vis_2,
-       dpi = 300,
-       width = 6,
-       height = 4.5)
-
 # Estimation
+
+#  Linear
+
+mod_fir_linear = 
+  dat_use %>% 
+  as_tibble %>% 
+  filter(SPCD == 202) %>% 
+  filter(STDAGE < 75) %>% 
+  lm(VOLBFNET_ACRE ~ STDAGE, data = .)
+
+par_fir_linear_a = 
+  mod_fir_linear %>% 
+  coef %>% 
+  magrittr::extract(1)
+
+par_fir_linear_b = 
+  mod_fir_linear %>% 
+  coef %>% 
+  magrittr::extract(2)
+
+#  Exponential
+
+mod_fir_exponential = 
+  dat_use %>% 
+  as_tibble %>% 
+  filter(SPCD == 202) %>% 
+  filter(STDAGE < 75) %>% 
+  mutate(VOLBFNET_ACRE_LOG = VOLBFNET_ACRE %>% log) %>% 
+  lm(VOLBFNET_ACRE_LOG ~ STDAGE, data = .)
+
+par_fir_exponential_a = 
+  mod_fir_exponential %>% 
+  coef %>% 
+  magrittr::extract(1) %>% 
+  exp
+
+par_fir_exponential_b = 
+  mod_fir_exponential %>% 
+  coef %>% 
+  magrittr::extract(2)
+
+#  Ricker
+#  Beverton-Holt
+#  Chapman-Richards
+
+#  Varying: site class, species handling?, ecoregion, county
+
+# Estimation w/ Stochastic Component
+
+
+# Visualization
+
+#  each model with residuals against data separately
+#  then all models together with data faded to minimize visual noise
+#  residuals in space might be interesting; or residuals on other covariates
+
+dat_fir_model = 
+  dat_use %>% 
+  as_tibble %>% 
+  filter(SPCD == 202) %>% 
+  filter(STDAGE < 75) %>% 
+  mutate(
+    VOLBFNET_ACRE_FIR_LINEAR = par_fir_linear_a + par_fir_linear_b * STDAGE,
+    VOLBFNET_ACRE_FIR_EXPONENTIAL = par_fir_exponential_a * exp(par_fir_exponential_b * STDAGE)
+    )
+  
+vis_fir_model = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_LINEAR), color = "blue", alpha = 0.50)
+
+
+vis_fir_model = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_EXPONENTIAL), color = "blue", alpha = 0.50)
+  
+
+# remeasurement check
+
+dat_check = 
+  "02_data/1_5_1_FIA/OR_TREE_GRM_ESTN.csv" %>% 
+  read_csv %>% 
+  filter(COMPONENT == "SURVIVOR") %>% 
+  filter(LAND_BASIS %in% c("FORESTLAND", "TIMBERLAND")) %>% 
+  filter(ESTIMATE == "VOLBFNET") %>% 
+  filter(ANN_NET_GROWTH > 0) %>% 
+  select(INVYR, PLT_CN, TRE_CN, REMPER, EST_BEGIN, EST_END, ANN_NET_GROWTH) %>% 
+  left_join(dat_tree, .) %>% 
+  drop_na(ANN_NET_GROWTH) %>% 
+  distinct %>% # Not worth figuring out why the join returns duplicates.
+  filter(SPCD %in% c(202, 263))
+
+# takeaway: counting on remeasurement is fine, actually: 5607 fir/hem conditions; 5463 fir; 1378 hem
+
+# Reference Code
 
 mod = 
   dat %>% 
