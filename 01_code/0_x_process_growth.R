@@ -52,7 +52,20 @@ dat_tree =
     VOLBFNET,
     SPCD)
 
-#   Wrangling
+#   Tree Growth Estimation
+
+dat_growth = 
+  "02_data/1_5_1_FIA/OR_TREE_GRM_ESTN.csv" %>% 
+  read_csv %>% 
+  filter(COMPONENT == "SURVIVOR") %>% 
+  filter(ESTIMATE == "VOLBFNET") %>% 
+  filter(ANN_NET_GROWTH > 0) %>% 
+  mutate(EST_BEGIN_ACRE = EST_BEGIN * TPAGROW_UNADJ,
+         EST_END_ACRE = EST_END * TPAGROW_UNADJ,
+         ANN_NET_GROWTH_ACRE = ANN_NET_GROWTH * TPAGROW_UNADJ) %>% 
+  select(INVYR, PLT_CN, TRE_CN, EST_BEGIN_ACRE, EST_END_ACRE, ANN_NET_GROWTH_ACRE)
+
+#   Wrangle
 
 dat_use = 
   # Handle tree data.
@@ -60,14 +73,24 @@ dat_use =
   filter(!is.na(VOLBFNET)) %>%
   filter(SPCD %in% c(202, 263)) %>%
   mutate(VOLBFNET_ACRE = VOLBFNET * TPA_UNADJ) %>% 
+  # Handle growth estimation data.
+  left_join(dat_growth) %>% 
+  distinct %>% # Why do observations duplicate on join? 
+  # Reduce to conditions. 
   group_by(
     INVYR,
     PLT_CN,
     CONDID,
     SPCD
   ) %>% 
-  summarize(VOLBFNET_ACRE = sum(VOLBFNET_ACRE, na.rm = TRUE)) %>% 
+  summarize(
+    VOLBFNET_ACRE = sum(VOLBFNET_ACRE, na.rm = TRUE),
+    EST_BEGIN_ACRE = sum(EST_BEGIN_ACRE, na.rm = TRUE),
+    EST_END_ACRE = sum(EST_END_ACRE, na.rm = TRUE),
+    ANN_NET_GROWTH_ACRE = sum(ANN_NET_GROWTH_ACRE, na.rm = TRUE)
+    ) %>% 
   ungroup %>% 
+  mutate(across(ends_with("ACRE"), ~ ifelse(.x == 0, NA, .x))) %>% 
   # Handle condition data.
   left_join(dat_condition) %>% 
   filter(OWNGRPCD == 40) %>% 
@@ -81,16 +104,24 @@ dat_use =
     ) %>% 
   project("EPSG:2992") %>% 
   crop(dat_bounds) %>% 
-  # Handle older-than-useful conditions.
-  filter(ntile(STDAGE, 100) <= 99) %>% 
+  as_tibble %>% 
+  # Cut western hemlock for now. 
+  filter(SPCD == 202) %>%
+  # Cut stands older than 75 years for now.
+  filter(STDAGE <= 75) %>%
   # Handle outliers.
-  filter(ntile(VOLBFNET_ACRE, 100) %in% 2:99)
+  filter(ntile(VOLBFNET_ACRE, 100) %in% 2:99) %>% 
+  filter(ntile(VOLBFNET_ACRE / STDAGE, 100) %in% 2:99) %>% 
+  filter(ntile(EST_BEGIN_ACRE, 100) %in% 2:99 | is.na(EST_BEGIN_ACRE)) %>% 
+  filter(ntile(ANN_NET_GROWTH_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE)) %>% 
+  filter(ntile(ANN_NET_GROWTH_ACRE / VOLBFNET_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE))
 
-# This returns 2356 observations for INVYR 1999-2021, MEASYEAR 1995-2023. 
-# 1802 Douglas fir, 554 western hemlock. 
-#  Note that this is not the latest FIA release, so updating the data could help.
+# (before species, age drops)
+# 2970 year-plot-condition-species, 2306 Douglas fir, 664 western hemlock with volume or growth.
+# 794, 620, 174 with growth
 
-# For comparison, Chisholm and Gray get 747, 1767 for INVYR 2010-2019 for a larger region. 
+plot(dat_use$STDAGE, dat_use$VOLBFNET_ACRE)
+plot(dat_use$EST_BEGIN_ACRE, dat_use$ANN_NET_GROWTH_ACRE)
 
 # Visualization
 
@@ -105,49 +136,127 @@ vis_1 =
 
 # Estimation
 
-#  Linear
+#  Yield ~ Age
 
-mod_fir_linear = 
+#   Linear
+
+mod_yield_fir_linear = 
   dat_use %>% 
-  as_tibble %>% 
-  filter(SPCD == 202) %>% 
-  filter(STDAGE < 75) %>% 
   lm(VOLBFNET_ACRE ~ STDAGE, data = .)
 
-par_fir_linear_a = 
-  mod_fir_linear %>% 
-  coef %>% 
-  magrittr::extract(1)
+par_yield_fir_linear_a = mod_yield_fir_linear$coefficients[[1]]
+par_yield_fir_linear_b = mod_yield_fir_linear$coefficients[[2]]
 
-par_fir_linear_b = 
-  mod_fir_linear %>% 
-  coef %>% 
-  magrittr::extract(2)
+#   Exponential
 
-#  Exponential
-
-mod_fir_exponential = 
+mod_yield_fir_exponential = 
   dat_use %>% 
-  as_tibble %>% 
-  filter(SPCD == 202) %>% 
-  filter(STDAGE < 75) %>% 
   mutate(VOLBFNET_ACRE_LOG = VOLBFNET_ACRE %>% log) %>% 
   lm(VOLBFNET_ACRE_LOG ~ STDAGE, data = .)
 
-par_fir_exponential_a = 
-  mod_fir_exponential %>% 
-  coef %>% 
-  magrittr::extract(1) %>% 
-  exp
+par_yield_fir_exponential_a = mod_yield_fir_exponential$coefficients[[1]] %>% exp
+par_yield_fir_exponential_b = mod_yield_fir_exponential$coefficients[[2]]
 
-par_fir_exponential_b = 
-  mod_fir_exponential %>% 
-  coef %>% 
-  magrittr::extract(2)
+#   Logistic
 
-#  Ricker
+mod_yield_fir_logistic = 
+  dat_use %>% 
+  nls(
+    VOLBFNET_ACRE ~ k / (1 + a * exp(-b * STDAGE)),
+    data = .,
+    start = list(k = 60000, a = 50, b = 0.10)
+  )
+
+par_yield_fir_logistic_k = mod_yield_fir_logistic %>% coef %>% magrittr::extract(1)
+par_yield_fir_logistic_a = mod_yield_fir_logistic %>% coef %>% magrittr::extract(2)
+par_yield_fir_logistic_b = mod_yield_fir_logistic %>% coef %>% magrittr::extract(3)
+
+#   Chang (1984), Hashida and Fenichel (2021)
+
+mod_yield_fir_chang = 
+  dat_use %>% 
+  mutate(STDAGE_INVERSE = STDAGE ^ -1,
+         STDAGE_INVERSE_SQUARE = STDAGE ^ -2,
+         VOLBFNET_ACRE_LOG = VOLBFNET_ACRE %>% log) %>% 
+  lm(VOLBFNET_ACRE_LOG ~ STDAGE_INVERSE + STDAGE_INVERSE_SQUARE, data = .)
+
+par_yield_fir_chang_0 = mod_yield_fir_chang$coefficients[[1]]
+par_yield_fir_chang_1 = mod_yield_fir_chang$coefficients[[2]]
+par_yield_fir_chang_2 = mod_yield_fir_chang$coefficients[[3]]
+
+#   Chapman-Richards
+#    Note that without reference to MCC or MAI via FIA, this does not meaningfully follow Chisholm and Gray. 
+
+mod_yield_fir_chapmanrichards = 
+  dat_use %>% 
+  mutate(VOLBFNET_ACRE_LOG = VOLBFNET_ACRE %>% log) %>% 
+  nls(
+    VOLBFNET_ACRE_LOG ~ a + p * log(1 - exp(-k * STDAGE)),
+    data = .,
+    start = list(a = 60000, p = 100, k = 0.01)
+  )
+
+par_yield_fir_chapmanrichards_a = mod_yield_fir_chapmanrichards %>% coef %>% magrittr::extract(1)
+par_yield_fir_chapmanrichards_p = mod_yield_fir_chapmanrichards %>% coef %>% magrittr::extract(2)
+par_yield_fir_chapmanrichards_k = mod_yield_fir_chapmanrichards %>% coef %>% magrittr::extract(3)
+
+#  Yield_1 ~ Yield_0
+
+#   Linear
+
+mod_growth_fir_linear = 
+  dat_use %>% 
+  lm(ANN_NET_GROWTH_ACRE ~ EST_BEGIN_ACRE, data = .)
+
+par_growth_fir_linear_a = mod_growth_fir_linear$coefficients[[1]]
+par_growth_fir_linear_b = mod_growth_fir_linear$coefficients[[2]]
+
+#   Exponential
+
+mod_growth_fir_exponential = 
+  dat_use %>% 
+  mutate(ANN_NET_GROWTH_ACRE_LOG = ANN_NET_GROWTH_ACRE %>% log) %>% 
+  lm(ANN_NET_GROWTH_ACRE_LOG ~ EST_BEGIN_ACRE, data = .)
+
+par_growth_fir_exponential_a = mod_growth_fir_exponential$coefficients[[1]] %>% exp
+par_growth_fir_exponential_b = mod_growth_fir_exponential$coefficients[[2]]
+
+#   Logistic
+
+mod_growth_fir_logistic =
+  dat_use %>% 
+  nls(
+    ANN_NET_GROWTH_ACRE ~ r * EST_BEGIN_ACRE * (1 - EST_BEGIN_ACRE / k),
+    data = .,
+    start = list(r = 1.10, k = 60000)
+  )
+
+par_growth_fir_logistic_r = mod_growth_fir_logistic %>% coef %>% magrittr::extract(1)
+par_growth_fir_logistic_k = mod_growth_fir_logistic %>% coef %>% magrittr::extract(2)
+
+#   Ricker
+
+mod_growth_fir_ricker = 
+  dat_use %>% 
+  mutate(MBF_QUOTIENT_LOG = log(ANN_NET_GROWTH_ACRE / EST_BEGIN_ACRE),
+         MBF_INITIAL = EST_BEGIN_ACRE) %>% 
+  lm(MBF_QUOTIENT_LOG ~ MBF_INITIAL, data = .)
+
+par_growth_fir_ricker_r = mod_fir_ricker$coefficients[[1]]
+par_growth_fir_ricker_k = - mod_fir_ricker$coefficients[[1]] / mod_fir_ricker$coefficients[[2]]
+
 #  Beverton-Holt
-#  Chapman-Richards
+
+mod_growth_fir_bevertonholt =
+  dat_use %>% 
+  nls(
+    ANN_NET_GROWTH_ACRE ~ EST_BEGIN_ACRE * (r / (1 + ((r - 1) / k) * EST_BEGIN_ACRE)),
+    data = .,
+    start = list(r = 1.10, k = 60000)
+    )
+
+par_growth_fir_bevertonholt_r = mod_fir_bevertonholt %>% coef %>% magrittr::extract(1)
+par_growth_fir_bevertonholt_k = mod_fir_bevertonholt %>% coef %>% magrittr::extract(2)
 
 #  Varying: site class, species handling?, ecoregion, county
 
@@ -158,65 +267,87 @@ par_fir_exponential_b =
 
 #  each model with residuals against data separately
 #  then all models together with data faded to minimize visual noise
-#  residuals in space might be interesting; or residuals on other covariates
+
+# switch from points to stat_function
 
 dat_fir_model = 
   dat_use %>% 
-  as_tibble %>% 
-  filter(SPCD == 202) %>% 
-  filter(STDAGE < 75) %>% 
   mutate(
-    VOLBFNET_ACRE_FIR_LINEAR = par_fir_linear_a + par_fir_linear_b * STDAGE,
-    VOLBFNET_ACRE_FIR_EXPONENTIAL = par_fir_exponential_a * exp(par_fir_exponential_b * STDAGE)
+    # Yield
+    VOLBFNET_ACRE_FIR_LINEAR = par_yield_fir_linear_a + par_yield_fir_linear_b * STDAGE,
+    VOLBFNET_ACRE_FIR_EXPONENTIAL = par_yield_fir_exponential_a * exp(par_yield_fir_exponential_b * STDAGE),
+    VOLBFNET_ACRE_FIR_LOGISTIC = par_yield_fir_logistic_k / (1 + par_yield_fir_logistic_a * exp(-par_yield_fir_logistic_b * STDAGE)),
+    VOLBFNET_ACRE_FIR_CHANG = exp(par_yield_fir_chang_0) * exp(par_yield_fir_chang_1 * STDAGE ^ -1 + par_yield_fir_chang_2 * STDAGE ^ -2),
+    VOLBFNET_ACRE_FIR_CHAPMANRICHARDS = exp(par_yield_fir_chapmanrichards_a) * (1 - exp(- par_yield_fir_chapmanrichards_k * STDAGE)) ^ par_yield_fir_chapmanrichards_p,
+    # Growth
+    ANN_NET_GROWTH_ACRE_FIR_LINEAR = par_growth_fir_linear_a + par_growth_fir_linear_b * EST_BEGIN_ACRE,
+    ANN_NET_GROWTH_ACRE_FIR_EXPONENTIAL = par_growth_fir_exponential_a * exp(par_growth_fir_exponential_b * EST_BEGIN_ACRE),
+    ANN_NET_GROWTH_ACRE_FIR_LOGISTIC = par_growth_fir_logistic_r * EST_BEGIN_ACRE * (1 - EST_BEGIN_ACRE / par_growth_fir_logistic_k),
+    ANN_NET_GROWTH_ACRE_FIR_RICKER = EST_BEGIN_ACRE * exp(par_growth_fir_ricker_r * (1 - EST_BEGIN_ACRE / par_growth_fir_ricker_k)),
+    ANN_NET_GROWTH_ACRE_FIR_BEVERTONHOLT = EST_BEGIN_ACRE * (par_growth_fir_bevertonholt_r / (1 + ((par_growth_fir_bevertonholt_r - 1) / par_growth_fir_bevertonholt_k) * EST_BEGIN_ACRE)) 
     )
   
-vis_fir_model = 
+vis_yield_fir_linear = 
   dat_fir_model %>% 
   ggplot() +
   geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
   geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_LINEAR), color = "blue", alpha = 0.50)
 
-
-vis_fir_model = 
+vis_yield_fir_exponential = 
   dat_fir_model %>% 
   ggplot() +
   geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
   geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_EXPONENTIAL), color = "blue", alpha = 0.50)
-  
 
-# remeasurement check
+vis_yield_fir_logistic = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_LOGISTIC), color = "blue", alpha = 0.50)
 
-dat_check = 
-  "02_data/1_5_1_FIA/OR_TREE_GRM_ESTN.csv" %>% 
-  read_csv %>% 
-  filter(COMPONENT == "SURVIVOR") %>% 
-  filter(LAND_BASIS %in% c("FORESTLAND", "TIMBERLAND")) %>% 
-  filter(ESTIMATE == "VOLBFNET") %>% 
-  filter(ANN_NET_GROWTH > 0) %>% 
-  select(INVYR, PLT_CN, TRE_CN, REMPER, EST_BEGIN, EST_END, ANN_NET_GROWTH) %>% 
-  left_join(dat_tree, .) %>% 
-  drop_na(ANN_NET_GROWTH) %>% 
-  distinct %>% # Not worth figuring out why the join returns duplicates.
-  filter(SPCD %in% c(202, 263))
+vis_yield_fir_chang = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_CHANG), color = "blue", alpha = 0.50)
 
-# takeaway: counting on remeasurement is fine, actually: 5607 fir/hem conditions; 5463 fir; 1378 hem
+vis_yield_fir_chapmanrichards = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_CHAPMANRICHARDS), color = "blue", alpha = 0.50)
+
+vis_growth_fir_linear = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_LINEAR), color = "blue", alpha = 0.50)
+
+vis_growth_fir_exponential = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_EXPONENTIAL), color = "blue", alpha = 0.50)
+
+vis_growth_fir_logistic = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_LOGISTIC), color = "blue", alpha = 0.50)
+
+vis_growth_fir_ricker = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_RICKER), color = "blue", alpha = 0.50)
+
+vis_growth_fir_bevertonholt = 
+  dat_fir_model %>% 
+  ggplot() +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_BEVERTONHOLT), color = "blue", alpha = 0.50)
 
 # Reference Code
-
-mod = 
-  dat %>% 
-  mutate(Y = log(MBF_Annual / MBF_0),
-         X_1 = MBF_0,
-         X_2 = SITECLCD_Bin, 
-         .keep = "none") %>% 
-  lm(Y ~ X_1 + X_2,
-     data = .)
-
-b_0 = mod$coefficients[[1]]
-b_1 = mod$coefficients[[2]]
-b_2 = mod$coefficients[[3]]
-
-stargazer(mod, type = "html")
 
 # Results Visualization
 
