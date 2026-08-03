@@ -1,36 +1,16 @@
 # Process ownership data. 
 
-# timer goes here
-
 library(haven)
 
 #  Owners
 
-# dat_owners = 
-#   "02_data/0_0_0_Cotality/Owners/OR41_PB_080524.dta" %>%
-#   read_dta()
-
-#   Use a modified version to avoid string storage issues?
+#   With pre-processing in Stata to avoid variable type issues. 
 
 dat_owners = 
   "02_data/0_0_0_Cotality/Owners/owners.csv" %>%
   read_csv
 
 #   Note from problems() that columns 31 and 35 have difficult values.
-
-vis = 
-  dat_owners |> 
-  filter(ctyfips == 39) |> 
-  select(starts_with("parcel") & (ends_with("latitude") | ends_with("longitude"))) |> 
-  ggplot() + 
-  geom_point(aes(x = parcellevellongitude, 
-                 y = parcellevellatitude))
-
-#   Looks like Oregon. 
-
-#   Note that a reasonable next step would be filtering on land use codes.
-#   However, land use codes are complex: there are a lot, many apply, and many are missing. 
-#   Could be worth checking out land use change codes (not in this excerpt), but that's gravy. 
 
 #  Parcels
 
@@ -40,23 +20,21 @@ dat_parcels =
 
 #  Spatial Join
 
-# Scratch: 
-
 dat_parcels_less =
   dat_parcels |> 
   filter(County == 20) # %in% c(4, 29, 21, 20, 10, 6, 8)
 
-dat_parcels_less |> 
-  slice_sample(n = 10000) |> 
-  makeValid() |> 
-  ggplot() + 
-  geom_spatvector(aes(fill = Shape_Area), color = NA)
+# dat_parcels_less |> 
+#   slice_sample(n = 10000) |> 
+#   makeValid() |> 
+#   ggplot() + 
+#   geom_spatvector(aes(fill = Shape_Area), color = NA)
 
-dat_parcels_summarize = 
-  dat_parcels_less |> 
-  makeValid() |> 
-  summarize(Shape_Area = sum(Shape_Area)) |> 
-  fillHoles()
+# dat_parcels_summarize = 
+#   dat_parcels_less |> 
+#   makeValid() |> 
+#   summarize(Shape_Area = sum(Shape_Area)) |> 
+#   fillHoles()
 
 # owners to parcels by (1) intersection and (2) centroid nearest-neighbor
 
@@ -67,15 +45,7 @@ dat_owners_less_spatial =
   vect(geom = c("parcellevellongitude", "parcellevellatitude")) |> 
   project("EPSG:3857")
 
-ggplot() + 
-  geom_spatvector(data = dat_parcels_less, fill = "red", alpha = 0.25) +
-  geom_spatvector(data = dat_owners_less_spatial, alpha = 0.25)
-
 dat_owners_parcels_extract = terra::extract(dat_parcels_less, dat_owners_less_spatial)
-
-# Check the result.
-
-dat_owners_parcels_extract |> head()
 
 # Clean up for checks and joins.
 
@@ -98,7 +68,7 @@ dat_owners_parcels_extract_less |>
   ungroup() |> 
   arrange(desc(Counter))
 
-# 177385 owner records have only one parcel matches. So, 4.2% (?) matches are problematic. 
+# 177385 owner records have only one parcel match. So, 4.2% of matches are problematic. 
 
 dat_owners_parcels_extract_less |> 
   group_by(ID_Parcel) |> 
@@ -108,43 +78,50 @@ dat_owners_parcels_extract_less |>
   ungroup() |> 
   arrange(desc(Counter))
 
-# 133874 of 154058 (87%) have only one owner match. Does that line up with the previous result?
+# 133874 of 154058 (87%) have only one owner match. Are multiple owner matches problematic? 
 
-# What about counting 1-1 matches?
+# Reduce to 1-1 matches. 
 
-dat_owners_parcels_clean = 
-  dat_owners_parcels_extract_less |> 
-  drop_na() |> 
-  group_by(ID_Parcel) |> 
-  mutate(Count_Parcel = n()) |> 
-  group_by(ID_Owner) |> 
-  mutate(Count_Owner = n()) |> 
-  ungroup() |> 
-  filter(Count_Parcel == 1) |> 
-  filter(Count_Owner == 1)
+# dat_owners_parcels_clean = 
+#   dat_owners_parcels_extract_less |> 
+#   drop_na() |> 
+#   group_by(ID_Parcel) |> 
+#   mutate(Count_Parcel = n()) |> 
+#   group_by(ID_Owner) |> 
+#   mutate(Count_Owner = n()) |> 
+#   ungroup() |> 
+#   filter(Count_Parcel == 1) |> 
+#   filter(Count_Owner == 1)
 
 # 132902 (71%) of 185168 matches are 1-1. Centroid methods are a first suspect.
 
-# (centroid NN goes here)
+# This is where matching on centroids rather than point-polygon extraction would go. 
+
+# Instead, reduce to the first match for each owner; preserve all owners.
+
+dat_owners_parcels_clean = 
+  dat_owners_parcels_extract_less |>
+  drop_na() |>
+  group_by(ID_Owner) |>
+  mutate(Number_Owner = row_number()) |>
+  ungroup() |>
+  filter(Number_Owner == 1) %>% 
+  select(starts_with("ID"))
 
 # Suppose these matches are fine, though. Go ahead with the join.
 
 dat_owners_parcels_join = 
   dat_owners_parcels_clean |> 
-  select(starts_with("ID")) |> 
   left_join(dat_owners_less |> 
               mutate(ID_Owner = row_number()) |> 
               select(ID_Owner, clip)) |> 
   select(-ID_Owner) %>% # magrittr pipe matters here. 
   left_join(dat_parcels_less |> select(ID_Parcel = OBJECTID), .) |> 
   drop_na(clip) |> 
-  left_join(dat_owners)
-  
-# nice
+  left_join(dat_owners %>% select(clip, stateusedescription)) %>% 
+  select(clip, stateusedescription)
 
-# check whether forest/timberland parcels are all within relevant ODF spatial definition
-
-# should be overlaps rather than intersects?
+# Check whether forest/timberland parcels fall within ODF's private forestry layer.
 
 dat_odf = 
   "02_data/3_4_ODF_Ownership/Ownership.gdb" %>% 
@@ -171,7 +148,7 @@ dat_owners_parcels_other =
   # slice_head(n = 100) |>
   anti_join(dat_owners_parcels_odf |> as_tibble() |> select(clip))
 
-# land use codes in forest/timberland (counts by occurrences and area)
+# Pull values for land use codes in private forest/timberland. 
 
 dat_owners_parcels_odf |> 
   as_tibble() |> 
@@ -181,7 +158,7 @@ dat_owners_parcels_odf |>
   arrange(desc(count)) |> 
   slice_head(n = 10)
 
-# land use codes outside of forest/timberland (counts by occurrences and area)
+# Pull values for land use codes outside of forest/timberland.
 
 dat_owners_parcels_other |> 
   as_tibble() |> 
@@ -191,7 +168,7 @@ dat_owners_parcels_other |>
   arrange(desc(count)) |> 
   slice_head(n = 10)
 
-# owners
+# Check top landowners (by counts of parcels) for forest/timberland and other land. 
 
 dat_owners_parcels_odf |> 
   as_tibble() |> 
@@ -209,12 +186,7 @@ dat_owners_parcels_other |>
   arrange(desc(count)) |> 
   slice_head(n = 10)
 
-# figure out transaction join to transform ownership into a panel
-
-# note that this is only the file for Lane County
-
-# note a problem: if owner data came from 1/1/2025, good; if 12/31/2024, then one day of checking transactions against owners
-# since in fact it's ~8/2024, then quite a few cases of needing to check transaction parties against owners
+# Join transfers onto ownership and parcels to obtain a panel of ownership. 
 
 dat_transactions = 
   "02_data/0_0_0_Cotality/Transactions/Lane_Res_clean_v2026.dta" |> 
@@ -243,28 +215,7 @@ dat_owners_transactions_pivot =
   mutate(id.y = row_number()) |> 
   left_join(dat_owners_transactions_extract) |> 
   select(-id.y, -starts_with("parcel_")) |> 
-  drop_na(clip_owner) # |> 
-  # pivot_wider() # Kidding?
-
-# problem: panelizing a spatvector
-# so we start with the pseudo-knowledge that each property was owned by its 2024 owner from 2015 on
-# then we add the actual knowledge that some properties were owned by other owners
-# so create both panels (pseudo, actual), left join actual onto pseudo, then reconcile columns
-# and get all of that out of spatial formats for easier handling, then join back onto spatial data for export?
-# or stick to two separate exports as in the time-variant variable case for later scripts
-  
-# full join to get incomplete panel: 2024 plus sale years
-# then arrange by year, clip_owner
-# then mutate out a lagged year_sold (plus one?) to get the start of each owner's tenure
-# then nest/expand/unnest or something to get a row for each year within each tenure w/o overlaps in tenure
-# note subannual challenge
-
-
-# dat_owners_transactions_pivot
-# dat_owners_parcels_join
-# clip_owner, clip_transaction, ID_Parcel, year, landusecode, stateusedescription, countyusedescription, owner1fullname
-# note trickery with parcel identification: depends on filtering to 1-1 matches, messy otherwise
-
+  drop_na(clip_owner)
 
 dat_owners_panel_set = 
   dat_owners_parcels_join |> 
@@ -287,8 +238,6 @@ dat_transactions_panel_set =
 
 dat_panel_set = bind_rows(dat_owners_panel_set, dat_transactions_panel_set)
 
-# panel, but with missing years (no interpolation) and duplicate years (owner and transaction)
-
 dat_panel = 
   dat_panel_set |> 
   relocate(year, .before = owner) |> 
@@ -298,7 +247,7 @@ dat_panel =
 # so, with all the other conditions in place, this:
 #  discards properties/parcels with multiple transactions in one year
 #  discards properties/parcels with a transaction in 2024
-# this is dumb but a lot easier than reconciling multiple transactions within years. 
+# this is dumb but easier than reconciling multiple transactions within years. 
 
 dat_panel_check = 
   dat_panel |> 
@@ -343,19 +292,4 @@ dat_panel_filled =
          which = ifelse(is.na(which), "inferred", which)) |> 
   select(-c(owner_combine, owner_fill))
 
-# bottom line for now: with 72% of owner records accounted for,
-# 23% of owner records relate to one or more sales.
-# but this is with only residential transactions.
-# so, this is useful for the gentrification stuff
-# but also could resolve the snapshot-panel dilemma for timber supply accounting. 
-# open questions: what's going on with the 28% of difficult owner records? 
-# and what would it take to get all transactions or all timberland transactions?
-# resolve land use code stuff before proceeding to emails
-#  what proportion of ODF-designated private forest/timberland is accounted for in parcels?
-#  "" but for ownership records
-#  what proportion of parcels in forest-related land uses falls outside of ODF-designated private forest/timberland?
-#  who are the owners of parcels in forest/timberland? Do they roughly match to notifications?
-
 #  Export
-
-# timer stops here
