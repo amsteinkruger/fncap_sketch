@@ -116,8 +116,8 @@ dat_use =
   filter(ntile(ANN_NET_GROWTH_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE)) %>% 
   filter(ntile(ANN_NET_GROWTH_ACRE / VOLBFNET_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE))
 
-# 2262 observations for Douglas fir without age restriction.
-# 2192 observations for Douglas fir with STDAGE < 100. 
+# 2262 yield observations, 588 growth observations for Douglas fir without age restriction.
+# 2192 yield observations, 573 growth observations for Douglas fir with STDAGE < 100. 
 
 plot(dat_use$STDAGE, dat_use$VOLBFNET_ACRE)
 plot(dat_use$EST_BEGIN_ACRE, dat_use$ANN_NET_GROWTH_ACRE)
@@ -130,8 +130,35 @@ vis_1 =
   ggplot(aes(x = STDAGE,
              y = VOLBFNET_ACRE)) + 
   geom_point(alpha = 0.25) +
-  facet_wrap(~ SPCD) +
   theme_minimal() 
+
+ggsave("04_out/Presentation_20260805/vis_yield.png",
+       vis_1,
+       dpi = 300,
+       width = 4.25,
+       height = 4)
+
+vis_2 = 
+  dat_use %>%
+  as_tibble %>% 
+  ggplot(aes(x = EST_BEGIN_ACRE,
+             y = ANN_NET_GROWTH_ACRE)) + 
+  geom_point(alpha = 0.25) +
+  theme_minimal() 
+
+ggsave("04_out/Presentation_20260805/vis_growth.png",
+       vis_2,
+       dpi = 300,
+       width = 4.25,
+       height = 4)
+
+vis_data = vis_1 + vis_2
+
+ggsave("04_out/Presentation_20260805/vis_data.png",
+       vis_data,
+       dpi = 300,
+       width = 8.5,
+       height = 4)
 
 # Estimation
 
@@ -429,6 +456,8 @@ par_growth_fir_bevertonholt_slow_k = mod_growth_fir_bevertonholt_slow %>% coef %
 
 #  Get point estimates. 
 
+#  All
+
 dat_fir_model = 
   dat_use %>% 
   mutate(
@@ -443,6 +472,41 @@ dat_fir_model =
     ANN_NET_GROWTH_ACRE_FIR_RICKER = EST_BEGIN_ACRE * exp(par_growth_fir_ricker_r * (1 - EST_BEGIN_ACRE / par_growth_fir_ricker_k)),
     ANN_NET_GROWTH_ACRE_FIR_BEVERTONHOLT = EST_BEGIN_ACRE * (par_growth_fir_bevertonholt_r / (1 + ((par_growth_fir_bevertonholt_r - 1) / par_growth_fir_bevertonholt_k) * EST_BEGIN_ACRE)) 
     )
+
+dat_fir_model_yield = 
+  dat_fir_model %>% 
+  select(VALUE_X = STDAGE, starts_with("VOLBFNET_")) %>% 
+  pivot_longer(cols = starts_with("VOLBFNET_"),
+               names_prefix = "VOLBFNET_ACRE_",
+               names_to = "MODEL",
+               values_to = "VALUE_Y") %>% 
+  mutate(
+    MODEL = 
+      MODEL %>% 
+      str_remove_all("FIR_") %>% 
+      str_replace_all("VOLBFNET_ACRE", "OBSERVED"),
+    SUBSET = "ALL",
+    VARIABLE = "YIELD"
+    )
+
+dat_fir_model_growth = 
+  dat_fir_model %>% 
+  select(VALUE_X = EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_")) %>% 
+  drop_na(VALUE_X) %>% 
+  pivot_longer(cols = starts_with("ANN_NET_GROWTH_"),
+               names_prefix = "ANN_NET_GROWTH_ACRE_",
+               names_to = "MODEL",
+               values_to = "VALUE_Y") %>% 
+  mutate(
+    MODEL = 
+      MODEL %>% 
+      str_remove_all("FIR_") %>% 
+      str_replace_all("ANN_NET_GROWTH_ACRE", "OBSERVED"),
+    SUBSET = "ALL",
+    VARIABLE = "GROWTH"
+  )
+
+# Site Class 1-3
 
 dat_fir_model_fast = 
   dat_use %>% 
@@ -460,9 +524,44 @@ dat_fir_model_fast =
     ANN_NET_GROWTH_ACRE_FIR_BEVERTONHOLT = EST_BEGIN_ACRE * (par_growth_fir_bevertonholt_fast_r / (1 + ((par_growth_fir_bevertonholt_fast_r - 1) / par_growth_fir_bevertonholt_fast_k) * EST_BEGIN_ACRE)) 
   )
 
+dat_fir_model_fast_yield = 
+  dat_fir_model_fast %>% 
+  select(VALUE_X = STDAGE, starts_with("VOLBFNET_")) %>% 
+  pivot_longer(cols = starts_with("VOLBFNET_"),
+               names_prefix = "VOLBFNET_ACRE_",
+               names_to = "MODEL",
+               values_to = "VALUE_Y") %>% 
+  mutate(
+    MODEL = 
+      MODEL %>% 
+      str_remove_all("FIR_") %>% 
+      str_replace_all("VOLBFNET_ACRE", "OBSERVED"),
+    SUBSET = "1-3",
+    VARIABLE = "YIELD"
+  )
+
+dat_fir_model_fast_growth = 
+  dat_fir_model_fast %>% 
+  select(VALUE_X = EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_")) %>% 
+  drop_na(VALUE_X) %>% 
+  pivot_longer(cols = starts_with("ANN_NET_GROWTH_"),
+               names_prefix = "ANN_NET_GROWTH_ACRE_",
+               names_to = "MODEL",
+               values_to = "VALUE_Y") %>% 
+  mutate(
+    MODEL = 
+      MODEL %>% 
+      str_remove_all("FIR_") %>% 
+      str_replace_all("ANN_NET_GROWTH_ACRE", "OBSERVED"),
+    SUBSET = "1-3",
+    VARIABLE = "GROWTH"
+  )
+
+# Site Class 4-7
+
 dat_fir_model_slow = 
   dat_use %>% 
-  filter(SITECLCD %!in% vec_slow) %>% 
+  filter(SITECLCD %in% vec_slow) %>% 
   mutate(
     # Yield
     VOLBFNET_ACRE_FIR_LINEAR = par_yield_fir_linear_slow_a + par_yield_fir_linear_slow_b * STDAGE,
@@ -476,96 +575,166 @@ dat_fir_model_slow =
     ANN_NET_GROWTH_ACRE_FIR_BEVERTONHOLT = EST_BEGIN_ACRE * (par_growth_fir_bevertonholt_slow_r / (1 + ((par_growth_fir_bevertonholt_slow_r - 1) / par_growth_fir_bevertonholt_slow_k) * EST_BEGIN_ACRE)) 
   )  
 
+dat_fir_model_slow_yield = 
+  dat_fir_model_slow %>% 
+  select(VALUE_X = STDAGE, starts_with("VOLBFNET_")) %>% 
+  pivot_longer(cols = starts_with("VOLBFNET_"),
+               names_prefix = "VOLBFNET_ACRE_",
+               names_to = "MODEL",
+               values_to = "VALUE_Y") %>% 
+  mutate(
+    MODEL = 
+      MODEL %>% 
+      str_remove_all("FIR_") %>% 
+      str_replace_all("VOLBFNET_ACRE", "OBSERVED"),
+    SUBSET = "4-7",
+    VARIABLE = "YIELD"
+  )
 
+dat_fir_model_slow_growth = 
+  dat_fir_model_slow %>% 
+  select(VALUE_X = EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_")) %>% 
+  drop_na(VALUE_X) %>% 
+  pivot_longer(cols = starts_with("ANN_NET_GROWTH_"),
+               names_prefix = "ANN_NET_GROWTH_ACRE_",
+               names_to = "MODEL",
+               values_to = "VALUE_Y") %>% 
+  mutate(
+    MODEL = 
+      MODEL %>% 
+      str_remove_all("FIR_") %>% 
+      str_replace_all("ANN_NET_GROWTH_ACRE", "OBSERVED"),
+    SUBSET = "4-7",
+    VARIABLE = "GROWTH"
+  )
 
+# Combine
 
-vis_yield_fir_linear = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_LINEAR), color = "blue", alpha = 0.50)
+dat_fir_models = 
+  dat_fir_model_yield %>% 
+  bind_rows(dat_fir_model_growth) %>% 
+  bind_rows(dat_fir_model_fast_yield) %>% 
+  bind_rows(dat_fir_model_fast_growth) %>% 
+  bind_rows(dat_fir_model_slow_yield) %>% 
+  bind_rows(dat_fir_model_slow_growth) %>% 
+  select(VALUE_X, VALUE_Y, VARIABLE, SUBSET, MODEL) %>% 
+  arrange(VARIABLE, SUBSET, MODEL, VALUE_X, VALUE_Y) %>% 
+  filter(VALUE_Y != max(VALUE_Y))
 
-vis_yield_fir_exponential = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_EXPONENTIAL), color = "blue", alpha = 0.50)
+# Tabulate
 
-vis_yield_fir_logistic = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_LOGISTIC), color = "blue", alpha = 0.50)
+modelsummary(
+  list("Linear" = mod_yield_fir_linear,
+       "Logistic" = mod_yield_fir_logistic,
+       "Chang" = mod_yield_fir_chang,
+       "Chapman-Richards" = mod_yield_fir_chapmanrichards),
+  stars = TRUE, 
+  output = "flextable") |> 
+  autofit() |> 
+  save_as_docx(path = "04_out/Presentation_20260805/Table_Yield_Fir_All.docx")
 
-vis_yield_fir_chang = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_CHANG), color = "blue", alpha = 0.50)
+modelsummary(
+  list("Linear" = mod_growth_fir_linear,
+       "Logistic" = mod_growth_fir_logistic,
+       "Ricker" = mod_growth_fir_ricker,
+       "Beverton-Holt" = mod_growth_fir_bevertonholt),
+  stars = TRUE, 
+  output = "flextable") |> 
+  autofit() |> 
+  save_as_docx(path = "04_out/Presentation_20260805/Table_Growth_Fir_All.docx")
 
-vis_yield_fir_chapmanrichards = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = STDAGE, y = VOLBFNET_ACRE_FIR_CHAPMANRICHARDS), color = "blue", alpha = 0.50)
+# Visualize
 
-vis_growth_fir_linear = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_LINEAR), color = "blue", alpha = 0.50)
-
-vis_growth_fir_exponential = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_EXPONENTIAL), color = "blue", alpha = 0.50)
-
-vis_growth_fir_logistic = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_LOGISTIC), color = "blue", alpha = 0.50)
-
-vis_growth_fir_ricker = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_RICKER), color = "blue", alpha = 0.50)
-
-vis_growth_fir_bevertonholt = 
-  dat_fir_model %>% 
-  ggplot() +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE), color = "red", alpha = 0.25) +
-  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE_FIR_BEVERTONHOLT), color = "blue", alpha = 0.50)
-
-# Reference Code
-
-# Results Visualization
-
-vis_4 = 
-  dat %>% 
+vis_fir_models_yield = 
+  dat_fir_models %>%
+  filter(VARIABLE == "YIELD") %>% 
+  mutate(
+    Model = 
+      MODEL %>% 
+      str_to_sentence %>% 
+      str_replace_all("Chapmanrichards", "Chapman-Richards") %>% 
+      factor %>% 
+      fct_relevel(
+        "Linear",
+        "Logistic",
+        "Chang",
+        "Chapman-Richards"
+      ),
+    Subset = 
+      ifelse(SUBSET == "ALL", "All Site Classes", SUBSET) %>% 
+      factor %>% 
+      fct_relevel(
+        "All Site Classes",
+        "1-3",
+        "4-7"
+      )
+  ) %>% 
   ggplot() + 
-  geom_point(aes(x = MBF_0,
-                 y = MBF_Annual,
-                 color = SITECLCD_Bin %>% factor(labels = c("1-3", "4-6"))),
+  geom_point(data = . %>% filter(MODEL == "OBSERVED"),
+             aes(x = VALUE_X, y = VALUE_Y / 1000), 
              shape = 21,
-             alpha = 0.50, 
-             fill = NA) +
-  geom_function(aes(x = MBF_0,
-                    color = "1-3"),
-                fun = ~ .x * exp(b_0 + b_1 * .x)) +
-  geom_function(aes(x = MBF_0,
-                    color = "4-6"),
-                fun = ~ .x * exp(b_0 + b_1 * .x + b_2)) +
-  scale_color_manual(values = c("black", color_beav)) +
-  labs(x = "Initial MBF/Acre",
-       y = "Annualized Change in MBF/Acre",
-       color = "Site Class") +
-  theme_minimal()
+             alpha = 0.25,
+             fill = NA) + 
+  geom_line(data = . %>% filter(MODEL != "OBSERVED"),
+            aes(x = VALUE_X, y = VALUE_Y / 1000, group = Model, color = Model),
+            linewidth = 1.25) + 
+  labs(x = "Stand Age",
+       y = "Stand Yield (MBF/Acre)") +
+  facet_wrap(~ Subset) +
+  theme_pubr() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.title = element_blank())
 
-ggsave("out/vis_4.png",
-       vis_4,
+vis_fir_models_growth = 
+  dat_fir_models %>%
+  filter(VARIABLE == "GROWTH") %>% 
+  mutate(
+    Model = 
+      MODEL %>% 
+      str_to_sentence %>% 
+      str_replace_all("Bevertonholt", "Beverton-Holt") %>% 
+      factor %>% 
+      fct_relevel(
+        "Linear",
+        "Logistic",
+        "Ricker",
+        "Beverton-Holt"
+      ),
+    Subset = 
+      ifelse(SUBSET == "ALL", "All Site Classes", SUBSET) %>% 
+      factor %>% 
+      fct_relevel(
+        "All Site Classes",
+        "1-3",
+        "4-7"
+      )
+  ) %>% 
+  ggplot() + 
+  geom_point(data = . %>% filter(MODEL == "OBSERVED"),
+             aes(x = VALUE_X / 1000, y = VALUE_Y / 1000), 
+             shape = 21,
+             alpha = 0.25,
+             fill = NA) + 
+  geom_line(data = . %>% filter(MODEL != "OBSERVED"),
+            aes(x = VALUE_X / 1000, y = VALUE_Y / 1000, group = Model, color = Model),
+            linewidth = 1.25) + 
+  labs(x = "Initial Stand Yield (MBF/Acre)",
+       y = "Stand Growth (MBF/Acre/Year)") +
+  facet_wrap(~ Subset) +
+  theme_pubr() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.title = element_blank())
+
+ggsave("04_out/Presentation_20260805/vis_yield.png",
+       vis_fir_models_yield,
        dpi = 300,
-       width = 6,
-       height = 4.5)
+       width = 9,
+       height = 4)
+  
+ggsave("04_out/Presentation_20260805/vis_growth.png",
+       vis_fir_models_growth,
+       dpi = 300,
+       width = 9,
+       height = 4)
