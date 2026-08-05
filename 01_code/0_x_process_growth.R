@@ -35,6 +35,7 @@ dat_condition =
     CONDID,
     STDAGE,
     SITECLCD,
+    FORTYPCD,
     OWNGRPCD
   )
 
@@ -93,6 +94,7 @@ dat_use =
   mutate(across(ends_with("ACRE"), ~ ifelse(.x == 0, NA, .x))) %>% 
   # Handle condition data.
   left_join(dat_condition) %>% 
+  filter(FORTYPCD == 201) %>% 
   filter(OWNGRPCD == 40) %>% 
   filter(STDAGE %!in% c(NA, 0, 998, 999)) %>% 
   # Handle plot data.
@@ -118,6 +120,7 @@ dat_use =
 
 # 2262 yield observations, 588 growth observations for Douglas fir without age restriction.
 # 2192 yield observations, 573 growth observations for Douglas fir with STDAGE < 100. 
+# 1555 yield observations, 430 growth observations for Douglas fir with STDAGE < 100 and FORTYPCD == 201. 
 
 plot(dat_use$STDAGE, dat_use$VOLBFNET_ACRE)
 plot(dat_use$EST_BEGIN_ACRE, dat_use$ANN_NET_GROWTH_ACRE)
@@ -132,12 +135,6 @@ vis_1 =
   geom_point(alpha = 0.25) +
   theme_minimal() 
 
-ggsave("04_out/Presentation_20260805/vis_yield.png",
-       vis_1,
-       dpi = 300,
-       width = 4.25,
-       height = 4)
-
 vis_2 = 
   dat_use %>%
   as_tibble %>% 
@@ -145,12 +142,6 @@ vis_2 =
              y = ANN_NET_GROWTH_ACRE)) + 
   geom_point(alpha = 0.25) +
   theme_minimal() 
-
-ggsave("04_out/Presentation_20260805/vis_growth.png",
-       vis_2,
-       dpi = 300,
-       width = 4.25,
-       height = 4)
 
 vis_data = vis_1 + vis_2
 
@@ -727,13 +718,13 @@ vis_fir_models_growth =
         legend.direction = "horizontal",
         legend.title = element_blank())
 
-ggsave("04_out/Presentation_20260805/vis_yield.png",
+ggsave("04_out/Presentation_20260805/vis_model_yield.png",
        vis_fir_models_yield,
        dpi = 300,
        width = 9,
        height = 4)
   
-ggsave("04_out/Presentation_20260805/vis_growth.png",
+ggsave("04_out/Presentation_20260805/vis_model_growth.png",
        vis_fir_models_growth,
        dpi = 300,
        width = 9,
