@@ -8,6 +8,36 @@
 
 dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
 
+#   Pyromes
+
+dat_pyrome = 
+  "02_data/1_2_2_USFS_Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
+  vect %>% 
+  rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
+  filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
+  select(Pyrome = WHICH) %>% 
+  project("EPSG:2992") %>% 
+  crop(dat_bounds)
+
+#  ODF Private Forest Districts
+
+dat_districts = 
+  "02_data/1_6_7_ODF_Districts/District_Boundaries.geojson" %>%
+  vect %>%
+  select(District = pf_dist) %>%
+  project("EPSG:2992") %>%
+  makeValid(buffer = TRUE) %>%
+  crop(dat_bounds)
+
+#  Counties
+
+dat_counties = 
+  "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
+  vect(layer = "County") %>% 
+  select(County = NAMELSAD) %>% 
+  project("EPSG:2992") %>%
+  crop(dat_bounds)
+
 #   Plots
 
 dat_plot = 
@@ -91,7 +121,8 @@ dat_use =
     ANN_NET_GROWTH_ACRE = sum(ANN_NET_GROWTH_ACRE, na.rm = TRUE)
     ) %>% 
   ungroup %>% 
-  mutate(across(ends_with("ACRE"), ~ ifelse(.x == 0, NA, .x))) %>% 
+  mutate(across(ends_with("ACRE"), ~ ifelse(.x == 0, NA, .x)),
+         across(ends_with("ACRE"), ~ .x / 1000)) %>% # BF to MBF. 
   # Handle condition data.
   left_join(dat_condition) %>% 
   filter(FORTYPCD == 201) %>% 
@@ -106,11 +137,16 @@ dat_use =
     ) %>% 
   project("EPSG:2992") %>% 
   crop(dat_bounds) %>% 
+  # Match to pyromes, districts, and counties.
+  intersect(dat_pyrome) %>% 
+  intersect(dat_districts) %>% 
+  intersect(dat_counties) %>% 
+  # Back to implicit spatial data. 
   as_tibble %>% 
   # Cut western hemlock for now. 
   filter(SPCD == 202) %>%
   # Cut stands older than 75 years for now.
-  filter(STDAGE <= 100) %>%
+  filter(STDAGE %in% 1:75) %>%
   # Handle outliers.
   filter(ntile(VOLBFNET_ACRE, 100) %in% 2:99) %>% 
   filter(ntile(VOLBFNET_ACRE / STDAGE, 100) %in% 2:99) %>% 
@@ -121,9 +157,7 @@ dat_use =
 # 2262 yield observations, 588 growth observations for Douglas fir without age restriction.
 # 2192 yield observations, 573 growth observations for Douglas fir with STDAGE < 100. 
 # 1555 yield observations, 430 growth observations for Douglas fir with STDAGE < 100 and FORTYPCD == 201. 
-
-plot(dat_use$STDAGE, dat_use$VOLBFNET_ACRE)
-plot(dat_use$EST_BEGIN_ACRE, dat_use$ANN_NET_GROWTH_ACRE)
+# 1322 for STDAGE in 20, 79. 
 
 # Visualization
 
@@ -151,28 +185,104 @@ ggsave("04_out/Presentation_20260805/vis_data.png",
        width = 8.5,
        height = 4)
 
-# Comparison
-
-dat_conrad = 
-  "03_intermediate/data_conrad.csv" %>% 
-  read_csv %>% 
-  pivot_longer(-Age)
-
-vis_conrad = 
-  dat_conrad %>% 
-  ggplot() +
-  geom_line(aes(x = Age,
-                y = value,
-                group = name,
-                color = name)) +
-  theme_pubr()
-
 # Estimation
 
-#  SITECLCD Bins
+#  problem: catching nonconvergent results of nls()
 
-vec_fast = 1:3
-vec_slow = 4:7
+dat_estimates = 
+  dat_use %>% 
+  mutate(Aggregate = "All") %>% 
+  pivot_longer(
+    c(Aggregate, Pyrome, District, County),
+    names_to = "Definition",
+    values_to = "Region") %>% 
+  group_by(Definition, Region) %>% 
+  nest
+  mutate(
+    Estimate_Linear = 
+      data %>% 
+      map(
+        ~ lm(
+          VOLBFNET_ACRE ~ 0 + STDAGE, 
+          data = .x
+          )
+        ),
+    # Estimate_VB = 
+    #   data %>% 
+    #   map(
+    #     ~ nls(
+    #       VOLBFNET_ACRE ~ a * (1 - exp(- b * STDAGE)) ^ 3,
+    #       data = .,
+    #       start = list(a = 150, b = 0.01)
+    #     )
+    #   ),
+    # Estimate_CR = 
+    #   data %>% 
+    #   map(
+    #     ~ nls(
+    #       log(VOLBFNET_ACRE) ~ a + p * log(1 - exp(-k * STDAGE)),
+    #       data = .,
+    #       start = list(a = 5, p = 2, k = 0.01)
+    #     )
+    #   )
+    ) %>% 
+  select(-data) %>% 
+  pivot_longer(starts_with("Estimate"),
+               names_prefix = "Estimate_",
+               names_to = "Model",
+               values_to = "Estimate")
+
+# Mihiar and Lewis use V-B expressed as: Y(a) = alpha (1 - e ^ (- beta a))
+#  Criteria for keeping estimates:
+#   (1) N >= 30
+#   (2) Convergent
+#   (3) beta <= 0.25
+#  Failing any criteria led to using state estimates rather than county estimates.
+
+# Keeping Chapman-Richards as an alternative to the sinusoidal Von Bertalanffy in case the enforced cubic is a downside. 
+
+#   Linear
+
+mod_yield_fir_linear = 
+  dat_use %>% 
+  lm(VOLBFNET_ACRE ~ STDAGE, data = .)
+
+par_yield_fir_linear_a = mod_yield_fir_linear$coefficients[[1]]
+par_yield_fir_linear_b = mod_yield_fir_linear$coefficients[[2]]
+
+#   Von Bertalanffy
+
+mod_vb_all = 
+  dat_use %>% 
+  nls(
+    VOLBFNET_ACRE ~ a * (1 - exp(- b * STDAGE)) ^ 3,
+    data = .,
+    start = list(a = 150, b = 0.01)
+  )
+
+par_vb_all_a = mod_vb_all %>% coef %>% magrittr::extract(1)
+par_vb_all_b = mod_vb_all %>% coef %>% magrittr::extract(2)
+
+plot(1:75, par_vb_all_a * (1 - exp(- par_vb_all_b * 1:75)) ^ 3)
+
+#   Chapman-Richards
+
+mod_cr_all = 
+  dat_use %>% 
+  mutate(VOLBFNET_ACRE_LOG = VOLBFNET_ACRE %>% log) %>% 
+  nls(
+    VOLBFNET_ACRE_LOG ~ a + p * log(1 - exp(-k * STDAGE)),
+    data = .,
+    start = list(a = 5, p = 2, k = 0.01)
+  )
+
+par_cr_all_a = mod_cr_all %>% coef %>% magrittr::extract(1)
+par_cr_all_p = mod_cr_all %>% coef %>% magrittr::extract(2)
+par_cr_all_k = mod_cr_all %>% coef %>% magrittr::extract(3)
+
+plot(1:75, exp(par_cr_all_a + par_cr_all_p * log(1 - exp(-par_cr_all_k * 1:75))))
+
+# Reference
 
 #  Yield ~ Age
 
