@@ -161,33 +161,33 @@ dat_use =
 
 # Visualization
 
-vis_1 = 
-  dat_use %>%
-  as_tibble %>% 
-  ggplot(aes(x = STDAGE,
-             y = VOLBFNET_ACRE)) + 
-  geom_point(alpha = 0.25) +
-  theme_minimal() 
-
-vis_2 = 
-  dat_use %>%
-  as_tibble %>% 
-  ggplot(aes(x = EST_BEGIN_ACRE,
-             y = ANN_NET_GROWTH_ACRE)) + 
-  geom_point(alpha = 0.25) +
-  theme_minimal() 
-
-vis_data = vis_1 + vis_2
-
-ggsave("04_out/Presentation_20260805/vis_data.png",
-       vis_data,
-       dpi = 300,
-       width = 8.5,
-       height = 4)
+# vis_1 = 
+#   dat_use %>%
+#   as_tibble %>% 
+#   ggplot(aes(x = STDAGE,
+#              y = VOLBFNET_ACRE)) + 
+#   geom_point(alpha = 0.25) +
+#   theme_minimal() 
+# 
+# vis_2 = 
+#   dat_use %>%
+#   as_tibble %>% 
+#   ggplot(aes(x = EST_BEGIN_ACRE,
+#              y = ANN_NET_GROWTH_ACRE)) + 
+#   geom_point(alpha = 0.25) +
+#   theme_minimal() 
+# 
+# vis_data = vis_1 + vis_2
+# 
+# ggsave("04_out/Presentation_20260805/vis_data.png",
+#        vis_data,
+#        dpi = 300,
+#        width = 8.5,
+#        height = 4)
 
 # Estimation
 
-#  problem: catching nonconvergent results of nls()
+#  problem: lots of NaNs from log in CR
 
 dat_estimates = 
   dat_use %>% 
@@ -197,7 +197,7 @@ dat_estimates =
     names_to = "Definition",
     values_to = "Region") %>% 
   group_by(Definition, Region) %>% 
-  nest
+  nest %>% 
   mutate(
     Estimate_Linear = 
       data %>% 
@@ -205,27 +205,37 @@ dat_estimates =
         ~ lm(
           VOLBFNET_ACRE ~ 0 + STDAGE, 
           data = .x
-          )
-        ),
-    # Estimate_VB = 
-    #   data %>% 
-    #   map(
-    #     ~ nls(
-    #       VOLBFNET_ACRE ~ a * (1 - exp(- b * STDAGE)) ^ 3,
-    #       data = .,
-    #       start = list(a = 150, b = 0.01)
-    #     )
-    #   ),
-    # Estimate_CR = 
-    #   data %>% 
-    #   map(
-    #     ~ nls(
-    #       log(VOLBFNET_ACRE) ~ a + p * log(1 - exp(-k * STDAGE)),
-    #       data = .,
-    #       start = list(a = 5, p = 2, k = 0.01)
-    #     )
-    #   )
-    ) %>% 
+        )
+      ),
+    Estimate_VB =
+      data %>%
+      map(
+        ~ tryCatch(
+          {
+            nls(
+              VOLBFNET_ACRE ~ a * (1 - exp(- b * STDAGE)) ^ 3,
+              data = .,
+              start = list(a = 150, b = 0.01)
+            )
+          },
+          error = function(message){NA}
+        )
+      ),
+    Estimate_CR =
+      data %>%
+      map(
+        ~ tryCatch(
+          {
+            nls(
+              log(VOLBFNET_ACRE) ~ a + p * log(1 - exp(-k * STDAGE)),
+              data = .,
+              start = list(a = 5, p = 2, k = 0.01)
+            )
+          },
+          error = function(message){NA}
+        )
+      )
+  ) %>% 
   select(-data) %>% 
   pivot_longer(starts_with("Estimate"),
                names_prefix = "Estimate_",
