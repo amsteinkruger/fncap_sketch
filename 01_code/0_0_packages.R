@@ -29,6 +29,7 @@ library(broom)
 
 library(modelsummary)
 library(flextable)
+library(gt)
 
 #  Negation
 
