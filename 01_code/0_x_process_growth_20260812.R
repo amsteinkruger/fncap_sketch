@@ -171,17 +171,62 @@ dat_use =
 
 #  Combined Test
 
-#   Separate Growth, OLS
-
 #   Separate Yield, OLS
 
-#   Combined Growth and Yield, OLS
+mod_ols_yield_separate = lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = dat_use)
 
-#   Separate Growth, Nonlinear
+#   Separate Growth, OLS
+
+# mod_ols_yield_separate = 
+
+fun_ols_iterate =
+  function(times, par){
+    
+    Reduce(
+      f = function(V_0, dv) V_0 + dv * V_0,
+      x = rep(par, times),
+      init = 1 
+    )
+    
+  }
+
+fun_ols_growth_separate = 
+  function(dat, par){
+    
+    dat %>% 
+      select(VOLBFNET_ACRE, STDAGE) %>% 
+      mutate(
+        VOLBFNET_ACRE_HAT = 
+          STDAGE %>% 
+          map(~ fun_ols_iterate(.x, par))
+      ) %>% 
+      unnest(VOLBFNET_ACRE_HAT) %>% 
+      mutate(VOLBFNET_ACRE_RESIDUAL_SQUARE = (VOLBFNET_ACRE - VOLBFNET_ACRE_HAT) ^ 2)
+  }
+
+dat_ols_yield = 
+  dat_use %>% 
+  fun_ols_growth_separate(mod_ols_yield_separate$coefficients[[1]])
+
+#   Combined Yield and Growth, OLS
+
+# separate estimation to get a starting value
+# function to minimize
+  # function of parameters -- need starting guesses (from separate run)
+  # get OLS residuals
+  # formulate growth
+  # get growth residuals
+  # combine residuals 
+# minimization
+# report coefficients and summary statistics; visualize data, predictions, residuals
+
+# remember that all of this will eventually need to collapse into a single function to map onto regions, site classes, etc
 
 #   Separate Yield, Nonlinear
 
-#   Combined Growth and Yield, Nonlinear
+#   Separate Growth, Nonlinear
+
+#   Combined Yield and Growth, Nonlinear
 
 #  Regions
 
