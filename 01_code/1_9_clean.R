@@ -8,8 +8,8 @@ dat_clean =
          Restrict_Acres_Upper = Acres_1 < quantile(Acres_1, 0.99),
          Restrict_MBF_Lower = MBF_1 > quantile(MBF_1, 0.01),
          Restrict_MBF_Upper = MBF_1 < quantile(MBF_1, 0.99),
-         Restrict_MBF_Acre_Lower = MBF_1 > quantile(MBF_Acre_1, 0.01),
-         Restrict_MBF_Acre_Upper = MBF_1 < quantile(MBF_Acre_1, 0.99)) %>% 
+         Restrict_MBF_Acre_Lower = MBF_Acre_1 > quantile(MBF_Acre_1, 0.01),
+         Restrict_MBF_Acre_Upper = MBF_Acre_1 < quantile(MBF_Acre_1, 0.99)) %>% 
   filter(if_all(starts_with("Restrict"), ~ .x == TRUE)) %>% 
   select(-starts_with("Restrict")) %>% 
   # Move variables around for easier reading. 
