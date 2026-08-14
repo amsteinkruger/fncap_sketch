@@ -92,6 +92,16 @@ dat_price_lumber =
              ),
              na.rm = TRUE
            ),
+         Price_Lumber_DouglasFir_Kiln_RL = 
+           mean(
+             c(
+               Lumber_DouglasFir_Kiln_2x6_RL,
+               Lumber_DouglasFir_Kiln_2x8_RL,
+               Lumber_DouglasFir_Kiln_2x10_RL,
+               Lumber_DouglasFir_Kiln_2x12_RL
+             ),
+             na.rm = TRUE
+           ),
          Price_Lumber_DouglasFir_Green_20 = 
            mean(
              c(
