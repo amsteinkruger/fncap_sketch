@@ -6,43 +6,43 @@
 
 #   Bounds
 
-dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
+# dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
 
 #   Pyromes
 
-dat_pyrome = 
-  "02_data/1_2_2_USFS_Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
-  vect %>% 
-  rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
-  filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
-  select(Pyrome = WHICH) %>% 
-  project("EPSG:2992") %>% 
-  crop(dat_bounds)
+# dat_pyrome = 
+#   "02_data/1_2_2_USFS_Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
+#   vect %>% 
+#   rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
+#   filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
+#   select(Pyrome = WHICH) %>% 
+#   project("EPSG:2992") %>% 
+#   crop(dat_bounds)
 
 #  ODF Private Forest Districts
 
-dat_districts = 
-  "02_data/1_6_7_ODF_Districts/District_Boundaries.geojson" %>%
-  vect %>%
-  select(District = pf_dist) %>%
-  project("EPSG:2992") %>%
-  makeValid(buffer = TRUE) %>%
-  crop(dat_bounds)
+# dat_districts = 
+#   "02_data/1_6_7_ODF_Districts/District_Boundaries.geojson" %>%
+#   vect %>%
+#   select(District = pf_dist) %>%
+#   project("EPSG:2992") %>%
+#   makeValid(buffer = TRUE) %>%
+#   crop(dat_bounds)
 
 #  Counties
 
-dat_counties = 
-  "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
-  vect(layer = "County") %>% 
-  select(County = NAMELSAD) %>% 
-  project("EPSG:2992") %>%
-  crop(dat_bounds)
+# dat_counties = 
+#   "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
+#   vect(layer = "County") %>% 
+#   select(County = NAMELSAD) %>% 
+#   project("EPSG:2992") %>%
+#   crop(dat_bounds)
 
 #   Plots
 
-dat_plot = 
+dat_plot =
   "02_data/1_5_1_FIA/OR_PLOT.csv" %>%
-  read_csv %>% 
+  read_csv %>%
   select(
     INVYR,
     MEASYEAR,
@@ -127,6 +127,8 @@ dat_use =
   ungroup %>% 
   mutate(across(ends_with("ACRE"), ~ ifelse(.x == 0, NA, .x)),
          across(ends_with("ACRE"), ~ .x / 1000)) %>% # BF to MBF. 
+  # Cut western hemlock for now. 
+  filter(SPCD == 202) %>% 
   # Handle condition data.
   left_join(dat_condition) %>% 
   filter(FORTYPCD == 201) %>% # Cuts to Douglas fir stands only. 
@@ -135,20 +137,18 @@ dat_use =
   # Handle plot data.
   left_join(dat_plot) %>% 
   # Explicate spatial data and reduce to region of interest.
-  vect(
-    geom = c("LON", "LAT"),
-    crs = "EPSG:4326"
-    ) %>% 
-  project("EPSG:2992") %>% 
-  crop(dat_bounds) %>% 
+  # vect(
+  #   geom = c("LON", "LAT"),
+  #   crs = "EPSG:4326"
+  #   ) %>% 
+  # project("EPSG:2992") %>% 
+  # crop(dat_bounds) %>% 
   # Match to pyromes, districts, and counties.
-  intersect(dat_pyrome) %>% 
-  intersect(dat_districts) %>% 
-  intersect(dat_counties) %>% 
+  # intersect(dat_pyrome) %>% 
+  # intersect(dat_districts) %>% 
+  # intersect(dat_counties) %>% 
   # Back to implicit spatial data. 
   as_tibble %>% 
-  # Cut western hemlock for now. 
-  filter(SPCD == 202) %>%
   # Cut stands older than 75 years for now.
   filter(STDAGE %in% 1:75) %>%
   # Handle outliers.
@@ -169,15 +169,11 @@ dat_use =
 
 # Estimation
 
-#  Combined Test
+#  OLS Demo
 
-#   Separate Yield, OLS
+library(nloptr) # Stick this in 0_0 if it keeps working well enough. 
 
-mod_ols_yield_separate = lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = dat_use)
-
-#   Separate Growth, OLS
-
-# mod_ols_yield_separate = 
+mod_ols_initialize = lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = dat_use)
 
 fun_ols_iterate =
   function(times, par){
@@ -190,544 +186,74 @@ fun_ols_iterate =
     
   }
 
-fun_ols_growth_separate = 
-  function(dat, par){
+fun_ols_growth = 
+  function(par){
     
-    dat %>% 
-      select(VOLBFNET_ACRE, STDAGE) %>% 
-      mutate(
-        VOLBFNET_ACRE_HAT = 
-          STDAGE %>% 
-          map(~ fun_ols_iterate(.x, par))
-      ) %>% 
-      unnest(VOLBFNET_ACRE_HAT) %>% 
-      mutate(VOLBFNET_ACRE_RESIDUAL_SQUARE = (VOLBFNET_ACRE - VOLBFNET_ACRE_HAT) ^ 2)
+    residuals_yield = 
+      dat_use %>% # Note global call. 
+      pull(EST_BEGIN_ACRE) %>% 
+      multiply_by(par[[1]]) %>% # Formula goes here.
+      subtract(dat_use$ANN_NET_GROWTH_ACRE) %>% 
+      raise_to_power(2) %>% 
+      sum(na.rm = TRUE)
+    
+    residuals_growth = 
+      dat_use %>% 
+      pull(STDAGE) %>% 
+      map(~ fun_ols_iterate(.x, par)) %>% 
+      unlist %>% 
+      subtract(dat_use$VOLBFNET_ACRE) %>% 
+      raise_to_power(2) %>% 
+      sum(na.rm = TRUE)
+      
+    residuals_yield + residuals_growth # Weighting goes here. 
+    
   }
 
-dat_ols_yield = 
-  dat_use %>% 
-  fun_ols_growth_separate(mod_ols_yield_separate$coefficients[[1]])
+dat_ols_initial = fun_ols_growth(mod_ols_initialize$coefficients[[1]])
 
-#   Combined Yield and Growth, OLS
-
-# separate estimation to get a starting value
-# function to minimize
-  # function of parameters -- need starting guesses (from separate run)
-  # get OLS residuals
-  # formulate growth
-  # get growth residuals
-  # combine residuals 
-# minimization
-# report coefficients and summary statistics; visualize data, predictions, residuals
-
-# remember that all of this will eventually need to collapse into a single function to map onto regions, site classes, etc
-
-#   Separate Yield, Nonlinear
-
-#   Separate Growth, Nonlinear
-
-#   Combined Yield and Growth, Nonlinear
-
-#  Regions
-
-dat_estimates = 
-  dat_use %>% 
-  mutate(Aggregate = "All") %>% 
-  pivot_longer(
-    c(Aggregate, Pyrome, District, County),
-    names_to = "Definition",
-    values_to = "Region") %>% 
-  group_by(Definition, Region) %>% 
-  nest %>% 
-  ungroup %>% 
-  arrange(Definition, Region) %>% 
-  # Estimate parameters. 
-  mutate(
-    Estimate_OLS = 
-      data %>% 
-      map(
-        ~ lm(
-          VOLBFNET_ACRE ~ 0 + STDAGE, 
-          data = .x
-        )
-      ),
-    Estimate_VB =
-      data %>%
-      map(
-        ~ tryCatch(
-          {
-            nls(
-              VOLBFNET_ACRE ~ a * (1 - exp(- b * STDAGE)) ^ 3,
-              data = .,
-              start = list(a = 150, b = 0.01)
-            )
-          },
-          error = function(message){NA}
-        )
-      )
-  ) %>% 
-  # Get parameters. 
-  mutate(
-    n = 
-      data %>% 
-      map(nrow),
-    OLS_b = 
-      Estimate_OLS %>% 
-      map(~ .x %>% coef %>% magrittr::extract(1)),
-    VB_a = 
-      Estimate_VB %>% 
-      map(
-        ~ ifelse(
-          !is.logical(.x),
-          .x %>% coef %>% magrittr::extract("a"),
-          NA
-        )
-      ),
-    VB_b = 
-      Estimate_VB %>% 
-      map(
-        ~ ifelse(
-          !is.logical(.x),
-          .x %>% coef %>% magrittr::extract("b"),
-          NA
-        )
-      )
-    ) %>% 
-  unnest(cols = c(n, OLS_b, VB_a, VB_b)) %>% 
-  arrange(Definition, desc(n)) %>% 
-  # Add predictions.
-  mutate(
-    Prediction_OLS = 
-      OLS_b %>% 
-      map(~ .x * vec_stdage),
-    Prediction_VB = 
-      map2(
-        VB_a,
-        VB_b,
-        ~ .x * (1 - exp(- .y * vec_stdage)) ^ 3
-      )
+mod_ols_optimizing = 
+  nloptr(
+    mod_ols_initialize$coefficients[[1]],
+    fun_ols_growth,
+    opts = list("algorithm" = "NLOPT_LN_COBYLA")
   )
 
-# Tables
+par_ols_optimized = mod_ols_optimizing$solution
 
-tab_pyrome = 
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "Pyrome")) %>% 
-  select(Pyrome = Region, n, OLS_b, VB_a, VB_b) %>% 
-  mutate(across(c(OLS_b, VB_a, VB_b), ~ round(.x, 3))) %T>% 
-  write_csv("04_out/Presentation_20260809/tab_pyrome.csv")
+# OLS Visualization
 
-tab_district = 
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "District")) %>% 
-  select(District = Region, n, OLS_b, VB_a, VB_b) %>% 
-  mutate(across(c(OLS_b, VB_a, VB_b), ~ round(.x, 3))) %T>% 
-  write_csv("04_out/Presentation_20260809/tab_district.csv")
-
-tab_county = 
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "County")) %>% 
-  select(County = Region, n, OLS_b, VB_a, VB_b) %>% 
-  mutate(across(c(OLS_b, VB_a, VB_b), ~ round(.x, 3))) %T>% 
-  write_csv("04_out/Presentation_20260809/tab_county.csv")
-
-# Plots
-
-#  Pyromes
-
-#   All growth estimates in one plot
-
-vis_pyrome_all = 
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "Pyrome")) %>% 
-  select(Region, Prediction_VB) %>% 
-  unnest(Prediction_VB) %>% 
-  mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-  pivot_longer(Prediction_VB) %>% 
-  mutate(Region_Which = ifelse(Region == "All", "All", "Other")) %>% 
-  ggplot() +
-  geom_line(aes(x = Age,
-                y = value,
-                group = Region,
-                # color = Region,
-                linewidth = Region_Which,
-                linetype = Region_Which)) +
-  labs(x = "Stand Age",
-       y = "MBF") +
-  scale_x_continuous(limits = c(0, 75),
-                     breaks = c(0, 25, 50, 75),
-                     expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 30),
-                     breaks = c(0, 10, 20, 30),
-                     expand = c(0, 0)) +
-  scale_linewidth_manual(values = c(1.75, 1.25)) +
-  scale_linetype_manual(values = c("dashed", "solid")) +
-  theme_pubr() +
-  theme(legend.position = "none")
-
-ggsave("04_out/Presentation_20260809/vis_pyrome_all.png",
-       vis_pyrome_all,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#   Each growth estimate in a separate plot with points for observations
-
-vis_pyrome_each =
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "Pyrome")) %>% 
-  select(Region, data, Prediction_OLS, Prediction_VB) %>% 
-  ggplot() +
-  geom_point(data = 
-               . %>% 
-               unnest(data) %>% 
-               select(Region, Age = STDAGE, MBF = VOLBFNET_ACRE),
-             aes(x = Age,
-                 y = MBF),
-             shape = 21,
-             fill = NA,
-             alpha = 0.33) +
-  geom_line(data = 
-              . %>% 
-              unnest(Prediction_OLS) %>% 
-              mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-              select(Region, Age, MBF = Prediction_OLS),
-            aes(x = Age,
-                y = MBF),
-            linewidth = 1.25,
-            color = "red3",
-            alpha = 0.50) +
-  geom_line(data = 
-              . %>% 
-              unnest(Prediction_VB) %>% 
-              mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-              select(Region, Age, MBF = Prediction_VB),
-            aes(x = Age,
-                y = MBF),
-            linewidth = 1.25,
-            color = "red",
-            alpha = 0.75) +
-  facet_wrap(~ Region) +
-  scale_x_continuous(limits = c(0, 75),
-                     breaks = c(0, 25, 50, 75)) +
-  scale_y_continuous(limits = c(0, 45),
-                     breaks = c(0, 15, 30, 45)) +
-  theme_pubr()
-
-ggsave("04_out/Presentation_20260809/vis_pyrome_each.png",
-       vis_pyrome_each,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#   n, a, b for each geography
-
-vis_pyrome_map_n = 
-  dat_estimates %>% 
-  filter(Definition %in% "Pyrome") %>% 
-  select(Pyrome = Region, n) %>% 
-  left_join(dat_pyrome, .) %>% 
+vis_ols_yield = 
+  dat_use %>% 
+  drop_na(ANN_NET_GROWTH_ACRE) %>% 
+  mutate(
+    ANN_NET_GROWTH_ACRE_HAT_NAIVE = EST_BEGIN_ACRE * mod_ols_initialize$coefficients[[1]],
+    ANN_NET_GROWTH_ACRE_HAT_OPTIMIZED = EST_BEGIN_ACRE * par_ols_optimized
+  ) %>% 
+  select(EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_ACRE")) %>% 
+  pivot_longer(-EST_BEGIN_ACRE) %>% 
   ggplot() + 
-  geom_spatvector(aes(fill = n), color = NA) +
-  scale_fill_distiller(palette = "Greens", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
+  geom_point(aes(x = EST_BEGIN_ACRE,
+                 y = value,
+                 color = name))
 
-vis_pyrome_map_a = 
-  dat_estimates %>% 
-  filter(Definition %in% "Pyrome") %>% 
-  select(Pyrome = Region, VB_a) %>% 
-  left_join(dat_pyrome, .) %>% 
+vis_ols_growth = 
+  dat_use %>% 
+  mutate(
+    VOLBFNET_ACRE_NAIVE = 1, # ???
+    VOLBFNET_ACRE_OPTIMIZED = 1 # ???
+  ) %>% 
+  select(STDAGE, starts_with("VOLBFNET_ACRE")) %>% 
+  pivot_longer(-STDAGE) %>% 
   ggplot() + 
-  geom_spatvector(aes(fill = VB_a), color = NA) +
-  scale_fill_distiller(palette = "Oranges", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
+  geom_point(aes(x = STDAGE,
+                 y = value,
+                 color = name))
 
-vis_pyrome_map_b = 
-  dat_estimates %>% 
-  filter(Definition %in% "Pyrome") %>% 
-  select(Pyrome = Region, VB_b) %>% 
-  left_join(dat_pyrome, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = VB_b), color = NA) +
-  scale_fill_distiller(palette = "Purples", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
+vis_ols_yield + vis_ols_growth
 
-vis_pyrome_map = vis_pyrome_map_n + vis_pyrome_map_a + vis_pyrome_map_b
+# P-T Implementation
 
-ggsave("04_out/Presentation_20260809/vis_pyrome_map.png",
-       vis_pyrome_map,
-       dpi = 300,
-       width = 8,
-       height = 6)
 
-#  Districts
 
-#   All growth estimates in one plot
-
-vis_district_all = 
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "District")) %>% 
-  select(Region, Prediction_VB) %>% 
-  unnest(Prediction_VB) %>% 
-  mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-  pivot_longer(Prediction_VB) %>% 
-  mutate(Region_Which = ifelse(Region == "All", "All", "Other")) %>% 
-  ggplot() +
-  geom_line(aes(x = Age,
-                y = value,
-                group = Region,
-                # color = Region,
-                linewidth = Region_Which,
-                linetype = Region_Which)) +
-  labs(x = "Stand Age",
-       y = "MBF") +
-  scale_x_continuous(limits = c(0, 75),
-                     breaks = c(0, 25, 50, 75),
-                     expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 30),
-                     breaks = c(0, 10, 20, 30),
-                     expand = c(0, 0)) +
-  scale_linewidth_manual(values = c(1.75, 1.25)) +
-  scale_linetype_manual(values = c("dashed", "solid")) +
-  theme_pubr() +
-  theme(legend.position = "none")
-
-ggsave("04_out/Presentation_20260809/vis_district_all.png",
-       vis_district_all,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#   Each growth estimate in a separate plot with points for observations
-
-vis_district_each =
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "District")) %>% 
-  select(Region, data, Prediction_OLS, Prediction_VB) %>% 
-  ggplot() +
-  geom_point(data = 
-               . %>% 
-               unnest(data) %>% 
-               select(Region, Age = STDAGE, MBF = VOLBFNET_ACRE),
-             aes(x = Age,
-                 y = MBF),
-             shape = 21,
-             fill = NA,
-             alpha = 0.33) +
-  geom_line(data = 
-              . %>% 
-              unnest(Prediction_OLS) %>% 
-              mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-              select(Region, Age, MBF = Prediction_OLS),
-            aes(x = Age,
-                y = MBF),
-            linewidth = 1.25,
-            color = "red3",
-            alpha = 0.50) +
-  geom_line(data = 
-              . %>% 
-              unnest(Prediction_VB) %>% 
-              mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-              select(Region, Age, MBF = Prediction_VB),
-            aes(x = Age,
-                y = MBF),
-            linewidth = 1.25,
-            color = "red",
-            alpha = 0.75) +
-  facet_wrap(~ Region) +
-  scale_x_continuous(limits = c(0, 75),
-                     breaks = c(0, 25, 50, 75)) +
-  scale_y_continuous(limits = c(0, 45),
-                     breaks = c(0, 15, 30, 45)) +
-  theme_pubr()
-
-ggsave("04_out/Presentation_20260809/vis_district_each.png",
-       vis_district_each,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#   n, a, b for each geography
-
-vis_district_map_n = 
-  dat_estimates %>% 
-  filter(Definition %in% "District") %>% 
-  select(District = Region, n) %>% 
-  left_join(dat_districts, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = n), color = NA) +
-  scale_fill_distiller(palette = "Greens", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
-
-vis_district_map_a = 
-  dat_estimates %>% 
-  filter(Definition %in% "District") %>% 
-  select(District = Region, VB_a) %>% 
-  left_join(dat_districts, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = VB_a), color = NA) +
-  scale_fill_distiller(palette = "Oranges", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
-
-vis_district_map_b = 
-  dat_estimates %>% 
-  filter(Definition %in% "District") %>% 
-  select(District = Region, VB_b) %>% 
-  left_join(dat_districts, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = VB_b), color = NA) +
-  scale_fill_distiller(palette = "Purples", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
-
-vis_district_map = vis_district_map_n + vis_district_map_a + vis_district_map_b
-
-ggsave("04_out/Presentation_20260809/vis_district_map.png",
-       vis_district_map,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#  Counties
-
-#   All growth estimates in one plot
-
-vis_county_all = 
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "County")) %>% 
-  select(Region, Prediction_VB) %>% 
-  unnest(Prediction_VB) %>% 
-  mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-  pivot_longer(Prediction_VB) %>% 
-  mutate(Region_Which = ifelse(Region == "All", "All", "Other")) %>% 
-  ggplot() +
-  geom_line(aes(x = Age,
-                y = value,
-                group = Region,
-                # color = Region,
-                linewidth = Region_Which,
-                linetype = Region_Which)) +
-  labs(x = "Stand Age",
-       y = "MBF") +
-  scale_x_continuous(limits = c(0, 75),
-                     breaks = c(0, 25, 50, 75),
-                     expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 30),
-                     breaks = c(0, 10, 20, 30),
-                     expand = c(0, 0)) +
-  scale_linewidth_manual(values = c(1.75, 1.25)) +
-  scale_linetype_manual(values = c("dashed", "solid")) +
-  theme_pubr() +
-  theme(legend.position = "none")
-
-ggsave("04_out/Presentation_20260809/vis_county_all.png",
-       vis_county_all,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#   Each growth estimate in a separate plot with points for observations
-
-vis_county_each =
-  dat_estimates %>% 
-  filter(Definition %in% c("Aggregate", "County")) %>% 
-  select(Region, data, Prediction_OLS, Prediction_VB) %>% 
-  ggplot() +
-  geom_point(data = 
-               . %>% 
-               unnest(data) %>% 
-               select(Region, Age = STDAGE, MBF = VOLBFNET_ACRE),
-             aes(x = Age,
-                 y = MBF),
-             shape = 21,
-             fill = NA,
-             alpha = 0.33) +
-  geom_line(data = 
-              . %>% 
-              unnest(Prediction_OLS) %>% 
-              mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-              select(Region, Age, MBF = Prediction_OLS),
-            aes(x = Age,
-                y = MBF),
-            linewidth = 1.25,
-            color = "red3",
-            alpha = 0.50) +
-  geom_line(data = 
-              . %>% 
-              unnest(Prediction_VB) %>% 
-              mutate(Age = rep(vec_stdage, length(unique(Region)))) %>% # Band-Aid
-              select(Region, Age, MBF = Prediction_VB),
-            aes(x = Age,
-                y = MBF),
-            linewidth = 1.25,
-            color = "red",
-            alpha = 0.75) +
-  facet_wrap(~ Region) +
-  scale_x_continuous(limits = c(0, 75),
-                     breaks = c(0, 25, 50, 75)) +
-  scale_y_continuous(limits = c(0, 45),
-                     breaks = c(0, 15, 30, 45)) +
-  theme_pubr()
-
-ggsave("04_out/Presentation_20260809/vis_county_each.png",
-       vis_county_each,
-       dpi = 300,
-       width = 8,
-       height = 6)
-
-#   n, a, b for each geography
-
-vis_county_map_n = 
-  dat_estimates %>% 
-  filter(Definition %in% "County") %>% 
-  select(County = Region, n) %>% 
-  left_join(dat_counties, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = n), color = NA) +
-  scale_fill_distiller(palette = "Greens", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
-
-vis_county_map_a = 
-  dat_estimates %>% 
-  filter(Definition %in% "County") %>% 
-  select(County = Region, VB_a) %>% 
-  left_join(dat_counties, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = VB_a), color = NA) +
-  scale_fill_distiller(palette = "Oranges", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
-
-vis_county_map_b = 
-  dat_estimates %>% 
-  filter(Definition %in% "County") %>% 
-  select(County = Region, VB_b) %>% 
-  left_join(dat_counties, .) %>% 
-  ggplot() + 
-  geom_spatvector(aes(fill = VB_b), color = NA) +
-  scale_fill_distiller(palette = "Purples", direction = 1) +
-  theme_void() +
-  theme(legend.position = "bottom",
-        legend.direction = "horizontal")
-
-vis_county_map = vis_county_map_n + vis_county_map_a + vis_county_map_b
-
-ggsave("04_out/Presentation_20260809/vis_county_map.png",
-       vis_county_map,
-       dpi = 300,
-       width = 8,
-       height = 6)
+# To generalize over regions, site classes, etc., refer to earlier modeling script. 
