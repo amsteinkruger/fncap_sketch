@@ -1,42 +1,6 @@
 # Wrangle FIA and estimate growth models.
 
-# Grab disturbance and treatment variables, then reduce meaningfully. 
-
 #  Data
-
-#   Bounds
-
-# dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
-
-#   Pyromes
-
-# dat_pyrome = 
-#   "02_data/1_2_2_USFS_Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
-#   vect %>% 
-#   rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
-#   filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
-#   select(Pyrome = WHICH) %>% 
-#   project("EPSG:2992") %>% 
-#   crop(dat_bounds)
-
-#  ODF Private Forest Districts
-
-# dat_districts = 
-#   "02_data/1_6_7_ODF_Districts/District_Boundaries.geojson" %>%
-#   vect %>%
-#   select(District = pf_dist) %>%
-#   project("EPSG:2992") %>%
-#   makeValid(buffer = TRUE) %>%
-#   crop(dat_bounds)
-
-#  Counties
-
-# dat_counties = 
-#   "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
-#   vect(layer = "County") %>% 
-#   select(County = NAMELSAD) %>% 
-#   project("EPSG:2992") %>%
-#   crop(dat_bounds)
 
 #   Plots
 
@@ -94,7 +58,7 @@ dat_growth =
   mutate(EST_BEGIN_ACRE = EST_BEGIN * TPAGROW_UNADJ,
          EST_END_ACRE = EST_END * TPAGROW_UNADJ,
          ANN_NET_GROWTH_ACRE = ANN_NET_GROWTH * TPAGROW_UNADJ) %>% 
-  select(INVYR, PLT_CN, TRE_CN, EST_BEGIN_ACRE, EST_END_ACRE, ANN_NET_GROWTH_ACRE)
+  select(INVYR, PLT_CN, TRE_CN, EST_BEGIN_ACRE, EST_END_ACRE, ANN_NET_GROWTH_ACRE, REMPER)
 
 #   Wrangle
 
@@ -136,19 +100,6 @@ dat_use =
   filter(STDAGE %!in% c(NA, 0, 998, 999)) %>% 
   # Handle plot data.
   left_join(dat_plot) %>% 
-  # Explicate spatial data and reduce to region of interest.
-  # vect(
-  #   geom = c("LON", "LAT"),
-  #   crs = "EPSG:4326"
-  #   ) %>% 
-  # project("EPSG:2992") %>% 
-  # crop(dat_bounds) %>% 
-  # Match to pyromes, districts, and counties.
-  # intersect(dat_pyrome) %>% 
-  # intersect(dat_districts) %>% 
-  # intersect(dat_counties) %>% 
-  # Back to implicit spatial data. 
-  as_tibble %>% 
   # Cut stands older than 75 years for now.
   filter(STDAGE %in% 1:75) %>%
   # Handle outliers.
@@ -156,27 +107,17 @@ dat_use =
   filter(ntile(VOLBFNET_ACRE / STDAGE, 100) %in% 2:99) %>% 
   filter(ntile(EST_BEGIN_ACRE, 100) %in% 2:99 | is.na(EST_BEGIN_ACRE)) %>% 
   filter(ntile(ANN_NET_GROWTH_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE)) %>%
-  filter(ntile(ANN_NET_GROWTH_ACRE / VOLBFNET_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE))
-
-# growth and yield are backwards here
-
-# 2262 yield observations, 588 growth observations for Douglas fir without age restriction.
-# 2192 yield observations, 573 growth observations for Douglas fir with STDAGE < 100. 
-# 1555 yield observations, 430 growth observations for Douglas fir with STDAGE < 100 and FORTYPCD == 201. 
-# 1472 , 397 with STDAGE <= 75, FORTYPCD == 201. 
-
-# 47 of 1472 observations with MBF > 47. 
+  filter(ntile(ANN_NET_GROWTH_ACRE / VOLBFNET_ACRE, 100) %in% 2:99 | is.na(ANN_NET_GROWTH_ACRE)) # %>% 
 
 # Estimation
 
 #  OLS Demo
 
-library(nloptr) # Stick this in 0_0 if it keeps working. 
+library(nloptr) # Remember to kick this into packages.R if it works. 
 
 mod_ols_initial =
   dat_use %>% 
-  # mutate(EST_ANNUAL_ACRE = EST_BEGIN_ACRE + ANN_NET_GROWTH_ACRE) %>% 
-  lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = .) # EST_ANNUAL_ACRE
+  lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = .) 
 
 par_ols_initial = mod_ols_initial$coefficients[[1]]
 
@@ -268,13 +209,14 @@ vis_ols_yield + vis_ols_growth
 mod_pt_initial =
   dat_use %>% 
   drop_na(EST_BEGIN_ACRE) %>% 
-  nls(# ANN_NET_GROWTH_ACRE ~ a * ANN_NET_GROWTH_ACRE * (1 - (EST_BEGIN_ACRE / b) ^ c),
-      ANN_NET_GROWTH_ACRE ~ a * (1 + (EST_BEGIN_ACRE / b) ^ c),
-      data = .,
-      start = list(a = 0.1, b = 0.1, c = 0.500),
-      algorithm = "port",
-      lower = c(a = 1e-4, b = 1e-4, c = 1e-4),
-      nls.control(maxiter = 100))
+  nls(
+    ANN_NET_GROWTH_ACRE ~ a * (1 + (EST_BEGIN_ACRE / b) ^ c),
+    data = .,
+    start = list(a = 0.1, b = 0.1, c = 0.500),
+    algorithm = "port",
+    lower = c(a = 1e-4, b = 1e-4, c = 1e-4),
+    nls.control(maxiter = 100)
+  )
   
 par_pt_initial = mod_pt_initial %>% coef
 
@@ -309,7 +251,8 @@ fun_pt_growth =
       pull(STDAGE) %>% 
       map(~ fun_pt_iterate(.x, par)) %>% 
       unlist %>% 
-      subtract(dat_use$VOLBFNET_ACRE) %>% 
+      subtract(dat_use$EST_BEGIN_ACRE) %>% 
+      subtract(dat_use$ANN_NET_GROWTH_ACRE) %>% 
       raise_to_power(2) %>% 
       divide_by(length(.)) %>% # Weighting by observations. 
       sum(na.rm = TRUE)
@@ -345,25 +288,47 @@ vis_pt_yield =
   geom_point(aes(x = EST_BEGIN_ACRE,
                  y = value,
                  color = name),
-             alpha = 0.33)
+             alpha = 0.50) +
+  labs(x = "EST_BEGIN_ACRE", y = "ANN_NET_GROWTH_ACRE") +
+  scale_color_manual(values = c("#000000", "red", "blue")) +
+  theme_pubr() +
+  theme(legend.position = "bottom",
+        legend.direction = "vertical",
+        legend.title = element_blank())
 
 vis_pt_growth = 
   dat_use %>% 
   mutate(
-    VOLBFNET_ACRE_HAT_NAIVE = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_initial)), 
+    VOLBFNET_ACRE_HAT_NAIVE = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_initial)),
     VOLBFNET_ACRE_HAT_OPTIMIZED = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_optimized))
-  ) %>% 
-  unnest(c(VOLBFNET_ACRE_HAT_NAIVE, VOLBFNET_ACRE_HAT_OPTIMIZED)) %>% 
+  ) %>%
+  unnest(c(VOLBFNET_ACRE_HAT_NAIVE, VOLBFNET_ACRE_HAT_OPTIMIZED)) %>%
+  # mutate(
+  #   EST_ANNUAL_ACRE = EST_BEGIN_ACRE + ANN_NET_GROWTH_ACRE,
+  #   EST_ANNUAL_ACRE_HAT_NAIVE = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_initial)), 
+  #   EST_ANNUAL_ACRE_HAT_OPTIMIZED = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_optimized))
+  # ) %>% 
+  # unnest(c(EST_ANNUAL_ACRE_HAT_NAIVE, EST_ANNUAL_ACRE_HAT_OPTIMIZED)) %>% 
   select(STDAGE, starts_with("VOLBFNET_ACRE")) %>% 
   pivot_longer(-STDAGE) %>% 
   ggplot() + 
   geom_point(aes(x = STDAGE,
                  y = value,
                  color = name),
-             alpha = 0.33) +
-  scale_y_continuous(limits = c(0, 100))
+             alpha = 0.50) +
+  labs(x = "STDAGE", y = "EST_ANNUAL_ACRE") +
+  scale_color_manual(values = c("#000000", "red", "blue")) +
+  theme_pubr() +
+  theme(legend.position = "bottom",
+        legend.direction = "vertical",
+        legend.title = element_blank())
 
 vis_pt_yield + vis_pt_growth
+
+ggsave("04_out/Other/vis_combined.png",
+       dpi = 300,
+       width = 8,
+       height = 5)
 
 # Problems:
 #  (1) The combined model is dragging the yield curve implausibly far from the best separate fit.  
@@ -372,6 +337,7 @@ vis_pt_yield + vis_pt_growth
 
 # Things to try:
 #  (1) Split on site class.
+#      SITECLCD is not driving the difference in fit. Neither is VOLBFNET_ACRE vs. EST_BEGIN_ACRE + ANN_NET_GROWTH_ACRE (much).
 #  (2) Try alternative functional forms. 
 #  (3) Try alternative nonlinear optimization programs.
 
