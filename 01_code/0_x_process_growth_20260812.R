@@ -171,9 +171,14 @@ dat_use =
 
 #  OLS Demo
 
-library(nloptr) # Stick this in 0_0 if it keeps working well enough. 
+library(nloptr) # Stick this in 0_0 if it keeps working. 
 
-mod_ols_initialize = lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = dat_use)
+mod_ols_initial =
+  dat_use %>% 
+  # mutate(EST_ANNUAL_ACRE = EST_BEGIN_ACRE + ANN_NET_GROWTH_ACRE) %>% 
+  lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = .) # EST_ANNUAL_ACRE
+
+par_ols_initial = mod_ols_initial$coefficients[[1]]
 
 fun_ols_iterate =
   function(times, par){
@@ -192,9 +197,10 @@ fun_ols_growth =
     residuals_yield = 
       dat_use %>% # Note global call. 
       pull(EST_BEGIN_ACRE) %>% 
-      multiply_by(par[[1]]) %>% # Formula goes here.
+      multiply_by(par[[1]]) %>% 
       subtract(dat_use$ANN_NET_GROWTH_ACRE) %>% 
       raise_to_power(2) %>% 
+      divide_by(length(.)) %>% # Weighting by observations. 
       sum(na.rm = TRUE)
     
     residuals_growth = 
@@ -204,17 +210,18 @@ fun_ols_growth =
       unlist %>% 
       subtract(dat_use$VOLBFNET_ACRE) %>% 
       raise_to_power(2) %>% 
+      divide_by(length(.)) %>% # Weighting by observations. 
       sum(na.rm = TRUE)
       
-    residuals_yield + residuals_growth # Weighting goes here. 
+    residuals_yield + residuals_growth
     
   }
 
-dat_ols_initial = fun_ols_growth(mod_ols_initialize$coefficients[[1]])
+dat_ols_initial = fun_ols_growth(par_ols_initial)
 
 mod_ols_optimizing = 
   nloptr(
-    mod_ols_initialize$coefficients[[1]],
+    mod_ols_initial$coefficients[[1]],
     fun_ols_growth,
     opts = list("algorithm" = "NLOPT_LN_COBYLA")
   )
@@ -227,7 +234,7 @@ vis_ols_yield =
   dat_use %>% 
   drop_na(ANN_NET_GROWTH_ACRE) %>% 
   mutate(
-    ANN_NET_GROWTH_ACRE_HAT_NAIVE = EST_BEGIN_ACRE * mod_ols_initialize$coefficients[[1]],
+    ANN_NET_GROWTH_ACRE_HAT_NAIVE = EST_BEGIN_ACRE * par_ols_initial,
     ANN_NET_GROWTH_ACRE_HAT_OPTIMIZED = EST_BEGIN_ACRE * par_ols_optimized
   ) %>% 
   select(EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_ACRE")) %>% 
@@ -235,25 +242,138 @@ vis_ols_yield =
   ggplot() + 
   geom_point(aes(x = EST_BEGIN_ACRE,
                  y = value,
-                 color = name))
+                 color = name),
+             alpha = 0.33)
 
 vis_ols_growth = 
   dat_use %>% 
   mutate(
-    VOLBFNET_ACRE_NAIVE = 1, # ???
-    VOLBFNET_ACRE_OPTIMIZED = 1 # ???
+    VOLBFNET_ACRE_HAT_NAIVE = STDAGE %>% map(~ fun_ols_iterate(.x, par_ols_initial)), 
+    VOLBFNET_ACRE_HAT_OPTIMIZED = STDAGE %>% map(~ fun_ols_iterate(.x, par_ols_optimized))
   ) %>% 
+  unnest(c(VOLBFNET_ACRE_HAT_NAIVE, VOLBFNET_ACRE_HAT_OPTIMIZED)) %>% 
   select(STDAGE, starts_with("VOLBFNET_ACRE")) %>% 
   pivot_longer(-STDAGE) %>% 
   ggplot() + 
   geom_point(aes(x = STDAGE,
                  y = value,
-                 color = name))
+                 color = name),
+             alpha = 0.33) +
+  scale_y_continuous(limits = c(0, 100))
 
 vis_ols_yield + vis_ols_growth
 
 # P-T Implementation
 
+mod_pt_initial =
+  dat_use %>% 
+  drop_na(EST_BEGIN_ACRE) %>% 
+  nls(# ANN_NET_GROWTH_ACRE ~ a * ANN_NET_GROWTH_ACRE * (1 - (EST_BEGIN_ACRE / b) ^ c),
+      ANN_NET_GROWTH_ACRE ~ a * (1 + (EST_BEGIN_ACRE / b) ^ c),
+      data = .,
+      start = list(a = 0.1, b = 0.1, c = 0.500),
+      algorithm = "port",
+      lower = c(a = 1e-4, b = 1e-4, c = 1e-4),
+      nls.control(maxiter = 100))
+  
+par_pt_initial = mod_pt_initial %>% coef
+
+ggplot(data = dat_use) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = ANN_NET_GROWTH_ACRE)) +
+  geom_point(aes(x = EST_BEGIN_ACRE, y = (par_pt_initial[1] * (1 + (EST_BEGIN_ACRE / par_pt_initial[2]) ^ par_pt_initial[3]))), color = "red")
+
+fun_pt_iterate = 
+  function(times, par) {
+    
+    Reduce(
+      function(V_0, i) V_0 + par[1] * (1 + (V_0 / par[2]) ^ par[3]),
+      seq_len(times),
+      init = 1
+    )
+  }
+
+fun_pt_growth = 
+  function(par){
+    
+    residuals_yield = 
+      dat_use %>% # Note global call. 
+      pull(EST_BEGIN_ACRE) %>% 
+      {par[1] * (1 + (. / par[2]) ^ par[3])} %>% 
+      subtract(dat_use$ANN_NET_GROWTH_ACRE) %>% 
+      raise_to_power(2) %>% 
+      divide_by(length(.)) %>% # Weighting by observations. 
+      sum(na.rm = TRUE)
+    
+    residuals_growth = 
+      dat_use %>% 
+      pull(STDAGE) %>% 
+      map(~ fun_pt_iterate(.x, par)) %>% 
+      unlist %>% 
+      subtract(dat_use$VOLBFNET_ACRE) %>% 
+      raise_to_power(2) %>% 
+      divide_by(length(.)) %>% # Weighting by observations. 
+      sum(na.rm = TRUE)
+    
+    residuals_yield + residuals_growth
+    
+  }
+
+dat_pt_initial = fun_pt_growth(par_pt_initial)
+
+mod_pt_optimizing = 
+  nloptr(
+    par_pt_initial,
+    fun_pt_growth,
+    lb = c(1e-4, 1e-4, 1e-4),
+    opts = list("algorithm" = "NLOPT_LN_COBYLA", maxeval = 100)
+  )
+
+par_pt_optimized = mod_pt_optimizing$solution
+
+# PT Visualization
+
+vis_pt_yield = 
+  dat_use %>% 
+  drop_na(ANN_NET_GROWTH_ACRE) %>% 
+  mutate(
+    ANN_NET_GROWTH_ACRE_HAT_NAIVE = par_pt_initial[1] * (1 + (EST_BEGIN_ACRE / par_pt_initial[2]) ^ par_pt_initial[3]),
+    ANN_NET_GROWTH_ACRE_HAT_OPTIMIZED = par_pt_optimized[1] * (1 + (EST_BEGIN_ACRE / par_pt_optimized[2]) ^ par_pt_optimized[3])
+  ) %>% 
+  select(EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_ACRE")) %>% 
+  pivot_longer(-EST_BEGIN_ACRE) %>% 
+  ggplot() + 
+  geom_point(aes(x = EST_BEGIN_ACRE,
+                 y = value,
+                 color = name),
+             alpha = 0.33)
+
+vis_pt_growth = 
+  dat_use %>% 
+  mutate(
+    VOLBFNET_ACRE_HAT_NAIVE = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_initial)), 
+    VOLBFNET_ACRE_HAT_OPTIMIZED = STDAGE %>% map(~ fun_pt_iterate(.x, par_pt_optimized))
+  ) %>% 
+  unnest(c(VOLBFNET_ACRE_HAT_NAIVE, VOLBFNET_ACRE_HAT_OPTIMIZED)) %>% 
+  select(STDAGE, starts_with("VOLBFNET_ACRE")) %>% 
+  pivot_longer(-STDAGE) %>% 
+  ggplot() + 
+  geom_point(aes(x = STDAGE,
+                 y = value,
+                 color = name),
+             alpha = 0.33) +
+  scale_y_continuous(limits = c(0, 100))
+
+vis_pt_yield + vis_pt_growth
+
+# Problems:
+#  (1) The combined model is dragging the yield curve implausibly far from the best separate fit.  
+#  (2) The combined model isn't actually converging in 1000 evaluations. 
+#  (3) ???
+
+# Things to try:
+#  (1) Split on site class.
+#  (2) Try alternative functional forms. 
+#  (3) Try alternative nonlinear optimization programs.
 
 
 # To generalize over regions, site classes, etc., refer to earlier modeling script. 
