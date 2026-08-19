@@ -86,11 +86,18 @@ dat_use =
     VOLBFNET_ACRE = sum(VOLBFNET_ACRE, na.rm = TRUE),
     EST_BEGIN_ACRE = sum(EST_BEGIN_ACRE, na.rm = TRUE),
     EST_END_ACRE = sum(EST_END_ACRE, na.rm = TRUE),
-    ANN_NET_GROWTH_ACRE = sum(ANN_NET_GROWTH_ACRE, na.rm = TRUE)
+    ANN_NET_GROWTH_ACRE = sum(ANN_NET_GROWTH_ACRE, na.rm = TRUE),
+    REMPER_MEAN = mean(REMPER, na.rm = TRUE)
     ) %>% 
   ungroup %>% 
-  mutate(across(ends_with("ACRE"), ~ ifelse(.x == 0, NA, .x)),
+  # Handle units. 
+  mutate(across(c(ends_with("ACRE"), "REMPER_MEAN"), ~ ifelse(.x == 0, NA, .x)),
          across(ends_with("ACRE"), ~ .x / 1000)) %>% # BF to MBF. 
+  # Handle remeasurement periods.
+  mutate(across(REMPER_MEAN, ~ ifelse(.x == 0, NA, .x)),
+         REMPER_ROUND = REMPER_MEAN %>% round(0),
+         REMPER_LOW = REMPER_MEAN %>% floor,
+         REMPER_HIGH = REMPER_MEAN %>% ceiling) %>% # BF to MBF. 
   # Cut western hemlock for now. 
   filter(SPCD == 202) %>% 
   # Handle condition data.
@@ -117,68 +124,163 @@ library(nloptr) # Remember to kick this into packages.R if it works.
 
 mod_ols_initial =
   dat_use %>% 
-  lm(ANN_NET_GROWTH_ACRE ~ 0 + EST_BEGIN_ACRE, data = .) 
+  lm(ANN_NET_GROWTH_ACRE ~ EST_BEGIN_ACRE, data = .) 
 
-par_ols_initial = mod_ols_initial$coefficients[[1]]
+par_ols_initial = mod_ols_initial %>% coef
 
-fun_ols_iterate =
-  function(times, par){
+fun_ols_inner =
+  function(t, start, par){
     
-    Reduce(
-      f = function(V_0, dv) V_0 + dv * V_0,
-      x = rep(par, times),
-      init = 1 
-    )
+    result = 
+      Reduce(
+        f = function(yield, i) yield + yield * par[[2]],
+        seq_len(t),
+        init = start,
+        accumulate = TRUE
+      ) %>% 
+      subtract(start) %>% 
+      sum
     
+    return(result)
+
   }
 
-fun_ols_growth = 
+fun_ols_outer_yield = 
   function(par){
     
     residuals_yield = 
       dat_use %>% # Note global call. 
-      pull(EST_BEGIN_ACRE) %>% 
-      multiply_by(par[[1]]) %>% 
-      subtract(dat_use$ANN_NET_GROWTH_ACRE) %>% 
+      drop_na(EST_BEGIN_ACRE) %>% 
+      mutate(
+        EST_END_ACRE_HAT = 
+          map2(
+            REMPER_ROUND, 
+            EST_BEGIN_ACRE, 
+            ~ fun_ols_inner(.x, .y, par_ols_initial)
+          )
+      ) %>% 
+      unnest(EST_END_ACRE_HAT) %>% 
+      mutate(EST_END_ACRE_RESIDUAL = EST_END_ACRE_HAT - EST_END_ACRE) %>% 
+      pull(EST_END_ACRE_RESIDUAL) %>% 
       raise_to_power(2) %>% 
+      divide_by(sd(.)) %>% # Normalization by standard deviation of residuals. 
+      divide_by(length(.)) %>% # Weighting by observations. 
+      sum(na.rm = TRUE)
+    
+    return(residuals_yield)
+    
+  }
+
+mod_ols_nloptr_yield = 
+  nloptr(
+    par_ols_initial,
+    fun_ols_outer_yield,
+    opts = list("algorithm" = "NLOPT_LN_COBYLA")
+  )
+
+par_ols_yield = mod_ols_nloptr_yield$solution
+
+fun_ols_outer_growth = 
+  function(par){
+    
+    residuals_growth = 
+      dat_use %>% # Note global call. 
+      drop_na(STDAGE) %>% 
+      mutate(VOLBFNET_ACRE_HAT = 
+               map2(
+                 STDAGE, 
+                 par[[1]], 
+                 ~ fun_ols_inner(.x, .y, par_ols_initial)
+               )
+      ) %>% 
+      unnest(VOLBFNET_ACRE_HAT) %>% 
+      mutate(VOLBFNET_ACRE_RESIDUAL = VOLBFNET_ACRE_HAT - VOLBFNET_ACRE) %>% 
+      pull(VOLBFNET_ACRE_RESIDUAL) %>% 
+      raise_to_power(2) %>% 
+      divide_by(sd(.)) %>% # Normalization by standard deviation of residuals. 
+      divide_by(length(.)) %>% # Weighting by observations. 
+      sum(na.rm = TRUE)
+    
+    return(residuals_growth)
+    
+  }
+
+mod_ols_nloptr_growth = 
+  nloptr(
+    par_ols_initial,
+    fun_ols_outer_growth,
+    opts = list("algorithm" = "NLOPT_LN_COBYLA")
+  )
+
+par_ols_growth = mod_ols_nloptr_growth$solution
+
+fun_ols_outer_combined = 
+  function(par){
+    
+    residuals_yield = 
+      dat_use %>% # Note global call. 
+      drop_na(EST_BEGIN_ACRE) %>% 
+      mutate(
+        EST_END_ACRE_HAT = 
+          map2(
+            REMPER_ROUND, 
+            EST_BEGIN_ACRE, 
+            ~ fun_ols_inner(.x, .y, par_ols_initial)
+          )
+      ) %>% 
+      unnest(EST_END_ACRE_HAT) %>% 
+      mutate(EST_END_ACRE_RESIDUAL = EST_END_ACRE_HAT - EST_END_ACRE) %>% 
+      pull(EST_END_ACRE_RESIDUAL) %>% 
+      raise_to_power(2) %>% 
+      divide_by(sd(.)) %>% # Normalization by standard deviation of residuals. 
       divide_by(length(.)) %>% # Weighting by observations. 
       sum(na.rm = TRUE)
     
     residuals_growth = 
-      dat_use %>% 
-      pull(STDAGE) %>% 
-      map(~ fun_ols_iterate(.x, par)) %>% 
-      unlist %>% 
-      subtract(dat_use$VOLBFNET_ACRE) %>% 
+      dat_use %>% # Note global call. 
+      drop_na(STDAGE) %>% 
+      mutate(VOLBFNET_ACRE_HAT = 
+               map2(
+                 STDAGE, 
+                 par[[1]], 
+                 ~ fun_ols_inner(.x, .y, par_ols_initial)
+               )
+      ) %>% 
+      unnest(VOLBFNET_ACRE_HAT) %>% 
+      mutate(VOLBFNET_ACRE_RESIDUAL = VOLBFNET_ACRE_HAT - VOLBFNET_ACRE) %>% 
+      pull(VOLBFNET_ACRE_RESIDUAL) %>% 
       raise_to_power(2) %>% 
+      divide_by(sd(.)) %>% # Normalization by standard deviation of residuals. 
       divide_by(length(.)) %>% # Weighting by observations. 
       sum(na.rm = TRUE)
       
-    residuals_yield + residuals_growth
+    residuals_combined = residuals_yield + residuals_growth
+    
+    return(residuals_combined)
     
   }
 
-dat_ols_initial = fun_ols_growth(par_ols_initial)
-
-mod_ols_optimizing = 
+mod_ols_nloptr_combined = 
   nloptr(
-    mod_ols_initial$coefficients[[1]],
-    fun_ols_growth,
+    par_ols_initial,
+    fun_ols_outer_combined,
     opts = list("algorithm" = "NLOPT_LN_COBYLA")
   )
 
-par_ols_optimized = mod_ols_optimizing$solution
+par_ols_combined = mod_ols_nloptr_combined$solution
 
 # OLS Visualization
 
 vis_ols_yield = 
   dat_use %>% 
-  drop_na(ANN_NET_GROWTH_ACRE) %>% 
+  drop_na(EST_BEGIN_ACRE) %>% 
   mutate(
-    ANN_NET_GROWTH_ACRE_HAT_NAIVE = EST_BEGIN_ACRE * par_ols_initial,
-    ANN_NET_GROWTH_ACRE_HAT_OPTIMIZED = EST_BEGIN_ACRE * par_ols_optimized
+    EST_END_ACRE_HAT_YIELD = map2(REMPER_ROUND, EST_BEGIN_ACRE, ~ fun_ols_inner(.x, .y, par_ols_yield)),
+    EST_END_ACRE_HAT_GROWTH = map2(REMPER_ROUND, EST_BEGIN_ACRE, ~ fun_ols_inner(.x, .y, par_ols_growth)),
+    EST_END_ACRE_HAT_COMBINED = map2(REMPER_ROUND, EST_BEGIN_ACRE, ~ fun_ols_inner(.x, .y, par_ols_combined))
   ) %>% 
-  select(EST_BEGIN_ACRE, starts_with("ANN_NET_GROWTH_ACRE")) %>% 
+  unnest(starts_with("EST_END_ACRE_HAT")) %>% 
+  select(EST_BEGIN_ACRE, starts_with("EST_END_ACRE")) %>% 
   pivot_longer(-EST_BEGIN_ACRE) %>% 
   ggplot() + 
   geom_point(aes(x = EST_BEGIN_ACRE,
@@ -188,19 +290,20 @@ vis_ols_yield =
 
 vis_ols_growth = 
   dat_use %>% 
+  drop_na(STDAGE) %>% 
   mutate(
-    VOLBFNET_ACRE_HAT_NAIVE = STDAGE %>% map(~ fun_ols_iterate(.x, par_ols_initial)), 
-    VOLBFNET_ACRE_HAT_OPTIMIZED = STDAGE %>% map(~ fun_ols_iterate(.x, par_ols_optimized))
+    VOLBFNET_ACRE_HAT_YIELD = map2(STDAGE, par_ols_yield[[1]], ~ fun_ols_inner(.x, .y, par_ols_yield)),
+    VOLBFNET_ACRE_HAT_GROWTH = map2(STDAGE, par_ols_growth[[1]], ~ fun_ols_inner(.x, .y, par_ols_growth)),
+    VOLBFNET_ACRE_HAT_COMBINED = map2(STDAGE, par_ols_combined[[1]], ~ fun_ols_inner(.x, .y, par_ols_combined))
   ) %>% 
-  unnest(c(VOLBFNET_ACRE_HAT_NAIVE, VOLBFNET_ACRE_HAT_OPTIMIZED)) %>% 
+  unnest(starts_with("VOLBFNET_ACRE_HAT")) %>% 
   select(STDAGE, starts_with("VOLBFNET_ACRE")) %>% 
   pivot_longer(-STDAGE) %>% 
   ggplot() + 
   geom_point(aes(x = STDAGE,
                  y = value,
                  color = name),
-             alpha = 0.33) +
-  scale_y_continuous(limits = c(0, 100))
+             alpha = 0.33)
 
 vis_ols_yield + vis_ols_growth
 
