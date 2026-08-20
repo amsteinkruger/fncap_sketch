@@ -45,7 +45,8 @@ dat_tree =
     TRE_CN = CN,
     TPA_UNADJ,
     VOLBFNET,
-    SPCD)
+    SPCD,
+    BHAGE)
 
 #   Tree Growth Estimation
 
@@ -65,6 +66,37 @@ dat_growth =
 #    Pick age range.
 
 vec_stdage = 1:75
+
+dat_use_alt = 
+  # Handle tree data.
+  dat_tree %>% 
+  drop_na(VOLBFNET) %>% # Filtering to sawtimber trees. 
+  # filter(!is.na(VOLBFNET)) %>%
+  # filter(SPCD %in% c(202, 263)) %>%
+  # mutate(VOLBFNET_ACRE = VOLBFNET * TPA_UNADJ) %>% 
+  # Handle growth estimation data.
+  # left_join(dat_growth) %>% 
+  # drop_na(EST_BEGIN_ACRE) %>% 
+  # distinct %>% 
+  # Handle plot filters. 
+  # Handle condition filters. 
+  left_join(dat_condition) %>% 
+  # filter(FORTYPCD == 201) %>% # Cuts to Douglas fir stands only. 
+  # filter(OWNGRPCD == 40) %>% 
+  # filter(STDAGE %!in% c(NA, 0, 998, 999))
+  group_by(INVYR, PLT_CN, CON_CN) %>% 
+  mutate(SPCD_COUNT = SPCD %>% n_distinct) %>% # Count species in each condition. 
+  ungroup %>% 
+  filter(SPCD_COUNT == 1) %>% # Filtering to single-species conditions. 
+  filter(SPCD == 202) %>% # Filtering to single-species Douglas fir conditions. 
+  # Handle growth.
+  left_join(dat_growth) %>% 
+  distinct
+  # This would be a good spot to assess BHAGE and EST_BEGIN missingness by assigning a shorter unique identifier for conditions. 
+  # What to do about stands (conditions) with systematically underestimated yield and growth due to incomplete BHAGE/EST_BEGIN data?
+  # What do forestry authors do?
+
+
 
 dat_use = 
   # Handle tree data.
