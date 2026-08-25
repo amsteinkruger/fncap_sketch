@@ -105,11 +105,11 @@ dat_use =
   filter(ntile(VOLBFNET_ACRE, 100) %in% 2:99) %>% 
   filter(ntile(EST_CHANGE_ACRE, 100) %in% 2:99 | is.na(EST_CHANGE_ACRE)) 
 
-# Estimation
+#  Estimation
 
-#  Functions
+#   Functions
 
-#   Inner
+#    Inner
 
 fun_pt_inner =
   function(t, start, par){
@@ -126,7 +126,7 @@ fun_pt_inner =
 
   }
 
-#   Outer
+#    Outer
 
 fun_pt_outer_initial = 
   function(par){
@@ -224,9 +224,7 @@ fun_pt_outer_combined =
     
   }
 
-#  Initialization via VBG. 
-
-library(nloptr) # Remember to kick this into packages.R if it works. 
+#   Initialization via VBG. 
 
 mod_vb = 
   nls(
@@ -280,7 +278,7 @@ vis_initial =
     alpha = 0.50
   )
 
-#  Optimization
+#   Optimization
 
 mod_pt_nloptr_growth = 
   nloptr(
@@ -324,7 +322,7 @@ mod_pt_nloptr_combined =
 
 par_pt_combined = mod_pt_nloptr_combined$solution
 
-# Visualization
+#  Visualization
 
 vis_pt_growth = 
   dat_use %>% 
@@ -388,4 +386,4 @@ ggsave("04_out/Other/vis_combined.png",
        width = 8,
        height = 5)
 
-# To generalize over regions, site classes, etc., refer to earlier modeling script. 
+# Note that code for iteration over regions, etc. is in earlier scripts. 

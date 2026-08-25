@@ -5,13 +5,13 @@
 dat_price_stumpage = 
   "02_data/1_7_3_FastMarkets/data_stumpage.csv" %>% 
   read_csv %>% 
-  rename(Stumpage_DouglasFir = 2,
-         Stumpage_WesternHemlock = 3) %>% 
+  rename(Price_Stumpage_DouglasFir = 2,
+         Price_Stumpage_WesternHemlock = 3) %>% 
   mutate(Year_Quarter = 
            paste0(str_sub(Quarter, 1, 4), 
                   "_", 
                   str_sub(Quarter, -2, -1))) %>% 
-  select(Year_Quarter, starts_with("Stumpage_")) %>% 
+  select(Year_Quarter, starts_with("Price_Stumpage_")) %>% 
   filter(Year_Quarter > "2004_Q4" & Year_Quarter < "2025_Q1") %T>% 
   write_csv("03_intermediate/data_stumpage.csv")
 
@@ -137,45 +137,3 @@ dat_price_lumber =
   ungroup %>% 
   select(Year_Quarter, starts_with("Price")) %T>% 
   write_csv("03_intermediate/data_lumber.csv")
-
-# Reference Plot
-
-vis_price_test = 
-  dat_price_stumpage %>% 
-  left_join(dat_price_lumber) %>% 
-  pivot_longer(-Year_Quarter) %>% 
-  mutate(DouglasFir = ifelse(str_detect(name, "DouglasFir"), "Douglas Fir", "Western hemlock")) %>% 
-  ggplot() +
-  geom_line(aes(x = Year_Quarter,
-                y = value,
-                group = name,
-                color = name)) +
-  facet_wrap(~ DouglasFir)
-
-# vis_price_test = 
-#   dat_price_test %>% 
-#   filter(Commodity %in% c("Logs", "Lumber/Sawn Timber")) %>% 
-#   ggplot() + 
-#   geom_vline(xintercept = "2008",
-#              color = "red",
-#              linetype = "dashed") +
-#   geom_vline(xintercept = "2020", 
-#              color = "red",
-#              linetype = "dashed") +
-#   geom_boxplot(aes(x = Year %>% factor,
-#                    y = Price %>% log,
-#                    color = Commodity),
-#                alpha = 0.75) +
-#   scale_x_discrete(breaks = c("2000", "2010", "2020")) +
-#   scale_color_manual(values = c("gray40", "gray20")) +
-#   labs(x = "Year",
-#        y = "Price (Nominal) (Log.)") +
-#   facet_wrap(~ Commodity) +
-#   theme_minimal() +
-#   theme(legend.position = "none")
-
-# ggsave("04_out/vis_price_20260401.png",
-#        vis_price_test,
-#        dpi = 300,
-#        width = 6,
-#        height = 4)
