@@ -11,6 +11,56 @@
 
 # correlations between Y, X
 
+# probably read in all the data, join and pivot to YQ-Series-Value format, compute lags and means, then filter for each ... thing.
+
+# so, column goals:
+# lags 1:40
+# means 1, 4, 8, 12
+# level values less seasonal means
+# change values
+# change values less seasonal means
+
+# maybe need demeaned levels, change, demeaned change before lags, means
+# then pivot again to YQ-Metric-Series-Value for lags/means?
+
+#  Data
+
+dat = 
+  "03_intermediate/dat_notifications_1_7.csv" %>% 
+  read_csv %>% 
+  select(-UID, -Year, -Quarter) %>% 
+  group_by(Year_Quarter) %>% 
+  summarize(across(everything(), ~ mean(.x, na.rm = TRUE))) %>% 
+  ungroup %>% 
+  pivot_longer(-Year_Quarter, names_to = "Series_Lag", values_to = "Value") %>% 
+  separate(Series_Lag, into = c("Series", "Lag"), sep = "_Lag_") %>% 
+  mutate(Lag = Lag %>% as.numeric %>% replace_na(0)) %>% 
+  pivot_wider(names_from = Lag, names_prefix = "Lag_", values_from = Value) %>% 
+  group_by(Series) %>% 
+  mutate(
+    Mean_4 = 
+      rowMeans(
+        pick(starts_with("Lag_") & ends_with(paste0("_", 1:4))),
+        na.rm = TRUE
+      ),
+    Mean_8 = 
+      rowMeans(
+        pick(starts_with("Lag_") & ends_with(paste0("_", 1:8))),
+        na.rm = TRUE
+      ),
+    Mean_12 = 
+      rowMeans(
+        pick(starts_with("Lag_") & ends_with(paste0("_", 1:12))),
+        na.rm = TRUE
+      )
+  ) %>% 
+  ungroup
+
+# Supply (actually yield)
+# Prices
+# Climate | CWD, Cumulative Precipitation, VPD?
+# Fire
+
 #  Supply | Douglas fir
 
 #  Supply | Western hemlock
@@ -18,116 +68,25 @@
 #  Prices | Douglas fir
 
 vis_price_douglasfir = 
-  left_join(
-    "03_intermediate/data_stumpage.csv" %>% read_csv,
-    "03_intermediate/data_lumber.csv" %>% read_csv
-  ) %>% 
-  pivot_longer(
-    -Year_Quarter,
-    names_to = "Series",
-    values_to = "Value") %>% 
-  filter(str_detect(Series, "DouglasFir")) %>% 
-  mutate(Series = Series %>% str_remove("Price_") %>% str_remove("_DouglasFir")) %>% 
-  # This is where distributed lags come in, with some lag-to-facet-variable manipulation. 
+  dat %>% 
+  mutate(Keep = Series %>% str_detect("DouglasFir")) %>% 
+  filter(Keep) %>% 
+  select(Year_Quarter, Series, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
+  pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
+  mutate(Series = Series %>% str_remove("Price_") %>% str_remove("_DouglasFir"),
+         Metric = Metric %>% factor %>% fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")) %>%
   ggplot() +
-  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series))
+  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
+  facet_wrap(~ Metric, nrow = 1)
 
-  
 #  Prices | Western hemlock
 
 #  Prices | Composite
 
 #  Climate | CWD
 
-#  Climate | Precipitation?
+#  Climate | VPD
 
-#  Climate | Fire (30km)
+#  Climate | ???
 
-
-
-# Reference code, I guess?
-
-# Reference Plot
-
-vis_price_test = 
-  dat_price_stumpage %>% 
-  left_join(dat_price_lumber) %>% 
-  pivot_longer(-Year_Quarter) %>% 
-  mutate(DouglasFir = ifelse(str_detect(name, "DouglasFir"), "Douglas Fir", "Western hemlock")) %>% 
-  ggplot() +
-  geom_line(aes(x = Year_Quarter,
-                y = value,
-                group = name,
-                color = name)) +
-  facet_wrap(~ DouglasFir)
-
-# vis_price_test = 
-#   dat_price_test %>% 
-#   filter(Commodity %in% c("Logs", "Lumber/Sawn Timber")) %>% 
-#   ggplot() + 
-#   geom_vline(xintercept = "2008",
-#              color = "red",
-#              linetype = "dashed") +
-#   geom_vline(xintercept = "2020", 
-#              color = "red",
-#              linetype = "dashed") +
-#   geom_boxplot(aes(x = Year %>% factor,
-#                    y = Price %>% log,
-#                    color = Commodity),
-#                alpha = 0.75) +
-#   scale_x_discrete(breaks = c("2000", "2010", "2020")) +
-#   scale_color_manual(values = c("gray40", "gray20")) +
-#   labs(x = "Year",
-#        y = "Price (Nominal) (Log.)") +
-#   facet_wrap(~ Commodity) +
-#   theme_minimal() +
-#   theme(legend.position = "none")
-
-# ggsave("04_out/vis_price_20260401.png",
-#        vis_price_test,
-#        dpi = 300,
-#        width = 6,
-#        height = 4)
-
-#  Prices
-
-vis_prices =
-  # "03_intermediate/dat_notifications_1_9.csv" %>% 
-  # read_csv %>% 
-  dat_use_really %>% 
-  select(QuarterCompletion, contains("Composite") & !contains("Green")) %>% # Keeping things simple to start. 
-  select(QuarterCompletion, ends_with(c("Lag_1", "Mean_1Y", "Mean_5Y", "Mean_10Y"))) %>% 
-  pivot_longer(-QuarterCompletion) %>%
-  arrange(QuarterCompletion) %>% 
-  group_by(QuarterCompletion, name) %>% 
-  summarize(value = mean(value, na.rm = TRUE)) %>% 
-  ungroup %>% 
-  mutate(name = name %>% str_remove_all("Price_Composite_")) %>% 
-  ggplot(aes(x = QuarterCompletion %>% factor,
-             y = value,
-             color = name,
-             group = name)) +
-  geom_line()
-
-#  Interest
-
-vis_interest = 
-  dat_use_really %>% 
-  select(QuarterCompletion,
-         contains("Rate") & ends_with(c("Lag_1", "Mean_1Y", "Mean_5Y", "Mean_10Y"))) %>% 
-  pivot_longer(-QuarterCompletion) %>%
-  arrange(QuarterCompletion) %>% 
-  group_by(QuarterCompletion, name) %>% 
-  summarize(value = mean(value, na.rm = TRUE)) %>% 
-  ungroup %>% 
-  mutate(name = name %>% str_remove_all("Rate")) %>% 
-  ggplot(aes(x = QuarterCompletion %>% factor,
-             y = value,
-             color = name,
-             group = name)) +
-  geom_line()
-
-#  Climate and Weather
-
-
-
+#  Climate | Fire
