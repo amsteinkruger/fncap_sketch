@@ -205,7 +205,7 @@ dat_join_mtbs =
 
 # VPD
 
-dat_vpd = "03_intermediate/dat_vpd.tif" %>% rast
+dat_vpd = "03_intermediate/data_vpd.tif" %>% rast
 
 dat_notifications_vpd = 
   dat_notifications_less %>% 
@@ -386,12 +386,11 @@ dat_price_stumpage =
   "03_intermediate/data_stumpage.csv" %>% 
   read_csv %>% 
   left_join(dat_ppi) %>% 
-  mutate(Stumpage_DouglasFir = Stumpage_DouglasFir * Factor_PPI,
-         Stumpage_WesternHemlock = Stumpage_WesternHemlock * Factor_PPI) %>% 
-  select(Year_Quarter, starts_with("Stumpage_")) %>% 
+  mutate(Price_Stumpage_DouglasFir = Price_Stumpage_DouglasFir * Factor_PPI,
+         Price_Stumpage_WesternHemlock = Price_Stumpage_WesternHemlock * Factor_PPI) %>% 
+  select(Year_Quarter, starts_with("Price_Stumpage_")) %>% 
   arrange(Year_Quarter) %>% 
-  mutate(across(starts_with("Stumpage_"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  rename_with(~ str_c("Price_", .), starts_with("Stumpage"))
+  mutate(across(starts_with("Price_Stumpage_"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40))))
 
 #  Lumber Prices, FastMarkets
 

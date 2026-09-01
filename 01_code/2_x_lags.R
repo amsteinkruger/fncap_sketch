@@ -25,7 +25,7 @@
 
 #  Data
 
-dat = 
+dat_covariates = 
   "03_intermediate/dat_notifications_1_7.csv" %>% 
   read_csv %>% 
   select(-UID, -Year, -Quarter) %>% 
