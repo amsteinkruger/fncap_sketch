@@ -128,7 +128,7 @@ dat_variables =
 # Yield | Douglas fir and western hemlock
 
 vis_yield = 
-  dat_harvest %>% 
+  dat_yield %>% 
   filter(Yield < 100) %>% 
   ggplot() + 
   geom_boxplot(
@@ -145,11 +145,29 @@ vis_supply =
   filter(Series %>% str_detect("Supply")) %>% 
   select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
   pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
-  mutate(Series = Series %>% str_remove("Price_") %>% str_remove("_DouglasFir"),
-         Metric = Metric %>% factor %>% fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")) %>%
+  mutate(
+    Series = Series %>% str_remove("Supply_"),
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
+  mutate(Value = Value / 1000) %>% 
   ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
   geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
-  facet_grid(Measure ~ Metric)
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "MMBF") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #  Prices | Douglas fir
 
@@ -158,13 +176,58 @@ vis_price_douglasfir =
   filter(Series %>% str_detect("DouglasFir") & Series %>% str_detect("Price")) %>% 
   select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
   pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
-  mutate(Series = Series %>% str_remove("Price_") %>% str_remove("_DouglasFir"),
-         Metric = Metric %>% factor %>% fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")) %>%
+  mutate(
+    Series = Series %>% str_remove("Price_") %>% str_remove("_DouglasFir"),
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
   ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
   geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
-  facet_grid(Measure ~ Metric)
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "2024 USD / MBF") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #  Prices | Western hemlock
+
+vis_price_westernhemlock = 
+  dat_variables %>% 
+  filter((Series %>% str_detect("WesternHemlock") | Series %>% str_detect("HemFir")) & Series %>% str_detect("Price")) %>% 
+  select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
+  pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
+  mutate(
+    Series = Series %>% str_remove("Price_") %>% str_remove("_WesternHemlock") %>% str_remove("_HemFir"),
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
+  ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
+  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "2024 USD / MBF") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #  Prices | Composite
 
