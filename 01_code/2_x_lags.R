@@ -1,11 +1,5 @@
 # Visualize time series of yield, supply, and time-varying covariates.
 
-# correlations within raw X
-
-# correlations with lags (corr matrices I guess?)
-
-# correlations between Y, X
-
 #  Data
 
 dat_yield = 
@@ -63,7 +57,7 @@ dat_variables =
   filter(str_sub(Series, 1, 4) != "Fire") %>% # This is arbitrary. Note the same problem comes with CWD. 
   # Compute first order differences.
   rename(Value_Level = Value) %>% # For cleaner references. 
-  group_by(Series) %>% 
+  group_by(Series, Lag) %>% 
   mutate(Value_FD = Value_Level - lag(Value_Level)) %>% 
   ungroup %>% 
   # Compute quarters for each lag. 
@@ -75,7 +69,15 @@ dat_variables =
       add(3) %>% 
       subtract(((Lag - 1) %% 4))
   ) %>% 
-  # Compute seasonal (quarterly) means by series for (un)differenced values.
+  # Compute seasonal (quarterly) mean deviations from the overall mean by series.
+  #  Overall means
+  group_by(Series) %>% 
+  mutate(
+    Value_Level_Total_Mean = mean(Value_Level, na.rm = TRUE),
+    Value_FD_Total_Mean = mean(Value_FD, na.rm = TRUE)
+  ) %>% 
+  ungroup %>% 
+  #  Seasonal (quarterly) means
   group_by(Series, Quarter) %>% 
   mutate(
     Value_Level_Quarter_Mean = mean(Value_Level, na.rm = TRUE),
@@ -84,8 +86,8 @@ dat_variables =
   ungroup %>% 
   # Compute demeaned level and change values. 
   mutate(
-    Value_Level_SD = Value_Level - Value_Level_Quarter_Mean,
-    Value_FD_SD = Value_FD - Value_FD_Quarter_Mean
+    Value_Level_SD = Value_Level - (Value_Level_Quarter_Mean - Value_Level_Total_Mean),
+    Value_FD_SD = Value_FD - (Value_FD_Quarter_Mean - Value_FD_Total_Mean)
   ) %>% 
   # Switch to even longer (!) data.
   select(
@@ -231,12 +233,124 @@ vis_price_westernhemlock =
 
 #  Prices | Composite
 
+vis_price_composite = 
+  dat_variables %>% 
+  filter(Series == "Price_Composite") %>% 
+  select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
+  pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
+  mutate(
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
+  ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
+  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "2024 USD / MBF") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+#  Federal Funds Rate
+
+vis_rate = 
+  dat_variables %>% 
+  filter(Series == "Rate") %>% 
+  select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
+  pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
+  mutate(
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
+  ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
+  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "Federal Funds Rate") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #  Climate | CWD
+#   Does this work at all without subannual CWD?
 
 #  Climate | VPD
+
+vis_vpd = 
+  dat_variables %>% 
+  filter(Series == "VPD") %>% 
+  select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
+  pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
+  mutate(
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
+  ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
+  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "Vapor Pressure Deficit") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #  Climate | ???
 
 #  Climate | Fire
+#   Note that this is nonsense without resolving MTBS to some subannual scale. 
+
+#  Correlations
+
+#   note that correlations between measures (e.g. FD vs FD SD) are hard to interpret
+
+#   Demo
+
+dat_variables %>% 
+  filter(Series == "Rate" & Measure == "Level") %>% 
+  select(starts_with("Lag")) %>% 
+  drop_na %>% 
+  cor
+
+#   Auto
+
+# supply-supply
+# stumpage-stumpage
+# kiln-kiln
+
+#   X-X
+
+# kiln and stumpage
+
+#   Y-X 
+
+# stumpage and supply
+# kiln and supply
+
+# extend to yield, rate, climate, fire
