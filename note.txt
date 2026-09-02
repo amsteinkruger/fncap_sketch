@@ -1,3 +1,9 @@
+2026/09/01
+
+1. Work.
+2. Document.
+3. Update FERNS pull on 10/01. 
+
 2026/07/28
 
 Bonus: fix Mean_1Y variables. 
