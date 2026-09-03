@@ -351,8 +351,8 @@ dat_join_cwd =
                names_to = "Year",
                values_to = "CWD") %>% 
   mutate(Year = Year %>% as.numeric) %>% 
-  full_join(tibble(Year = rep(2010:2025, each = 4), 
-                   Quarter = rep(1:4, length(2010:2025))),
+  full_join(tibble(Year = rep(2005:2025, each = 4), 
+                   Quarter = rep(1:4, length(2005:2025))),
             relationship = "many-to-many") %>% 
   mutate(Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
   group_by(UID) %>% 

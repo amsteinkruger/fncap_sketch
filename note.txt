@@ -1,49 +1,15 @@
+2026/09/02
+
+ - Are earlier (lagged) quarters missing from time-variant covariates because extract() operations need to be rerun?
+ - Apparently. 
+
+Cotality, Landtrendr/GEE. 
+
 2026/09/01
 
 1. Work.
 2. Document.
 3. Update FERNS pull on 10/01. 
-
-2026/07/28
-
-Bonus: fix Mean_1Y variables. 
-
-1. (x) Update PRISM. Backdate, really.
-    - (x) Remember that this means rerunning prep scripts. 
-    - (x) Also remember to replace the extract/read/write workflow with all-in-one reading for smaller files. 
-2. (~) Visualize lags and means for prices.
-3. Ditto climate/weather, but as distributions to subsume space?
-(x) Bonus: housekeeping for scripts >1. 
-4. (x) County models with pyrome dummies. 
-5. (~) Actually model growth.
-6. Work out something with Landtrendr.
-7. Fun coastal stuff.
-8. Fun fisheries stuff. 
-
-2026/07/15
-
-Clean up scripts >1.
-Grab PRISM data, etc. for longer (>5Y) lags.
-
-2026/07/03
-
---- Begin Cotality ---
-
-The previousparcelnumber* variables could be helpful. Is there a way to get dates for them?
-Could transaction data fill in for parcel  lineages?
-
-Looking through data and metadata suggests previousparcel stuff cannot help (except for ballparking).
-
-The structure of transaction data and cleaning code suggest a parcels-ownership-transaction merge could work.
-
-A relatively effort-intensive next step would be to test that with coastal residential properties/transactions.
-
-For that: is the clip (CLIP?) in the sales data the same as the one in the ownership data? (Deeds and taxes?)
- - really doesn't seem like it. Could be worth checking previousclip in case that explains something. 
-
-Why transactions? Sales would be a less weird word to use. 
-
---- End Cotality ---
 
 2026/06/01
 
@@ -51,32 +17,3 @@ The bottom line for 2YP results:
 
  - Craggit AME/SE need more work and won't make it into this (Wednesday's) version of the paper.
  - Craggit SE might be computed both by the delta method (Wu et al. 2026) and by bootstrapping.
-
- - Notifications on 07/01. 
- - (o) John's input on species (GNN). Problem: from rast of categories into layered rasterstack
- - (o) Large Fire Probability now (but last). 
- - (o) Mills now, and remember multiple forms of state and federal licensing. 
-    - Also private data. 
-    - Forisk might be accessible through a demo (or through asking via DK).
-    - DEQ Online returns a reasonable number of results, but these require .pdf wrangling for NAICS, periods. 
-       - Bonus: business mapping. 
-
-        (1) assign harvest to quarter with least interannual NDVI change by quarter
-        (2) restrict to polygons with any NDVI decrease
-     -  Point being, this is a model-free approach. 
-     -  ( ) alternatively: 
-	(1) ML classification on status and last pre-notification quarter to first post-notification
-        (2) assume harvest starts with first decrease in vegetation index
-        (3) and also slap on Landtrendr for an alternative approach
-        (4) and bring in NDVI alternatives
- - Growth?
- - Costs?
- - Set up the data smorgasboard: for n in [1, N], univariate, space, time, bivariate for n variables. 
-
-fix stupid filenames (dat_ vs data_) for climate vars
-
-See LandTrendr's GEE implementation to work out state of the art without starting from scratch. 
-
-"Extracted" might be a nice alternative to "Uncompressed."
-
-Figures: (more, see ppt)

@@ -13,6 +13,6 @@ dat_cwd =
   rast %>%
   crop(dat_bounds_cwd, mask = TRUE) %T>%
   { names(.) <- (names(.) %>% str_remove_all("CWD_year=")) } %>%
-  select(2010:2025 %>% as.character) %>%
+  select(2005:2025 %>% as.character) %>%
   project("EPSG:2992") %T>% 
   writeRaster("03_intermediate/data_cwd.tif", filetype = "GTiff", overwrite = TRUE)

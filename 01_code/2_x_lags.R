@@ -54,7 +54,6 @@ dat_variables =
   pivot_longer(-Year_Quarter, names_to = "Series_Lag", values_to = "Value") %>% 
   separate(Series_Lag, into = c("Series", "Lag"), sep = "_Lag_") %>% 
   mutate(Lag = Lag %>% as.numeric %>% replace_na(0)) %>% 
-  filter(str_sub(Series, 1, 4) != "Fire") %>% # This is arbitrary. Note the same problem comes with CWD. 
   # Compute first order differences.
   rename(Value_Level = Value) %>% # For cleaner references. 
   group_by(Series, Lag) %>% 
@@ -324,7 +323,33 @@ vis_vpd =
 #  Climate | ???
 
 #  Climate | Fire
-#   Note that this is nonsense without resolving MTBS to some subannual scale. 
+
+vis_fire = 
+  dat_variables %>% 
+  filter(Series %>% str_detect("Fire")) %>% 
+  select(Year_Quarter, Series, Measure, Mean_1 = Lag_1, Mean_4, Mean_8, Mean_12) %>% 
+  pivot_longer(starts_with("Mean"), names_to = "Metric", values_to = "Value") %>% 
+  mutate(
+    Measure = 
+      Measure %>% 
+      factor %>% 
+      fct_relevel("Level", "Level_SD", "FD", "FD_SD"),
+    Metric = 
+      Metric %>% 
+      factor %>% 
+      fct_relevel("Mean_1", "Mean_4", "Mean_8", "Mean_12")
+  ) %>%
+  ggplot() +
+  geom_vline(xintercept = "2020_Q1", linetype = "dashed", color = "gray50") +
+  geom_line(aes(x = Year_Quarter, y = Value, color = Series, group = Series)) +
+  scale_x_discrete(breaks = c("2015_Q1", "2020_Q1", "2024_Q1")) +
+  labs(x = NULL, y = "Large Wildfire Count") +
+  facet_grid(
+    Measure ~ Metric,
+    scales = "free_y"
+  ) +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #  Correlations
 
