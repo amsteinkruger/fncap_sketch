@@ -3,6 +3,7 @@
 #  General
 
 library(tidyverse)
+library(janitor)
 library(readxl)
 library(writexl)
 library(magrittr)

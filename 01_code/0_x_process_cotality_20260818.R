@@ -16,11 +16,42 @@ dat_pb_problems = dat_pb %>% problems
 
 #  Get Owner Transfer data.
 
+#   Note that the first row situation is a little difficult. (?!)
+
+#   Get all variable names.
+
+vec_ot_names_all = 
+  "02_data/0_0_0_Cotality/3_OT/OR_OT_SELECT.csv" %>% 
+  read_csv %>% 
+  mutate(VARIABLE = VARIABLE %>% str_replace_all("�", " ")) %>% 
+  pull(VARIABLE)
+
+#   Get useful variable names.
+
+vec_ot_names_use = 
+  "02_data/0_0_0_Cotality/3_OT/OR_OT_SELECT.csv" %>% 
+  read_csv %>% 
+  mutate(VARIABLE = VARIABLE %>% str_replace_all("�", " ")) %>% 
+  filter(SELECT == 1) %>% 
+  pull(VARIABLE)
+
+#   Get data, handle names, and select useful variables. 
+
 dat_ot = 
   "02_data/0_0_0_Cotality/3_OT/OR_OT_08052026.csv" %>% 
-  read_csv
+  read_csv(col_names = FALSE) %>% 
+  slice(-1:-2)
+  rename_with(~ vec_ot_names_all) %>% 
+  select(all_of(vec_ot_names_use))
+  rename_with(~ str_replace_all(.x, " ", "_"))
+
+#   Check problems. (They're fine.)
 
 dat_ot_problems = dat_ot %>% problems
+
+
+
+
 
 # Here be reference code. 
 

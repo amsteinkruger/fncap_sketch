@@ -1105,5 +1105,3 @@ ggsave(
   width = 9, 
   height = 7
 )
-
-
