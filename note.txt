@@ -1,7 +1,18 @@
 2026/09/02
 
- - Are earlier (lagged) quarters missing from time-variant covariates because extract() operations need to be rerun?
- - Apparently. 
+Using simple climate covariates for wildfire risk is unsatisfying.
+
+Some reasonable components of perceived wildfire risk:
+
+ - Exposure to estimated wildfire risk through messaging (NFDRS, CFFDRS).
+ - Exposure to realized wildfire through promixity -- but with weighting over distance.
+ - Exposure to realized wildfire through environmental similarity (again with weighting over distance). 
+
+So, estimate NFDRS or an equivalent (CFFDRS) and improve on present 0-15-30 distance metrics. 
+
+Could be worth a practices paper using wildfire risk mitigation as a response. 
+
+And some equivalent to WLFP- and/or FSIM-style wildfire risk estimates would be nice for comparison. 
 
 Cotality, Landtrendr/GEE. 
 
