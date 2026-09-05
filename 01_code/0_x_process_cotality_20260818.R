@@ -1,22 +1,48 @@
 # Reconcile parcels, tax, and deed data to get a panel of forestland ownership. 
 
+#  Problems: 
+#   is the OT-PB join actually a join or more of a panel appending thing?
+#   what's the deal with non-1-1 joins between PB and parcels?
+#   or the equivalent issue for PB-OT if that crops up
+#   what are the right land use codes to reduce OT, PB on?
+#    what about cases of land use change?
+
 #  Get parcel data.
 
 dat_parcels = 
   "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>% 
   vect
 
+# Note that variable names require a little extra handling for PB, OT. 
+
 #  Get Property Basic data.
+
+#   Get all variable names.
+
+vec_pb_names_all = 
+  "02_data/0_0_0_Cotality/2_PB/OR_PB_SELECT.csv" %>% 
+  read_csv %>% 
+  pull(VARIABLE)
+
+#   Get useful variable names.
+
+vec_pb_names_use = 
+  "02_data/0_0_0_Cotality/2_PB/OR_PB_SELECT.csv" %>% 
+  read_csv %>% 
+  filter(SELECT == 1) %>% 
+  pull(VARIABLE)
 
 dat_pb = 
   "02_data/0_0_0_Cotality/2_PB/OR_PB_08052026.csv" %>% 
-  read_csv
+  read_csv(col_names = FALSE) %>% 
+  slice(-1:-2) %>% 
+  set_names(vec_pb_names_all) %>% 
+  select(all_of(vec_pb_names_use)) %>% 
+  rename_with(~ str_replace_all(.x, " ", "_"))
 
 dat_pb_problems = dat_pb %>% problems
 
 #  Get Owner Transfer data.
-
-#   Note that the first row situation is a little difficult. (?!)
 
 #   Get all variable names.
 
@@ -40,17 +66,74 @@ vec_ot_names_use =
 dat_ot = 
   "02_data/0_0_0_Cotality/3_OT/OR_OT_08052026.csv" %>% 
   read_csv(col_names = FALSE) %>% 
-  slice(-1:-2)
-  rename_with(~ vec_ot_names_all) %>% 
-  select(all_of(vec_ot_names_use))
+  slice(-1:-2) %>% 
+  set_names(vec_ot_names_all) %>% 
+  select(all_of(vec_ot_names_use)) %>% 
   rename_with(~ str_replace_all(.x, " ", "_"))
 
 #   Check problems. (They're fine.)
 
 dat_ot_problems = dat_ot %>% problems
 
+#  Reduce and visualize each dataset.  
 
+#   Parcels
 
+#    Reduce to Lane County.
+
+dat_parcels_less = dat_parcels |> filter(County == 20) 
+
+#    Plot.
+
+dat_parcels_less |>
+  slice_sample(n = 10000) |>
+  makeValid() |>
+  ggplot() +
+  geom_spatvector(fill = "gray50", color = NA)
+
+#   Property Basic
+
+#    Reduce to Lane County.
+
+dat_pb_less = dat_pb %>% filter(FIPS_CODE == "41039")
+
+dat_pb_less_spatial = 
+  dat_pb_less |> 
+  mutate(across(starts_with("PARCEL_LEVEL"), as.numeric)) %>% 
+  vect(
+    geom = c("PARCEL_LEVEL_LONGITUDE", "PARCEL_LEVEL_LATITUDE"), 
+    crs = "+proj=longlat +datum=WGS84"
+  ) |> 
+  project("EPSG:3857")
+
+#    Plot.
+
+dat_pb_less_spatial %>% 
+  select(CLIP) %>% 
+  ggplot() + 
+  geom_spatvector(color = "gray50", fill = NA, shape = 21, alpha = 0.25)
+
+#   Owner Transfers
+
+#    Reduce to Lane County.
+
+#    Plot.
+
+#  Join Property Basic to parcels by centroid nearest neighbors. 
+
+#   Set up data to join.
+
+#   Diagnose join issues. 
+
+#  Join Owner Transfer to Property Basic by (coordinates and/or CLIP?).
+
+#   Set up data to join.
+
+#   Diagnose join issues. 
+
+#  Transform the OT-PB join into a panel of explicit and implicit ownership. 
+
+#  ???
 
 
 # Here be reference code. 
@@ -79,11 +162,11 @@ dat_parcels_less =
   dat_parcels |> 
   filter(County == 20) # %in% c(4, 29, 21, 20, 10, 6, 8)
 
-# dat_parcels_less |> 
-#   slice_sample(n = 10000) |> 
-#   makeValid() |> 
-#   ggplot() + 
-#   geom_spatvector(aes(fill = Shape_Area), color = NA)
+dat_parcels_less |>
+  slice_sample(n = 10000) |>
+  makeValid() |>
+  ggplot() +
+  geom_spatvector(aes(fill = Shape_Area), color = NA)
 
 # dat_parcels_summarize = 
 #   dat_parcels_less |> 
