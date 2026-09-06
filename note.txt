@@ -1,3 +1,20 @@
+2026/09/05
+
+Use recording dates rather than filing dates. 
+
+Note PB reports TAX YEAR, ASSESSED YEAR, SALE RECORDING DATE, SALE DATE, YEAR BUILT, EFFECTIVE YEAR BUILT, LAST ASSESSOR UPDATE DATE, TAXROLL CERTIFICATION DATE
+Note OT reports ACTUAL YEAR BUILT - STATIC, EFFECTIVE YEAR BUILT - STATIC, SALE DERIVED DATE, SALE DERIVED RECORDING DATE 
+
+Where multiple derived sale (recording) dates exist for one CLIP, it looks like single-day handovers from individual buyers to corporate or trust buyers. What's that about?
+
+So, most (~ 45000) situations like that ^^^ are unique by CLIP, SALE_DERIVED_RECORDING_DATE, BUYER_1_FULL_NAME, SELLER_1_FULL_NAME.
+
+~ 7000 aren't.
+
+Those 7000 differ only (?) in their document types -- so these are duplicates except in the source of the record?
+
+One (in a sample of three) has one value "D" under MULTI_OR_SPLIT_PARCEL_CODE, so that's something to worry about. 
+
 2026/09/02
 
 Using simple climate covariates for wildfire risk is unsatisfying.

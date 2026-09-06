@@ -97,8 +97,12 @@ dat_parcels_less |>
 
 dat_pb_less = dat_pb %>% filter(FIPS_CODE == "41039")
 
+#    Explicate spatial data. Note that 3393 of 180444 observations are missing coordinates. 
+
 dat_pb_less_spatial = 
   dat_pb_less |> 
+  select(CLIP, starts_with("PARCEL_LEVEL")) %>% 
+  drop_na(starts_with("PARCEL_LEVEL")) %>% 
   mutate(across(starts_with("PARCEL_LEVEL"), as.numeric)) %>% 
   vect(
     geom = c("PARCEL_LEVEL_LONGITUDE", "PARCEL_LEVEL_LATITUDE"), 
@@ -117,23 +121,58 @@ dat_pb_less_spatial %>%
 
 #    Reduce to Lane County.
 
-#    Plot.
+dat_ot_less = dat_ot %>% filter(FIPS_CODE == "41039")
 
-#  Join Property Basic to parcels by centroid nearest neighbors. 
+#    Since OT doesn't come with coordinates, skip ahead to the spatial join with PB. 
+#    (Then come back to a quick spatial plot.)
 
-#   Set up data to join.
+#  Join PB to parcels by centroid nearest neighbors. 
 
-#   Diagnose join issues. 
+dat_parcels_less_centroids = 
+  dat_parcels_less %>% 
+  select(PARCEL = OBJECTID) %>% 
+  mutate(ROW = row_number()) %>% 
+  makeValid(buffer = TRUE) %>% 
+  centroids
 
-#  Join Owner Transfer to Property Basic by (coordinates and/or CLIP?).
+dat_pb_parcels = 
+  dat_pb_less_spatial %>% 
+  nearest(dat_parcels_less_centroids) %>% 
+  as_tibble %>% 
+  left_join(
+    dat_parcels_less_centroids %>% as_tibble, 
+    by = c("to_id" = "ROW")
+  ) %>% 
+  left_join(
+    dat_pb_less_spatial %>% as_tibble %>% mutate(ROW = row_number()),
+    by = c("from_id" = "ROW")
+  ) %>% 
+  select(PARCEL, CLIP)
 
-#   Set up data to join.
+#  Join OT to PB by CLIP. 
 
-#   Diagnose join issues. 
+#    CLIP is unique in OT but not in PB. 
+#    There are no non-missing values in field PREVIOUS_CLIP for either PB or OT. 
+#    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID is a unique ID in OT. 
+
+dat_pb_less_less = dat_pb_less %>% select(CLIP)
+dat_ot_less_less = dat_ot_less %>% select(CLIP, OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID)
+
+#   Join. 
+
+dat_pb_ot = dat_pb_less_less %>% left_join(dat_ot_less_less)
 
 #  Transform the OT-PB join into a panel of explicit and implicit ownership. 
 
 #  ???
+
+#  Then do something with that
+#  I guess use that to subset parcels by years (to avoid extra geospatial work)
+#  Then get geospatial data of interest just from the subset of parcels with associated years
+#  Then finalize the panel with covariates
+#  Note that geospatial variables are only for gentrification work, so don't do that now
+#  Next piece with forest work is handling notification-PB/OT intersections with land use codes and landowner details
+#  So, work through handling covariates and subsetting parcels, then split workflows
 
 
 # Here be reference code. 
