@@ -1,3 +1,7 @@
+2026/09/06
+
+Geolocation could probably resolve some of the ~5000 (PB), ~3000 (OT) records with missing location data. 
+
 2026/09/05
 
 Use recording dates rather than filing dates. 
