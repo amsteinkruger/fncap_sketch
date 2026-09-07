@@ -1,3 +1,10 @@
+2026/09/07
+
+Problem: just summarizing Lane County to combine PB, OT is problematic for computation time.
+ - 1:30 at last run. 
+
+Currently running the same summary operation on a quarter of the combined records. 
+
 2026/09/06
 
 Geolocation could probably resolve some of the ~5000 (PB), ~3000 (OT) records with missing location data. 

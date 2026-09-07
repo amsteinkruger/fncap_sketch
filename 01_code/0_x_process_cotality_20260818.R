@@ -1,9 +1,7 @@
 # Reconcile parcels, tax, and deed data to get a panel of forestland ownership. 
 
-#  Problems: 
-#   is the OT-PB join actually a join or more of a panel appending thing?
 #   what's the deal with non-1-1 joins between PB and parcels?
-#   or the equivalent issue for PB-OT if that crops up
+#   how do multi-parcel records work for both PB and OT?
 #   what are the right land use codes to reduce OT, PB on?
 #    what about cases of land use change?
 
@@ -181,108 +179,85 @@ dat_ot_bind =
       str_trim %>% 
       str_remove_all("DEED_") %>% 
       str_remove_all("_-_STATIC") %>% 
-      str_replace_all("SALE_", "SALE_DERIVED_")
+      str_replace_all("SALE_DERIVED_", "SALE_")
   ) %>% 
   semi_join(dat_pb_parcels)
 
 #   Prepare data in an implicit panel. 
 
-dat_pb_ot = dat_pb_bind %>% bind_rows(dat_ot_bind)
+dat_pb_ot = 
+  dat_pb_bind %>% 
+  bind_rows(dat_ot_bind) %>% 
+  mutate(
+    SALE_RECORDING_YEAR_QUARTER = 
+      ifelse(
+        !is.na(SALE_RECORDING_DATE),
+        paste0(str_sub(SALE_RECORDING_DATE, 1, 4), "_", ceiling(as.numeric(str_sub(SALE_RECORDING_DATE, 5, 6)) / 3)),
+        NA
+      ),
+    LAST_ASSESSOR_UPDATE_YEAR_QUARTER = 
+      ifelse(
+        !is.na(LAST_ASSESSOR_UPDATE_DATE),
+        paste0(str_sub(LAST_ASSESSOR_UPDATE_DATE, 1, 4), "_", ceiling(as.numeric(str_sub(LAST_ASSESSOR_UPDATE_DATE, 6, 7)) / 3)),
+        NA
+      ),
+    OWNER_BUYER_1 = 
+      ifelse(
+        !is.na(OWNER_1_FULL_NAME),
+        OWNER_1_FULL_NAME,
+        BUYER_1_FULL_NAME
+      )
+  ) %>% 
+  select(
+    CLIP, 
+    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID,
+    OWNER_BUYER_1, 
+    SALE_RECORDING_YEAR_QUARTER, 
+    LAST_ASSESSOR_UPDATE_YEAR_QUARTER
+  ) %>% 
+  # This arrange() call is for easier review of pre-summarize() records. 
+  arrange(
+    CLIP, 
+    LAST_ASSESSOR_UPDATE_YEAR_QUARTER, 
+    desc(SALE_RECORDING_YEAR_QUARTER), 
+    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, 
+    OWNER_BUYER_1
+  ) %>% 
+  # Drop oddball records for easier summarizing. 
+  #  Drop records with no useful dates. There are just a few of these. 
+  filter(!is.na(SALE_RECORDING_YEAR_QUARTER) | !is.na(LAST_ASSESSOR_UPDATE_YEAR_QUARTER)) %>% 
+  #  Drop all but the last record within each dataset for each CLIP in each quarter.
+  #  The point is to keep only the last buyer in sequences of transfers.
+  group_by(CLIP, SALE_RECORDING_YEAR_QUARTER, LAST_ASSESSOR_UPDATE_YEAR_QUARTER) %>% 
+  filter(row_number() == max(row_number())) %>% 
+  ungroup %>% 
+  # Summarize over PB and OT -- this collapses the last observed transfer and ownership for each CLIP. 
+  group_by(CLIP, OWNER_BUYER_1) %>% 
+  summarize(
+    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID = max(OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, na.rm = TRUE),
+    SALE_RECORDING_YEAR_QUARTER = max(SALE_RECORDING_YEAR_QUARTER, na.rm = TRUE),
+    LAST_ASSESSOR_UPDATE_YEAR_QUARTER = max(LAST_ASSESSOR_UPDATE_YEAR_QUARTER, na.rm = TRUE)
+  ) %>% 
+  ungroup %>% 
+  # This arrange() call is also for easier review (correcting group_by() shenanigans). 
+  arrange(
+    CLIP, 
+    LAST_ASSESSOR_UPDATE_YEAR_QUARTER, 
+    desc(SALE_RECORDING_YEAR_QUARTER), 
+    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, 
+    OWNER_BUYER_1    
+  )
+  
+dat_pb_ot %>% write_csv("03_intermediate/data_pb_ot_temp.csv")
 
-#  ???
+#   Prepare data in an explicit panel. 
 
-#  Then do something with that
-#  I guess use that to subset parcels by years (to avoid extra geospatial work)
-#  Then get geospatial data of interest just from the subset of parcels with associated years
-#  Then finalize the panel with covariates
-#  Note that geospatial variables are only for gentrification work, so don't do that now
-#  Next piece with forest work is handling notification-PB/OT intersections with land use codes and landowner details
-#  So, work through handling covariates and subsetting parcels, then split workflows
+#    Problem: this omits seller information from the last observed sale in each series. 
+#    And using buyer as owner assumes transfers are actually complete; might be worth checking. 
 
-# reference code follows
+#    Set up a function to pick buyer/owner information. 
 
-dat_transactions_less =
-  dat_transactions |> 
-  select(clip, starts_with("parcel_"), year_sold, ends_with("_1_full_name")) |> 
-  filter(year_sold %in% 2015:2024)
-
-dat_transactions_spatial = 
-  dat_transactions_less |> 
-  select(clip, starts_with("parcel_")) |> 
-  vect(geom = c("parcel_longitude", "parcel_latitude")) |> 
-  project("EPSG:3857")
-
-dat_owners_transactions_extract = 
-  dat_owners_parcels_join |> 
-  select(clip) |> 
-  terra::extract(dat_transactions_spatial) |> 
-  rename(clip_owner = clip)
-
-dat_owners_transactions_pivot = 
-  dat_transactions_less |> 
-  rename(clip_transaction = clip) |> 
-  mutate(id.y = row_number()) |> 
-  left_join(dat_owners_transactions_extract) |> 
-  select(-id.y, -starts_with("parcel_")) |> 
-  drop_na(clip_owner)
-
-dat_owners_panel_set = 
-  dat_owners_parcels_join |> 
-  as_tibble() |> 
-  select(clip_owner = clip,
-         parcel = ID_Parcel,
-         landusecode,
-         stateusedescription,
-         countyusedescription,
-         owner = owner1fullname) |> 
-  mutate(year = 2024)
-
-dat_transactions_panel_set = 
-  dat_owners_transactions_pivot |> 
-  drop_na(clip_owner) |> 
-  select(clip_owner,
-         clip_transaction,
-         year = year_sold,
-         owner = seller_1_full_name)
-
-dat_panel_set = bind_rows(dat_owners_panel_set, dat_transactions_panel_set)
-
-dat_panel = 
-  dat_panel_set |> 
-  relocate(year, .before = owner) |> 
-  arrange(clip_owner, desc(year), parcel)
-
-# handle complex observations -- here, "handle" means "drop"
-# so, with all the other conditions in place, this:
-#  discards properties/parcels with multiple transactions in one year
-#  discards properties/parcels with a transaction in 2024
-# this is dumb but easier than reconciling multiple transactions within years. 
-
-dat_panel_check = 
-  dat_panel |> 
-  group_by(clip_owner, year) |> 
-  mutate(count = n()) |> 
-  group_by(clip_owner) |> 
-  mutate(count_max = count |> max()) |> 
-  ungroup() |> 
-  mutate(count_check = (count == count_max)) |> 
-  filter(count_max == 1) |> 
-  mutate(which = ifelse(is.na(parcel), "transaction", "owner")) |> 
-  select(clip_owner, which, year, owner) |> 
-  pivot_wider(names_from = which,
-              values_from = owner) |> 
-  mutate(which = ifelse(is.na(owner), "transaction", "ownership"),
-         owner_combine = ifelse(is.na(owner), transaction, owner)) |> 
-  select(-owner, -transaction)
-
-dat_panel_complete = 
-  dat_panel_check |> 
-  select(clip_owner, year) |> 
-  distinct() |> 
-  complete(clip_owner, year) |> 
-  left_join(dat_panel_check)
-
-fun_fill = 
+fun_explicate = 
   function(owner_0, owner_1){
     
     ifelse(!is.na(owner_0) & is.na(owner_1), 
@@ -291,12 +266,56 @@ fun_fill =
     
   }
 
-dat_panel_filled =
-  dat_panel_complete |> 
-  arrange(clip_owner, desc(year)) |> 
-  group_by(clip_owner) |> 
-  mutate(owner_fill = accumulate(owner_combine, ~ fun_fill(.x, .y))) |> 
-  ungroup() |> 
-  mutate(owner = owner_fill,
-         which = ifelse(is.na(which), "inferred", which)) |> 
-  select(-c(owner_combine, owner_fill))
+#    Get the first observed quarter of ownership information for each CLIP. 
+
+dat_pb_ot_first = 
+  dat_pb_ot %>% 
+  select(CLIP, SALE_RECORDING_YEAR_QUARTER) %>% 
+  group_by(CLIP) %>% 
+  filter(SALE_RECORDING_YEAR_QUARTER == min(SALE_RECORDING_YEAR_QUARTER, na.rm = TRUE)) %>% 
+  ungroup %>% 
+  distinct %>% 
+  rename(FIRST_YEAR_QUARTER = SALE_RECORDING_YEAR_QUARTER) 
+
+#    Transform data. 
+
+dat_pb_ot_explicit = 
+  dat_pb_ot %>% 
+  # Reduce PB and OT year-quarters to a single variable. 
+  pivot_longer(
+    c(SALE_RECORDING_YEAR_QUARTER, LAST_ASSESSOR_UPDATE_YEAR_QUARTER),
+    names_to = "SOURCE",
+    values_to = "YEAR_QUARTER") %>% 
+  drop_na(YEAR_QUARTER) %>% 
+  # Prepare data for transformation into an explicit panel. 
+  arrange(CLIP, desc(YEAR_QUARTER)) %>% # This is superfluous, I guess?
+  select(-OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, -SOURCE) %>% 
+  # Transform data into an explicit panel. 
+  complete(CLIP, YEAR_QUARTER = paste0(rep(1987:2025, each = 4), "_", 1:4)) %>% 
+  arrange(CLIP, YEAR_QUARTER) %>% 
+  # Drop year-quarters without implicit observations.
+  #  Get first observed year-quarters.
+  left_join(dat_pb_ot_first) %>% 
+  #  Filter to quasi-observed year-quarters or, for PB-only CLIPs, year-quarters from 2015_1 forward. 
+  #   This would be cleaner with a flag set up after the pivot_longer() above. 
+  group_by(CLIP) %>% 
+  filter(YEAR_QUARTER >= FIRST_YEAR_QUARTER | YEAR_QUARTER > "2014_4" & n_distinct(OWNER_BUYER_1) == 2) %>% 
+  select(-FIRST_YEAR_QUARTER) %>% 
+  # Turn implicit observations into explicit observations. 
+  mutate(OWNER_BUYER_1_EXPLICATE_FORWARD = accumulate(OWNER_BUYER_1, ~ fun_explicate(.x, .y))) %>% 
+  arrange(CLIP, desc(YEAR_QUARTER)) %>% 
+  mutate(OWNER_BUYER_1_EXPLICATE_BACKWARD = accumulate(OWNER_BUYER_1_EXPLICATE_FORWARD, ~ fun_explicate(.x, .y))) %>% 
+  ungroup %>% 
+  # Clean up. 
+  filter(YEAR_QUARTER > "2014_4") %>% # Watch out for this in advancing past the 2015-2024 panel. 
+  select(CLIP, YEAR_QUARTER, OWNER = OWNER_BUYER_1_EXPLICATE_BACKWARD)
+
+
+#  I guess use this to subset parcels by years (to avoid extra geospatial work)
+#  Then get geospatial data of interest just from the subset of parcels with associated years
+#  Then finalize the panel with covariates
+#  Note that geospatial variables are only for gentrification work, so don't do that now
+#  Next piece with forest work is handling notification-PB/OT intersections with land use codes and landowner details
+#  So, work through handling covariates and subsetting parcels, then split workflows
+
+#  useful thing: nest notifications and geodata by year-quarter for fewer comparisons
