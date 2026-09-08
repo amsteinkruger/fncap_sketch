@@ -14,6 +14,19 @@
 #  Eventually:
 #   Reconcile notifications with records of land ownership. 
 
+#  20260907 scheme:
+#   ideally, handle change detection before anything else; then use reduced notifications from 1_1 on
+#   but in any case, nest both ownership and notifications by year-quarter
+#   then for each year-quarter, add spatial data (parcels) to ownership, then extract owners to notifications
+#    note that the extraction can either be a centroid NN for convenience or a polygon-polygons match
+#    but no idea what to do many-many polygon-polygons (that isn't equivalent in principle to centroid NN)
+#   then use some combination of notifcations and land use codes to pick timberland
+#   then pull out owner strings, apply reasonable string clean-up and hand review to check (1) notification-Cotality disagreements and (2) types
+#   consider speeding that up with automated binning into public/private with public lands data
+
+#  wouldn't it be better to intersect all notifications with the subset of data-rich parcels, then map to the ownership panel?
+#  skips nesting for a single spatial join
+
 #  Clear the environment.
 
 rm(list = ls())

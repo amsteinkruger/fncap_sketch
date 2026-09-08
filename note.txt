@@ -1,9 +1,19 @@
+2026/09/08
+
+Is TAX ACCOUNT NUMBER (1) usable and (2) what it looks like, which is a clean UID for owners?
+
 2026/09/07
+
+Then the explicit panel requires ~5 minutes for 10% of records, so about an hour for the full thing.
+
+Where does a run of up to 3h for Lane County leave the whole data assembly (before notifications)?
+
+Kidding, accidentally ran the explicit panel construction for all records. So, 5 minutes for the whole thing.
+
+Same problem, though -- run of ~2h for Lane County is still rough. 
 
 Problem: just summarizing Lane County to combine PB, OT is problematic for computation time.
  - 1:30 at last run. 
-
-Currently running the same summary operation on a quarter of the combined records. 
 
 2026/09/06
 

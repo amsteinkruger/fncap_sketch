@@ -91,25 +91,27 @@ dat_ot =
 
 #   Parcels
 
-#    Reduce to Lane County.
+#    Reduce to relevant counties.
 
-dat_parcels_less = dat_parcels |> filter(County == 20) 
+vec_counties_parcels = c(2, 3, 4, 5, 6, 8, 9, 10, 14, 15, 16, 17, 18, 20, 21, 22, 24, 26, 29, 33, 34, 36)
 
-#    Plot.
-
-dat_parcels_less |>
-  slice_sample(n = 10000) |>
-  makeValid() |>
-  ggplot() +
-  geom_spatvector(fill = "gray50", color = NA)
+dat_parcels_less = dat_parcels |> filter(County %in% vec_counties_parcels) 
 
 #   Property Basic
 
-#    Reduce to Lane County.
+#    Reduce to relevant counties.
 
-dat_pb_less = dat_pb %>% filter(FIPS_CODE == "41039")
+vec_counties_fips = 
+  c(3, 5, 7, 9, 11, 15, 17, 19, 27, 29, 31, 33, 35, 39, 41, 43, 47, 51, 53, 57, 75, 67, 71) %>% 
+  as.character %>% 
+  str_pad(3, "left", "0") %>% 
+  paste0("41", .)
+
+dat_pb_less = dat_pb %>% filter(FIPS_CODE %in% vec_counties_fips)
 
 #    Explicate spatial data. Note that 3393 of 180444 observations are missing coordinates. 
+
+dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect %>% project("EPSG:3857")
 
 dat_pb_less_spatial = 
   dat_pb_less |> 
@@ -120,12 +122,14 @@ dat_pb_less_spatial =
     geom = c("PARCEL_LEVEL_LONGITUDE", "PARCEL_LEVEL_LATITUDE"), 
     crs = "+proj=longlat +datum=WGS84"
   ) |> 
-  project("EPSG:3857")
+  project("EPSG:3857") %>% 
+  crop(dat_bounds)
 
 #    Plot.
 
 dat_pb_less_spatial %>% 
   select(CLIP) %>% 
+  slice_sample(n = 10000) %>% 
   ggplot() + 
   geom_spatvector(color = "gray50", fill = NA, shape = 21, alpha = 0.25)
 
@@ -135,7 +139,8 @@ dat_parcels_less_centroids =
   dat_parcels_less %>% 
   select(PARCEL = OBJECTID) %>% 
   mutate(ROW = row_number()) %>% 
-  makeValid(buffer = TRUE) %>% 
+  makeValid(buffer = TRUE) %T>% 
+  writeVector("03_intermediate/dat_parcels.gdb") %>% # Set aside for later. 
   centroids
 
 dat_pb_parcels = 
@@ -163,7 +168,7 @@ dat_pb_bind =
 
 #    Reduce to Lane County.
 
-dat_ot_less = dat_ot %>% filter(FIPS_CODE == "41039")
+dat_ot_less = dat_ot %>% filter(FIPS_CODE == %in% vec_counties_fips)
 
 #    Set up OT for a semi-join to PB-Parcels and for appending to PB.  
 
@@ -183,9 +188,9 @@ dat_ot_bind =
   ) %>% 
   semi_join(dat_pb_parcels)
 
-#   Prepare data in an implicit panel. 
+#   Prepare an implicit panel. 
 
-dat_pb_ot = 
+dat_pb_ot_implicit = 
   dat_pb_bind %>% 
   bind_rows(dat_ot_bind) %>% 
   mutate(
@@ -246,14 +251,11 @@ dat_pb_ot =
     desc(SALE_RECORDING_YEAR_QUARTER), 
     OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, 
     OWNER_BUYER_1    
-  )
-  
-dat_pb_ot %>% write_csv("03_intermediate/data_pb_ot_temp.csv")
+  ) %T>% 
+  # Export. 
+  write_csv("03_intermediate/data_cotality_implicit.csv")
 
 #   Prepare data in an explicit panel. 
-
-#    Problem: this omits seller information from the last observed sale in each series. 
-#    And using buyer as owner assumes transfers are actually complete; might be worth checking. 
 
 #    Set up a function to pick buyer/owner information. 
 
@@ -269,7 +271,7 @@ fun_explicate =
 #    Get the first observed quarter of ownership information for each CLIP. 
 
 dat_pb_ot_first = 
-  dat_pb_ot %>% 
+  dat_pb_ot_implicit %>% 
   select(CLIP, SALE_RECORDING_YEAR_QUARTER) %>% 
   group_by(CLIP) %>% 
   filter(SALE_RECORDING_YEAR_QUARTER == min(SALE_RECORDING_YEAR_QUARTER, na.rm = TRUE)) %>% 
@@ -277,7 +279,7 @@ dat_pb_ot_first =
   distinct %>% 
   rename(FIRST_YEAR_QUARTER = SALE_RECORDING_YEAR_QUARTER) 
 
-#    Transform data. 
+#    Prepare an explicit panel. 
 
 dat_pb_ot_explicit = 
   dat_pb_ot %>% 
@@ -308,14 +310,6 @@ dat_pb_ot_explicit =
   ungroup %>% 
   # Clean up. 
   filter(YEAR_QUARTER > "2014_4") %>% # Watch out for this in advancing past the 2015-2024 panel. 
-  select(CLIP, YEAR_QUARTER, OWNER = OWNER_BUYER_1_EXPLICATE_BACKWARD)
-
-
-#  I guess use this to subset parcels by years (to avoid extra geospatial work)
-#  Then get geospatial data of interest just from the subset of parcels with associated years
-#  Then finalize the panel with covariates
-#  Note that geospatial variables are only for gentrification work, so don't do that now
-#  Next piece with forest work is handling notification-PB/OT intersections with land use codes and landowner details
-#  So, work through handling covariates and subsetting parcels, then split workflows
-
-#  useful thing: nest notifications and geodata by year-quarter for fewer comparisons
+  select(CLIP, YEAR_QUARTER, OWNER = OWNER_BUYER_1_EXPLICATE_BACKWARD) %T>% 
+  # Export.
+  write_csv("03_intermediate/data_cotality_explicit.csv")
