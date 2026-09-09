@@ -11,6 +11,7 @@ library(scriptName) # This will someday be useful for generating logs.
 
 #  Spatial
 
+library(sf)
 library(terra)
 library(tidyterra)
 

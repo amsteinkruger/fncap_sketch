@@ -4,13 +4,7 @@
 #   how do multi-parcel records work for both PB and OT?
 #   what are the right land use codes to reduce OT, PB on?
 #    what about cases of land use change?
-
-#  Get parcel data.
-
-dat_parcels = 
-  "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>% 
-  vect
-
+  
 # Note that variable names require a little extra handling for PB, OT. 
 
 #  Get Property Basic data.
@@ -89,66 +83,24 @@ dat_ot =
 
 #  Prepare data for wrangling into implicit and explicit panels.  
 
-#   Parcels
-
-#    Reduce to relevant counties.
+#   Get parcel data, reduce to relevant counties, filter on geometries, and get centroids. 
 
 vec_counties_parcels = c(2, 3, 4, 5, 6, 8, 9, 10, 14, 15, 16, 17, 18, 20, 21, 22, 24, 26, 29, 33, 34, 36)
 
-dat_parcels_less = 
-  dat_parcels %>% 
+dat_parcels = 
+  "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>%
+  read_sf %>% 
   filter(County %in% vec_counties_parcels) %>% 
-  select(PARCEL = OBJECTID, COUNTY_ARBITRARY = County) %>% 
-  makeValid(buffer = TRUE) %>% 
-  arrange(COUNTY_ARBITRARY, PARCEL) %T>% 
-  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>% 
-  mutate(ROW = row_number())
-
-#    Reduce to centroids. The elaborate implementation works around a hard crash. Don't touch it. 
-
-dat_parcels_less_centroids = 
-  dat_parcels_less %>% 
-  as_tibble %>% 
-  select(COUNTY_ARBITRARY) %>% 
-  distinct %>% 
-  arrange(COUNTY_ARBITRARY) %>% 
-  filter(COUNTY_ARBITRARY %in% c(20, 10, 15)) %>% 
+  select(PARCEL = OBJECTID) %>% 
   mutate(
-    DATA_WORKING = 
-      COUNTY_ARBITRARY %>% 
-      map(~ filter(dat_parcels_less, COUNTY_ARBITRARY == .x)) %>% 
-      map(
-        ~ mutate(
-          .x,
-          VALID_CENTROID = 
-            ROW %>% 
-            map_lgl(
-              ~ tryCatch(
-                {
-                  centroids(dat_parcels_less[.x, ])
-                  TRUE
-                },
-                error = \(e) FALSE
-              )
-            )
-        )
-      ) %>% 
-      map(~ filter(.x, VALID_CENTROID)) %>% 
-      map(~ select(.x, PARCEL)) %>% 
-      map(centroids) %T>% 
-      map2(
-        .y = COUNTY_ARBITRARY, 
-        ~ writeVector(
-          .x, 
-          paste0(
-            "03_intermediate/dat_parcels_centroids_split/dat_", 
-            .y, 
-            ".gdb"
-          ),
-          overwrite = TRUE
-        )
-      )
-  )
+    VALID_GEOM = st_is_valid(geometry),
+    EMPTY_GEOM = st_is_empty(geometry)) %>% 
+  filter(VALID_GEOM & !EMPTY_GEOM) %>% 
+  select(PARCEL) %>% 
+  vect %T>% 
+  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>% 
+  centroids %T>% 
+  writeVector("03_intermediate/dat_parcels_points.gdb")
 
 #   Property Basic
 
@@ -190,7 +142,7 @@ dat_pb_less_spatial %>%
 
 dat_pb_parcels = 
   dat_pb_less_spatial %>% 
-  nearest(dat_parcels_less) %>% 
+  nearest(dat_parcels) %>% 
   as_tibble %>% 
   left_join(
     dat_parcels_less_centroids %>% as_tibble, 
@@ -215,11 +167,11 @@ dat_pb_bind =
 
 dat_ot_less = dat_ot %>% filter(FIPS_CODE == %in% vec_counties_fips)
 
-#    Set up OT for a semi-join to PB-Parcels and for appending to PB.  
+#    Set up OT for a semi-join with PB-Parcels and for appending to PB.  
 
-#     CLIP is unique in OT but not in PB. 
-#     There are no non-missing values in field PREVIOUS_CLIP for either PB or OT. 
+#     CLIP is unique in PB but not in OT. 
 #     OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID is a unique ID in OT. 
+#     There are no non-missing values in field PREVIOUS_CLIP for either PB or OT. 
 
 dat_ot_bind = 
   dat_ot_less %>% 
