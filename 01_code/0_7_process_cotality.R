@@ -87,7 +87,7 @@ dat_ot =
   select(all_of(vec_ot_names_use)) %>% 
   rename_with(~ str_replace_all(.x, " ", "_"))
 
-#  Visualize data and prepare for wrangling into an implicit panel.  
+#  Prepare data for wrangling into implicit and explicit panels.  
 
 #   Parcels
 
@@ -95,7 +95,60 @@ dat_ot =
 
 vec_counties_parcels = c(2, 3, 4, 5, 6, 8, 9, 10, 14, 15, 16, 17, 18, 20, 21, 22, 24, 26, 29, 33, 34, 36)
 
-dat_parcels_less = dat_parcels |> filter(County %in% vec_counties_parcels) 
+dat_parcels_less = 
+  dat_parcels %>% 
+  filter(County %in% vec_counties_parcels) %>% 
+  select(PARCEL = OBJECTID, COUNTY_ARBITRARY = County) %>% 
+  makeValid(buffer = TRUE) %>% 
+  arrange(COUNTY_ARBITRARY, PARCEL) %T>% 
+  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>% 
+  mutate(ROW = row_number())
+
+#    Reduce to centroids. The elaborate implementation works around a hard crash. Don't touch it. 
+
+dat_parcels_less_centroids = 
+  dat_parcels_less %>% 
+  as_tibble %>% 
+  select(COUNTY_ARBITRARY) %>% 
+  distinct %>% 
+  arrange(COUNTY_ARBITRARY) %>% 
+  filter(COUNTY_ARBITRARY %in% c(20, 10, 15)) %>% 
+  mutate(
+    DATA_WORKING = 
+      COUNTY_ARBITRARY %>% 
+      map(~ filter(dat_parcels_less, COUNTY_ARBITRARY == .x)) %>% 
+      map(
+        ~ mutate(
+          .x,
+          VALID_CENTROID = 
+            ROW %>% 
+            map_lgl(
+              ~ tryCatch(
+                {
+                  centroids(dat_parcels_less[.x, ])
+                  TRUE
+                },
+                error = \(e) FALSE
+              )
+            )
+        )
+      ) %>% 
+      map(~ filter(.x, VALID_CENTROID)) %>% 
+      map(~ select(.x, PARCEL)) %>% 
+      map(centroids) %T>% 
+      map2(
+        .y = COUNTY_ARBITRARY, 
+        ~ writeVector(
+          .x, 
+          paste0(
+            "03_intermediate/dat_parcels_centroids_split/dat_", 
+            .y, 
+            ".gdb"
+          ),
+          overwrite = TRUE
+        )
+      )
+  )
 
 #   Property Basic
 
@@ -135,17 +188,9 @@ dat_pb_less_spatial %>%
 
 #   Join PB to parcels by centroid nearest neighbors. 
 
-dat_parcels_less_centroids = 
-  dat_parcels_less %>% 
-  select(PARCEL = OBJECTID) %>% 
-  mutate(ROW = row_number()) %>% 
-  makeValid(buffer = TRUE) %T>% 
-  writeVector("03_intermediate/dat_parcels.gdb") %>% # Set aside for later. 
-  centroids
-
 dat_pb_parcels = 
   dat_pb_less_spatial %>% 
-  nearest(dat_parcels_less_centroids) %>% 
+  nearest(dat_parcels_less) %>% 
   as_tibble %>% 
   left_join(
     dat_parcels_less_centroids %>% as_tibble, 

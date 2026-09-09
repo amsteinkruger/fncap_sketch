@@ -1,5 +1,13 @@
 2026/09/08
 
+With centroids in parcels: see if session crash replicates; if so, switch to polygon-polygon NN
+and/or parse parcels by land use to drop urban areas
+
+(Doing this)
+Consider (0) for pre-processing, (1) for processing (panel assembly), (2) for exploration, (3) for analysis
+(4) for surprises on the FNCAP side
+(5+) for supply?
+
 Is TAX ACCOUNT NUMBER (1) usable and (2) what it looks like, which is a clean UID for owners?
 
 2026/09/07
