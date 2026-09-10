@@ -1,11 +1,13 @@
-# Reconcile parcels, tax, and deed data to get a panel of forestland ownership. 
+# Reconcile parcel, tax, and deed data to get a panel of land ownership. 
 
 #   what's the deal with non-1-1 joins between PB and parcels?
 #   how do multi-parcel records work for both PB and OT?
 #   what are the right land use codes to reduce OT, PB on?
 #    what about cases of land use change?
-  
-# Note that variable names require a little extra handling for PB, OT. 
+
+#  Get bounds for later.
+
+dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect %>% project("EPSG:3857")
 
 #  Get Property Basic data.
 
@@ -85,21 +87,22 @@ dat_ot =
 
 #   Get parcel data, reduce to relevant counties, filter on geometries, and get centroids. 
 
-vec_counties_parcels = c(2, 3, 4, 5, 6, 8, 9, 10, 14, 15, 16, 17, 18, 20, 21, 22, 24, 26, 29, 33, 34, 36)
+vec_counties_parcels = c(2, 3, 4, 5, 6, 8, 9, 10, 14, 15, 16, 17, 18, 20, 21, 22, 24, 26, 27, 29, 33, 34, 36)
 
 dat_parcels = 
   "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>%
   read_sf %>% 
-  filter(County %in% vec_counties_parcels) %>% 
-  select(PARCEL = OBJECTID) %>% 
+  filter(County %in% vec_counties_parcels) %>%
+  select(PARCEL = OBJECTID, COUNTY = County) %>% 
   mutate(
     VALID_GEOM = st_is_valid(geometry),
     EMPTY_GEOM = st_is_empty(geometry)) %>% 
   filter(VALID_GEOM & !EMPTY_GEOM) %>% 
-  select(PARCEL) %>% 
-  vect %T>% 
-  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>% 
-  centroids %T>% 
+  select(PARCEL, COUNTY) %>% 
+  vect %>% %T>% 
+  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>%
+  centroids %>% 
+  crop(dat_bounds) %T>% # Conceptually, this should follow vect(). But this is faster.
   writeVector("03_intermediate/dat_parcels_points.gdb")
 
 #   Property Basic
@@ -115,8 +118,6 @@ vec_counties_fips =
 dat_pb_less = dat_pb %>% filter(FIPS_CODE %in% vec_counties_fips)
 
 #    Explicate spatial data. Note that 3393 of 180444 observations are missing coordinates. 
-
-dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect %>% project("EPSG:3857")
 
 dat_pb_less_spatial = 
   dat_pb_less |> 
@@ -145,7 +146,7 @@ dat_pb_parcels =
   nearest(dat_parcels) %>% 
   as_tibble %>% 
   left_join(
-    dat_parcels_less_centroids %>% as_tibble, 
+    dat_parcels %>% as_tibble %>% mutate(ROW = row_number()), 
     by = c("to_id" = "ROW")
   ) %>% 
   left_join(
@@ -165,7 +166,7 @@ dat_pb_bind =
 
 #    Reduce to Lane County.
 
-dat_ot_less = dat_ot %>% filter(FIPS_CODE == %in% vec_counties_fips)
+dat_ot_less = dat_ot %>% filter(FIPS_CODE %in% vec_counties_fips)
 
 #    Set up OT for a semi-join with PB-Parcels and for appending to PB.  
 
