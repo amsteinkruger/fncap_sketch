@@ -99,7 +99,7 @@ dat_parcels =
     EMPTY_GEOM = st_is_empty(geometry)) %>% 
   filter(VALID_GEOM & !EMPTY_GEOM) %>% 
   select(PARCEL, COUNTY) %>% 
-  vect %>% %T>% 
+  vect %T>% 
   writeVector("03_intermediate/dat_parcels_polygons.gdb") %>%
   centroids %>% 
   crop(dat_bounds) %T>% # Conceptually, this should follow vect(). But this is faster.
@@ -117,7 +117,7 @@ vec_counties_fips =
 
 dat_pb_less = dat_pb %>% filter(FIPS_CODE %in% vec_counties_fips)
 
-#    Explicate spatial data. Note that 3393 of 180444 observations are missing coordinates. 
+#    Explicate spatial data. Note that some observations are missing coordinates. 
 
 dat_pb_less_spatial = 
   dat_pb_less |> 
@@ -198,12 +198,6 @@ dat_pb_ot_implicit =
         paste0(str_sub(SALE_RECORDING_DATE, 1, 4), "_", ceiling(as.numeric(str_sub(SALE_RECORDING_DATE, 5, 6)) / 3)),
         NA
       ),
-    LAST_ASSESSOR_UPDATE_YEAR_QUARTER = 
-      ifelse(
-        !is.na(LAST_ASSESSOR_UPDATE_DATE),
-        paste0(str_sub(LAST_ASSESSOR_UPDATE_DATE, 1, 4), "_", ceiling(as.numeric(str_sub(LAST_ASSESSOR_UPDATE_DATE, 6, 7)) / 3)),
-        NA
-      ),
     OWNER_BUYER_1 = 
       ifelse(
         !is.na(OWNER_1_FULL_NAME),
@@ -213,43 +207,28 @@ dat_pb_ot_implicit =
   ) %>% 
   select(
     CLIP, 
-    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID,
-    OWNER_BUYER_1, 
     SALE_RECORDING_YEAR_QUARTER, 
-    LAST_ASSESSOR_UPDATE_YEAR_QUARTER
+    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, 
+    OWNER_BUYER_1
   ) %>% 
   # This arrange() call is for easier review of pre-summarize() records. 
   arrange(
     CLIP, 
-    LAST_ASSESSOR_UPDATE_YEAR_QUARTER, 
     desc(SALE_RECORDING_YEAR_QUARTER), 
-    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, 
+    desc(OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID), 
     OWNER_BUYER_1
   ) %>% 
-  # Drop oddball records for easier summarizing. 
-  #  Drop records with no useful dates. There are just a few of these. 
-  filter(!is.na(SALE_RECORDING_YEAR_QUARTER) | !is.na(LAST_ASSESSOR_UPDATE_YEAR_QUARTER)) %>% 
-  #  Drop all but the last record within each dataset for each CLIP in each quarter.
-  #  The point is to keep only the last buyer in sequences of transfers.
-  group_by(CLIP, SALE_RECORDING_YEAR_QUARTER, LAST_ASSESSOR_UPDATE_YEAR_QUARTER) %>% 
-  filter(row_number() == max(row_number())) %>% 
+  #  Drop OT records with no useful dates. There are just a few of these. 
+  filter(!is.na(SALE_RECORDING_YEAR_QUARTER) | is.na(OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID)) %>% 
+  #  Drop all but the latest record for each quarter. 
+  group_by(CLIP, SALE_RECORDING_YEAR_QUARTER) %>% 
+  filter(row_number() == min(row_number())) %>% 
   ungroup %>% 
-  # Summarize over PB and OT -- this collapses the last observed transfer and ownership for each CLIP. 
-  group_by(CLIP, OWNER_BUYER_1) %>% 
-  summarize(
-    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID = max(OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, na.rm = TRUE),
-    SALE_RECORDING_YEAR_QUARTER = max(SALE_RECORDING_YEAR_QUARTER, na.rm = TRUE),
-    LAST_ASSESSOR_UPDATE_YEAR_QUARTER = max(LAST_ASSESSOR_UPDATE_YEAR_QUARTER, na.rm = TRUE)
-  ) %>% 
-  ungroup %>% 
-  # This arrange() call is also for easier review (correcting group_by() shenanigans). 
-  arrange(
-    CLIP, 
-    LAST_ASSESSOR_UPDATE_YEAR_QUARTER, 
-    desc(SALE_RECORDING_YEAR_QUARTER), 
-    OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, 
-    OWNER_BUYER_1    
-  ) %T>% 
+  #  Drop the OT ID, since the previous step means CLIP-YEAR_QUARTER is the UID. 
+  select(-OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID) %>% 
+  #  Assume that PB records can reasonably be dated to Q4 2024. (This is easy to check.)
+  mutate(SALE_RECORDING_YEAR_QUARTER = SALE_RECORDING_YEAR_QUARTER %>% replace_na("2024_4")) %>% 
+  rename(YEAR_QUARTER = SALE_RECORDING_YEAR_QUARTER) %T>% 
   # Export. 
   write_csv("03_intermediate/data_cotality_implicit.csv")
 
@@ -270,44 +249,34 @@ fun_explicate =
 
 dat_pb_ot_first = 
   dat_pb_ot_implicit %>% 
-  select(CLIP, SALE_RECORDING_YEAR_QUARTER) %>% 
+  select(CLIP, YEAR_QUARTER) %>% 
   group_by(CLIP) %>% 
-  filter(SALE_RECORDING_YEAR_QUARTER == min(SALE_RECORDING_YEAR_QUARTER, na.rm = TRUE)) %>% 
+  filter(YEAR_QUARTER == min(YEAR_QUARTER, na.rm = TRUE)) %>% 
   ungroup %>% 
   distinct %>% 
-  rename(FIRST_YEAR_QUARTER = SALE_RECORDING_YEAR_QUARTER) 
+  rename(FIRST_YEAR_QUARTER = YEAR_QUARTER)
 
 #    Prepare an explicit panel. 
 
 dat_pb_ot_explicit = 
-  dat_pb_ot %>% 
-  # Reduce PB and OT year-quarters to a single variable. 
-  pivot_longer(
-    c(SALE_RECORDING_YEAR_QUARTER, LAST_ASSESSOR_UPDATE_YEAR_QUARTER),
-    names_to = "SOURCE",
-    values_to = "YEAR_QUARTER") %>% 
-  drop_na(YEAR_QUARTER) %>% 
-  # Prepare data for transformation into an explicit panel. 
-  arrange(CLIP, desc(YEAR_QUARTER)) %>% # This is superfluous, I guess?
-  select(-OWNER_TRANSFER_COMPOSITE_TRANSACTION_ID, -SOURCE) %>% 
+  dat_pb_ot_implicit %>% 
   # Transform data into an explicit panel. 
-  complete(CLIP, YEAR_QUARTER = paste0(rep(1987:2025, each = 4), "_", 1:4)) %>% 
-  arrange(CLIP, YEAR_QUARTER) %>% 
+  complete(CLIP, YEAR_QUARTER = paste0(rep(2000:2024, each = 4), "_", 1:4)) %>% 
   # Drop year-quarters without implicit observations.
   #  Get first observed year-quarters.
   left_join(dat_pb_ot_first) %>% 
-  #  Filter to quasi-observed year-quarters or, for PB-only CLIPs, year-quarters from 2015_1 forward. 
-  #   This would be cleaner with a flag set up after the pivot_longer() above. 
+  #  Filter to quasi-observed year-quarters or, for single-owner CLIPs, year-quarters from 2015_1 forward. 
   group_by(CLIP) %>% 
   filter(YEAR_QUARTER >= FIRST_YEAR_QUARTER | YEAR_QUARTER > "2014_4" & n_distinct(OWNER_BUYER_1) == 2) %>% 
   select(-FIRST_YEAR_QUARTER) %>% 
   # Turn implicit observations into explicit observations. 
+  arrange(CLIP, YEAR_QUARTER) %>% # Order matters for accumulate(). 
   mutate(OWNER_BUYER_1_EXPLICATE_FORWARD = accumulate(OWNER_BUYER_1, ~ fun_explicate(.x, .y))) %>% 
-  arrange(CLIP, desc(YEAR_QUARTER)) %>% 
+  arrange(CLIP, desc(YEAR_QUARTER)) %>% # Order matters for accumulate(). 
   mutate(OWNER_BUYER_1_EXPLICATE_BACKWARD = accumulate(OWNER_BUYER_1_EXPLICATE_FORWARD, ~ fun_explicate(.x, .y))) %>% 
   ungroup %>% 
   # Clean up. 
-  filter(YEAR_QUARTER > "2014_4") %>% # Watch out for this in advancing past the 2015-2024 panel. 
+  filter(YEAR_QUARTER > "2014_4" & YEAR_QUARTER < "2025_1") %>% 
   select(CLIP, YEAR_QUARTER, OWNER = OWNER_BUYER_1_EXPLICATE_BACKWARD) %T>% 
   # Export.
   write_csv("03_intermediate/data_cotality_explicit.csv")
