@@ -136,10 +136,10 @@ dat_clean =
          MBF_1 = MBF_Less,
          MBF_Acre_1 = MBF_Acre_Less) %T>% 
   # Export with spatial data. 
-  writeVector("03_intermediate/dat_notifications_1_4_x.gdb") %>% 
+  writeVector("03_intermediate/dat_notifications_1_4.gdb") %>% 
   # Export without spatial data. 
   as_tibble %T>% 
-  write_csv("03_intermediate/dat_notifications_1_4_x.csv")
+  write_csv("03_intermediate/dat_notifications_1_4.csv")
 
 #  Stop timing. 
 

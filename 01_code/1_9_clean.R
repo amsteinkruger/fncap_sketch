@@ -12,10 +12,24 @@ dat_clean =
          Restrict_MBF_Acre_Upper = MBF_Acre_1 < quantile(MBF_Acre_1, 0.99)) %>% 
   filter(if_all(starts_with("Restrict"), ~ .x == TRUE)) %>% 
   select(-starts_with("Restrict")) %>% 
+  # Add variables from the patched-in ownership workflow.
+  left_join(
+    "03_intermediate/dat_notifications_1_3_X.csv" %>% 
+      read_csv %>% 
+      select(UID, Owner_Cotality = Owner_Cotality)
+  ) %>% 
+  left_join(
+    "03_intermediate/dat_owners_acres.csv" %>% 
+      read_csv %>% 
+      select(QuarterCompletion = Year_Quarter, Owner_Cotality, Owner_Acres)
+  ) %>% 
+  rename(Owner_FERNS = Landowner) %>% 
   # Move variables around for easier reading. 
   select(-starts_with("Date"), -Completion) %>% 
   rename(YearCompletion = Year) %>% 
-  relocate(ends_with("Completion"), .after = Landowner) %T>%
+  relocate(Owner_Cotality, .after = Owner_FERNS) %>% 
+  relocate(Owner_Acres, .after = Owner_Cotality) %>% 
+  relocate(ends_with("Completion"), .after = Owner_Cotality) %T>%
   # Export with spatial data.
   writeVector("03_intermediate/dat_notifications_1_9.gdb") %>% 
   # Export without spatial data.

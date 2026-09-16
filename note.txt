@@ -1,3 +1,35 @@
+2026/09/15
+
+Instead of fuzzy matching across names, consider matching on frequency -- most frequent FERNS-Cotality match yields most likely Cotality key value. 
+
+Sort of gets at how likely it is that a spatial join by NN returned an incorrect owner-parcel-notification relationship. 
+
+Initial FERNS-Landowner/PB-OT-Owner comparison is concerning for NN. 
+
+Note that PB provides acres (as ACRES). That eliminates the need for parcels in handling notifications.
+ - But not in handling nonharvest decisions. 
+
+Breaking out NN operations by county reduces runtime from ~30h to ~5h.
+
+Note issue with direction of NN for notification-parcel-CLIP-owner matching: not all parcels have CLIPS.
+
+So, redo NN with parcel-CLIP rather than CLIP-parcel. This issue suggests meaningful error in NN. 
+
+
+2026/09/14
+
+ - Update June presentation materials (with absolutely minimal changes).
+ - Handle land ownership. 
+	- Handling PARCEL-CLIP computation, export, and join from 0_7 to 1_3.
+	- Modify dat_parcels computation in 0_7 to keep parcel areas, then patch that into 1_3. 
+ - Set up materials for the full group -- harvest decision model in yield, plus yield/growth, plus county/region-pyrome mapping. 
+ - Handle a pixel-by-pixel harvest decision model; figure out the modeling for aggregation to firm supply. 
+ - Handle change detection via Landtrendr. 
+ - Figure out something more about industrial organization and consolidation (or whatever) in land/timber ownership. 
+ - Same for water quality.
+ - Same for wildfire risk mitigation. 
+ - Figure out quarto and/or beamer for a nice presentation. 
+
 2026/09/08
 
 (0) for pre-processing
@@ -8,19 +40,6 @@
 (5) for supply
 
 Is TAX ACCOUNT NUMBER (1) usable and (2) what it looks like, which is a clean UID for owners?
-
-2026/09/07
-
-Then the explicit panel requires ~5 minutes for 10% of records, so about an hour for the full thing.
-
-Where does a run of up to 3h for Lane County leave the whole data assembly (before notifications)?
-
-Kidding, accidentally ran the explicit panel construction for all records. So, 5 minutes for the whole thing.
-
-Same problem, though -- run of ~2h for Lane County is still rough. 
-
-Problem: just summarizing Lane County to combine PB, OT is problematic for computation time.
- - 1:30 at last run. 
 
 2026/09/06
 

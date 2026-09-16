@@ -85,27 +85,7 @@ dat_ot =
 
 #  Prepare data for wrangling into implicit and explicit panels.  
 
-#   Get parcel data, reduce to relevant counties, filter on geometries, and get centroids. 
-
-vec_counties_parcels = c(2, 3, 4, 5, 6, 8, 9, 10, 14, 15, 16, 17, 18, 20, 21, 22, 24, 26, 27, 29, 33, 34, 36)
-
-dat_parcels = 
-  "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>%
-  read_sf %>% 
-  filter(County %in% vec_counties_parcels) %>%
-  select(PARCEL = OBJECTID, COUNTY = County) %>% 
-  mutate(
-    VALID_GEOM = st_is_valid(geometry),
-    EMPTY_GEOM = st_is_empty(geometry)) %>% 
-  filter(VALID_GEOM & !EMPTY_GEOM) %>% 
-  select(PARCEL, COUNTY) %>% 
-  vect %T>% 
-  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>%
-  centroids %>% 
-  crop(dat_bounds) %T>% # Conceptually, this should follow vect(). But this is faster.
-  writeVector("03_intermediate/dat_parcels_points.gdb")
-
-#   Property Basic
+#   Handle Property Basic.
 
 #    Reduce to relevant counties.
 
@@ -121,7 +101,7 @@ dat_pb_less = dat_pb %>% filter(FIPS_CODE %in% vec_counties_fips)
 
 dat_pb_less_spatial = 
   dat_pb_less |> 
-  select(CLIP, starts_with("PARCEL_LEVEL")) %>% 
+  select(CLIP, FIPS_CODE, starts_with("PARCEL_LEVEL")) %>% 
   drop_na(starts_with("PARCEL_LEVEL")) %>% 
   mutate(across(starts_with("PARCEL_LEVEL"), as.numeric)) %>% 
   vect(
@@ -139,23 +119,137 @@ dat_pb_less_spatial %>%
   ggplot() + 
   geom_spatvector(color = "gray50", fill = NA, shape = 21, alpha = 0.25)
 
-#   Join PB to parcels by centroid nearest neighbors. 
+#   Join PB to parcels by county with centroid nearest neighbors. 
+
+#    Handle parcel data. 
+
+dat_parcels = 
+  "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>%
+  read_sf %>% 
+  select(PARCEL = OBJECTID, COUNTY = County) %>% 
+  mutate(
+    VALID_GEOM = st_is_valid(geometry),
+    EMPTY_GEOM = st_is_empty(geometry)) %>% 
+  filter(VALID_GEOM & !EMPTY_GEOM) %>% 
+  select(PARCEL, COUNTY) %>% 
+  vect %>% 
+  crop(dat_bounds) %T>%
+  writeVector("03_intermediate/dat_parcels_polygons.gdb") %>%
+  centroids %T>% 
+  writeVector("03_intermediate/dat_parcels_points.gdb")
+
+#    Crosswalk counties. 
+
+dat_pb_less_spatial_counties = 
+  dat_pb_less_spatial %>% 
+  as_tibble %>% 
+  select(CLIP, FIPS_CODE) %>% 
+  group_by(FIPS_CODE) %>% 
+  nest %>% 
+  mutate(data = data %>% map(~ slice_sample(.x, n = 1000))) %>% 
+  unnest %>% 
+  ungroup %>% 
+  semi_join(dat_pb_less_spatial, .)
+
+dat_parcels_counties = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  group_by(COUNTY) %>% 
+  nest %>% 
+  mutate(data = data %>% map(~ slice_sample(.x, n = 1000))) %>% 
+  unnest %>% 
+  ungroup %>% 
+  semi_join(dat_parcels, .)
+
+dat_crosswalk_counties = 
+  dat_pb_less_spatial_counties %>% 
+  nearest(dat_parcels_counties) %>% 
+  as_tibble %>% 
+  left_join(dat_pb_less_spatial_counties %>% as_tibble %>% mutate(from_id = row_number())) %>% 
+  left_join(dat_parcels_counties %>% as_tibble %>% mutate(to_id = row_number())) %>% 
+  group_by(FIPS_CODE, COUNTY) %>% 
+  summarize(COUNT = n()) %>% 
+  ungroup %>% 
+  group_by(COUNTY) %>% 
+  filter(COUNT == max(COUNT)) %>% 
+  ungroup %>% 
+  select(-COUNT)
+  
+#    Join NN.
+
+dat_pb_nest = 
+  dat_pb_less %>% 
+  distinct(FIPS_CODE) %>% 
+  arrange(FIPS_CODE) %>% 
+  mutate(DATA_PB = FIPS_CODE %>% map(~ filter(dat_pb_less_spatial, FIPS_CODE == .x)))
+
+dat_parcels_nest = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  distinct(COUNTY) %>% 
+  left_join(dat_crosswalk_counties) %>% 
+  arrange(FIPS_CODE) %>% 
+  mutate(DATA_PARCELS = COUNTY %>% map(~ filter(dat_parcels, COUNTY == .x))) %>% 
+  select(-COUNTY)
 
 dat_pb_parcels = 
-  dat_pb_less_spatial %>% 
-  nearest(dat_parcels) %>% 
-  as_tibble %>% 
-  left_join(
-    dat_parcels %>% as_tibble %>% mutate(ROW = row_number()), 
-    by = c("to_id" = "ROW")
+  left_join(dat_pb_nest, dat_parcels_nest) %>% 
+  mutate(DATA_NEAREST = map2(DATA_PB, DATA_PARCELS, nearest)) %>% 
+  mutate(
+    DATA_OUT = 
+      DATA_NEAREST %>% 
+      map(as_tibble) %>% 
+      map(~ select(.x, ends_with("id"))) %>% 
+      map2(
+        DATA_PB, 
+        ~ left_join(
+          .x, 
+          .y %>% as_tibble %>% select(CLIP) %>% mutate(from_id = row_number())
+        )
+      ) %>% 
+      map2(
+        DATA_PARCELS, 
+        ~ left_join(
+          .x, 
+          .y %>% as_tibble %>% select(PARCEL) %>% mutate(to_id = row_number())
+        )
+      ) %>% 
+      map(~ select(.x, CLIP, PARCEL))
   ) %>% 
-  left_join(
-    dat_pb_less_spatial %>% as_tibble %>% mutate(ROW = row_number()),
-    by = c("from_id" = "ROW")
-  ) %>% 
-  select(PARCEL, CLIP)
+  select(DATA_OUT) %>% 
+  unnest(DATA_OUT) %T>% 
+  write_csv("03_intermediate/dat_pb_parcels_test.csv")
 
-#   Set up PB for an anti-join to OT and for appending to OT. 
+dat_parcels_pb = 
+  left_join(dat_parcels_nest, dat_pb_nest) %>% 
+  drop_na(FIPS_CODE) %>% # Eliminate an oddball county from the parcel subset. 
+  mutate(DATA_NEAREST = map2(DATA_PARCELS, DATA_PB, nearest)) %>% 
+  mutate(
+    DATA_OUT = 
+      DATA_NEAREST %>% 
+      map(as_tibble) %>% 
+      map(~ select(.x, ends_with("id"))) %>% 
+      map2(
+        DATA_PARCELS, 
+        ~ left_join(
+          .x, 
+          .y %>% as_tibble %>% select(PARCEL) %>% mutate(from_id = row_number())
+        )
+      ) %>% 
+      map2(
+        DATA_PB, 
+        ~ left_join(
+          .x, 
+          .y %>% as_tibble %>% select(CLIP) %>% mutate(to_id = row_number())
+        )
+      ) %>% 
+      map(~ select(.x, PARCEL, CLIP))
+  ) %>% 
+  select(DATA_OUT) %>% 
+  unnest(DATA_OUT) %T>% 
+  write_csv("03_intermediate/dat_parcels_pb_test.csv")
+
+#   Set up PB for a semijoin to OT and for appending to OT. 
 
 dat_pb_bind = 
   dat_pb_less %>% 
