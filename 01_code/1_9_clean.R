@@ -13,23 +13,16 @@ dat_clean =
   filter(if_all(starts_with("Restrict"), ~ .x == TRUE)) %>% 
   select(-starts_with("Restrict")) %>% 
   # Add variables from the patched-in ownership workflow.
-  left_join(
-    "03_intermediate/dat_notifications_1_3_X.csv" %>% 
-      read_csv %>% 
-      select(UID, Owner_Cotality = Owner_Cotality)
-  ) %>% 
-  left_join(
-    "03_intermediate/dat_owners_acres.csv" %>% 
-      read_csv %>% 
-      select(QuarterCompletion = Year_Quarter, Owner_Cotality, Owner_Acres)
-  ) %>% 
   rename(Owner_FERNS = Landowner) %>% 
+  left_join(
+    "03_intermediate/dat_owners_join.csv" %>% read_csv,
+    by = c("Owner_FERNS", "QuarterCompletion" = "Year_Quarter")
+  ) %>% 
   # Move variables around for easier reading. 
   select(-starts_with("Date"), -Completion) %>% 
   rename(YearCompletion = Year) %>% 
-  relocate(Owner_Cotality, .after = Owner_FERNS) %>% 
-  relocate(Owner_Acres, .after = Owner_Cotality) %>% 
-  relocate(ends_with("Completion"), .after = Owner_Cotality) %T>%
+  relocate(c(Owner_Cotality_Frequent, Owner_Acres), .after = Owner_FERNS) %>% 
+  relocate(ends_with("Completion"), .after = Owner_Acres) %T>%
   # Export with spatial data.
   writeVector("03_intermediate/dat_notifications_1_9.gdb") %>% 
   # Export without spatial data.

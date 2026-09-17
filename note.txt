@@ -1,3 +1,11 @@
+2026/09/17
+
+Note that 1_3 no longer exports notifications_1_3 for reference in 1_4. This is a later problem. 
+
+Clean up owner strings by frequent matches.
+
+Note that PB/OT does not actually have just one string per landowner. See Weyerhaeuser. Neat. 
+
 2026/09/16
 
 Big day for ownership workflow changes.

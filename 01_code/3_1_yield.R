@@ -8,7 +8,7 @@ dat =
   # Get a species-agnostic yield variable.
   mutate(MBF_Acre_Both = MBF_Acre_2_DouglasFir + MBF_Acre_2_WesternHemlock) %>% 
   # Get landowner percentiles by total production of both species.
-  group_by(Landowner) %>% 
+  group_by(Owner_Cotality_Frequent) %>% 
   mutate(MBF_Both_Total = sum(MBF_2_DouglasFir) + sum(MBF_2_WesternHemlock)) %>% 
   ungroup %>% 
   mutate(Landowner_MBF_Percentile = ntile(MBF_Both_Total, 100)) %>% 

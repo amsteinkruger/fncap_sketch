@@ -2,6 +2,7 @@
 
 #  (1) Assign owner strings to notifications by nearest neighbors (notifications-parcels).
 #  (2) Assign acres to owners. 
+#  (3) Combine results for later joins. 
 
 #  Clear the environment.
 
@@ -111,22 +112,8 @@ dat_nearest_notifications_owners =
   # Clean up and export. 
   select(UID, NOAPID, Owner_FERNS = Landowner_Company, Owner_Cotality = OWNER, Year_Quarter) %T>% 
   write_csv("03_intermediate/dat_notifications_owners.csv")
-
-# Export as a modified version of 1_3.
-
-"03_intermediate/dat_notifications_1_3.csv" %>% 
-  read_csv %>% 
-  left_join(dat_nearest_notifications_owners %>% select(UID, NOAPID, Owner_Cotality)) %T>% 
-  write_csv("03_intermediate/dat_notifications_1_3_X.csv")
   
 #  (2) 
-
-# get owners from pb/ot join
-# subset by owners matched to notifications
-# reduce parcel polygons
-# get acreage
-# maybe get acreage from original parcel data to avoid a hassle
-# join acreage onto owner-quarter panel; then this only comes around again in 1_7 or later
 
 dat_acres = 
   "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>% # Watch out for invalid geometries.
@@ -156,6 +143,20 @@ dat_owners_acres =
   ungroup %>% 
   rename(Year_Quarter = YEAR_QUARTER, Owner_Cotality = OWNER, Owner_Acres = ACRES) %T>% 
   write_csv("03_intermediate/dat_owners_acres.csv")
+
+#  (3)
+
+dat_join = 
+  dat_nearest_notifications_owners %>% 
+  group_by(Owner_FERNS, Owner_Cotality) %>% 
+  summarize(Owner_Cotality_Count = n()) %>% 
+  group_by(Owner_FERNS) %>% 
+  arrange(desc(Owner_Cotality_Count)) %>% 
+  slice_head(n = 1) %>% 
+  ungroup %>% 
+  select(Owner_FERNS, Owner_Cotality_Frequent = Owner_Cotality) %>% 
+  left_join(dat_owners_acres, by = c("Owner_Cotality_Frequent" = "Owner_Cotality")) %T>% 
+  write_csv("03_intermediate/dat_owners_join.csv")
 
 #  Stop timing. 
 
