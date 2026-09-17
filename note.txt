@@ -1,3 +1,23 @@
+2026/09/16
+
+Big day for ownership workflow changes.
+
+Note that for any imperfect parcel-PB/OT matching, some records on the y side end up unmatched.
+
+To get full owner coverage for notifications, keeping the right x-y definition all the way through matters.
+
+e.g. PB/OT-Parcel + Ownership (?) loses 6000/30000 notifications, Parcel-PB/OT + Ownership (?) loses 4000
+
+(But what's the idea with Ownership (?)? What step in 0_7 fails to associate parcels with owners?)
+ - It's that the workflow to reach data_cotality_explicit.csv propagates only the subset of parcels from PB/OT-Parcels
+
+Ranking options:
+ 1. FERNS-Parcels-PB/OT by point-point NN
+ 2. FERNS-PB/OT by point-point NN
+ 3. FERNS-Parcels-PB/OT by polygon-polygon overlaps, with handling for multiple matches.
+
+Remember to chunk the FERNS-Whatever matching by counties for runtime. 
+
 2026/09/15
 
 Instead of fuzzy matching across names, consider matching on frequency -- most frequent FERNS-Cotality match yields most likely Cotality key value. 

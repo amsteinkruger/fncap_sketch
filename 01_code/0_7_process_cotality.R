@@ -218,7 +218,7 @@ dat_pb_parcels =
   ) %>% 
   select(DATA_OUT) %>% 
   unnest(DATA_OUT) %T>% 
-  write_csv("03_intermediate/dat_pb_parcels_test.csv")
+  write_csv("03_intermediate/dat_pb_parcels.csv")
 
 dat_parcels_pb = 
   left_join(dat_parcels_nest, dat_pb_nest) %>% 
@@ -247,7 +247,7 @@ dat_parcels_pb =
   ) %>% 
   select(DATA_OUT) %>% 
   unnest(DATA_OUT) %T>% 
-  write_csv("03_intermediate/dat_parcels_pb_test.csv")
+  write_csv("03_intermediate/dat_parcels_pb.csv")
 
 #   Set up PB for a semijoin to OT and for appending to OT. 
 
