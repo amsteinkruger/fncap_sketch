@@ -13,31 +13,40 @@ time_start = Sys.time()
 dat_implicit = 
   "03_intermediate/dat_firms_implicit_3_1.csv" %>% 
   read_csv %>% 
+  drop_na(Landowner) %>% 
   mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock)
 
 dat_explicit = 
   "03_intermediate/dat_firms_explicit_3_1.csv" %>% 
   read_csv %>% 
+  drop_na(Landowner) %>% 
   mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
   mutate(MBF_Bin = ifelse(MBF_Both > 0, 1, 0)) %>% 
   relocate(MBF_Bin, MBF_Both, .after = "Count")
 
-dat_small_explicit = 
+# Split data by ODF's Small Forestland Owner (SFO) definition.
+#  This should be in 0_7 or 1_3. 
+
+dat_explicit_small = 
   dat_explicit %>% 
   group_by(Landowner) %>% 
-  mutate(MBF_All = sum(MBF_Both)) %>% 
+  # mutate(MBF_All = sum(MBF_Both)) %>% 
+  mutate(Owner_Acres_Min = min(Owner_Acres, na.rm = TRUE)) %>% 
   ungroup %>% 
-  filter(MBF_All <= quantile(MBF_All, 0.50))
+  # filter(MBF_All <= quantile(MBF_All, 0.50))
+  filter(Owner_Acres_Min <= 5000)
 
-dat_large_explicit = 
+dat_explicit_large = 
   dat_explicit %>% 
   group_by(Landowner) %>% 
-  mutate(MBF_All = sum(MBF_Both)) %>% 
+  # mutate(MBF_All = sum(MBF_Both)) %>% 
+  mutate(Owner_Acres_Min = min(Owner_Acres, na.rm = TRUE)) %>% 
   ungroup %>% 
-  filter(MBF_All > quantile(MBF_All, 0.50))
+  # filter(MBF_All > quantile(MBF_All, 0.50))
+  filter(Owner_Acres_Min > 5000)
 
-vec_small = dat_small_explicit$Landowner %>% unique
-vec_large = dat_large_explicit$Landowner %>% unique
+vec_small = dat_explicit_small$Landowner %>% unique
+vec_large = dat_explicit_large$Landowner %>% unique
 
 dat_implicit_small = dat_implicit %>% filter(Landowner %in% vec_small)
 dat_implicit_large = dat_implicit %>% filter(Landowner %in% vec_large)
@@ -106,33 +115,37 @@ mod_hurdle_first_all =
     MBF_Bin ~
       Owner_Acres + 
       SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
+      # Elevation +
+      # Slope +
+      # Distance_Place +
       Price_Stumpage_DouglasFir_Mean +
       Rate_Mean +
       Fire_30 + 
       CWD_Mean,
     vcov = "hetero",
-    family = binomial(link = "logit"),
+    family = binomial(link = "probit"),
+    glm.iter = 50,
+    glm.tol = 1e-8,
     data = dat_explicit
   )
 
 mod_hurdle_first_small = 
   feglm(
     MBF_Bin ~
-      Owner_Acres + 
+      Owner_Acres +
       SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
+      # Elevation +
+      # Slope +
+      # Distance_Place +
       Price_Stumpage_DouglasFir_Mean +
       Rate_Mean +
-      Fire_30 + 
+      Fire_30 +
       CWD_Mean,
     vcov = "hetero",
-    family = binomial(link = "logit"),
-    data = dat_small_explicit
+    family = binomial(link = "probit"),
+    data = dat_explicit_small,
+    glm.iter = 50,
+    glm.tol = 1e-8
   )
 
 mod_hurdle_first_large = 
@@ -140,16 +153,18 @@ mod_hurdle_first_large =
     MBF_Bin ~
       Owner_Acres + 
       SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
+      # Elevation +
+      # Slope +
+      # Distance_Place +
       Price_Stumpage_DouglasFir_Mean +
       Rate_Mean +
       Fire_30 + 
       CWD_Mean,
     vcov = "hetero",
-    family = binomial(link = "logit"),
-    data = dat_large_explicit
+    family = binomial(link = "probit"),
+    data = dat_explicit_large,
+    glm.iter = 50,
+    glm.tol = 1e-8
   )
 
 etable(mod_hurdle_first_all, mod_hurdle_first_small, mod_hurdle_first_large)
@@ -161,9 +176,9 @@ mod_hurdle_second_all =
     MBF_Both ~
       Owner_Acres + 
       SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
+      # Elevation +
+      # Slope +
+      # Distance_Place +
       Price_Stumpage_DouglasFir_Mean +
       Rate_Mean +
       Fire_30 + 
@@ -177,9 +192,9 @@ mod_hurdle_second_small =
     MBF_Both ~
       Owner_Acres + 
       SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
+      # Elevation +
+      # Slope +
+      # Distance_Place +
       Price_Stumpage_DouglasFir_Mean +
       Rate_Mean +
       Fire_30 + 
@@ -193,9 +208,9 @@ mod_hurdle_second_large =
     MBF_Both ~
       Owner_Acres + 
       SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
+      # Elevation +
+      # Slope +
+      # Distance_Place +
       Price_Stumpage_DouglasFir_Mean +
       Rate_Mean +
       Fire_30 + 
@@ -208,24 +223,40 @@ etable(mod_hurdle_second_all, mod_hurdle_second_small, mod_hurdle_second_large)
 
 #  AME
 
+fun_ame_inner <-
+  function(mod_first, mod_second, vec_p, vec_mu, vec_var) { # vec_var not a vec as a argument
+    
+    mean(vec_p * (1 - vec_p) * coef(mod_first)[vec_var] * vec_mu + vec_p * coef(mod_second[vec_var]))
+    
+  }
+
+fun_ame_outer <-
+  function(formula_first, formula_second, data_first, data_second) {
+    
+    mod_first <- feglm(formula_first, data = data_first, family = binomial("logit"), glm.iter = 50, vcov = "hetero")
+    mod_second <- feols(formula_second, data = data_second, vcov = "hetero")
+    
+    vec_p <- predict(mod_first, newdata = data_first, type = "response")
+    vec_mu <- predict(mod_second, newdata = data_second)
+    
+    vec_var <- mod_first %>% coef %>% names
+    
+    vec_ame = map(vec_var, ~ fun_ame_inner(mod_first, mod_second, vec_p, vec_mu, .x))
+    
+    return(vec_ame)
+    
+  }
+
 fun_marginal <- 
   function(var, first, second, data){
     
-    # Stupid to get y_hat once for each variable. 
-    
     # Estimate probabilities of production for each observation. (p)
     
-    vec_predict_first <- 
-      predict(first, 
-              newdata = data,
-              type = "response") 
+    vec_predict_first <- predict(first, newdata = data, type = "response") 
     
     # Estimate conditional production for each observation. (mu)
     
-    vec_predict_second <- 
-      predict(second, 
-              newdata = data,
-              type = "response")
+    vec_predict_second <- predict(second, newdata = data, type = "response")
 
     # Assign coefficient estimates.
     val_gamma <- coef(first)[var]
@@ -262,12 +293,15 @@ mod_marginal =
   unnest(Covariates) %>% 
   mutate(AME = 
            pmap(
-             .l = list(
-               first = Model_First, 
-               second = Model_Second, 
-               var = Covariates),
+             .l = 
+               list(
+                 first = Model_First, 
+                 second = Model_Second, 
+                 var = Covariates
+               ),
              .f = fun_marginal,
-             data = dat_explicit)
+             data = dat_explicit
+           )
   ) %>% 
   select(Specification, AME) %>% 
   unnest(AME) %>% 

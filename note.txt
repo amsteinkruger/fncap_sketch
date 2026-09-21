@@ -1,9 +1,26 @@
+2026/09/21
+
+For SEs, discard delta because joint covariance structure is unclear.
+
+For bootstrapped SEs on AMEs, note that repeated observations of landowners do matter for formulation. 
+
+Test different AME computations. 
+
+Note that land ownership would allow an explicit panel that drops owners in years with no ownership. 
+ - But that's conceptually and practically complicated. 
+
+There's some pretty gnarly noise (or actual change) in land ownership totals from year to year.
+ - Landowners could be selling/buying a lot of land in each year.
+ - Or NN is actually throwing that much noise in. 
+ - Or there's something wrong with the PB/OT panel. 
+
+Using landowner minima for owned acres works confusingly well -- see Pseudo-R2 = 1.0. Maxima return nonsense. 
+
 2026/09/20
 
 Results are back on. AMEs might or might not be correct. No progress on SEs.
 
 See crazy notes on slide layout. 
-
 
 2026/09/17
 
