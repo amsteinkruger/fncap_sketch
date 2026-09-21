@@ -1,4 +1,16 @@
+2026/09/20
+
+Results are back on. AMEs might or might not be correct. No progress on SEs.
+
+See crazy notes on slide layout. 
+
+
 2026/09/17
+
+What's going on from line 204 in 5_1?
+
+Wasn't there a better way to run out means of lags than what's used in 3_1?
+ - actually yes, see 5_1 for pivot_longer/pivot_wider alternative to 2_5. 
 
 Note that 1_3 no longer exports notifications_1_3 for reference in 1_4. This is a later problem. 
 

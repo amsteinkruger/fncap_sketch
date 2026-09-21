@@ -10,7 +10,7 @@ time_start = Sys.time()
 
 #  Get data. 
 
-dat = 
+dat_implicit = 
   "03_intermediate/dat_firms_implicit_3_1.csv" %>% 
   read_csv %>% 
   mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock)
@@ -39,8 +39,8 @@ dat_large_explicit =
 vec_small = dat_small_explicit$Landowner %>% unique
 vec_large = dat_large_explicit$Landowner %>% unique
 
-dat_small = dat %>% filter(Landowner %in% vec_small)
-dat_large = dat %>% filter(Landowner %in% vec_large)
+dat_implicit_small = dat_implicit %>% filter(Landowner %in% vec_small)
+dat_implicit_large = dat_implicit %>% filter(Landowner %in% vec_large)
   
 # Do:
 
@@ -62,189 +62,149 @@ dat_large = dat %>% filter(Landowner %in% vec_large)
 
 # Demo
 
-mod_1 = 
+mod_0_implicit = 
   feols(
-    log(MBF_Both) ~ 
+    MBF_Both ~ 
+      # owner variables
+      Owner_Acres + # this does vary over time, just not much
       SiteClassMode +
-      Elevation + 
-      Distance_Mill +
-      # MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1 # +
-    # Fire30Doughnut_Mean_20
-    | Landowner + Year,
-    cluster = ~ Landowner,
-    data = dat)
+      Elevation +
+      Slope +
+      Distance_Place +
+      # time-varying
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      # time- and owner-varying
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
+    data = dat_implicit)
 
-etable(mod_1)
+mod_0_explicit = 
+  feols(
+    MBF_Both ~ 
+      Owner_Acres + 
+      SiteClassMode +
+      Elevation +
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
+    data = dat_explicit)
+
+etable(mod_0_implicit, mod_0_explicit)
 
 # Hurdle Models?
 
 #  First Stage
 
-mod_hurdle_first_1 = 
+mod_hurdle_first_all = 
   feglm(
     MBF_Bin ~
+      Owner_Acres + 
       SiteClassMode +
-      Elevation + 
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Year,
-    cluster = ~ Landowner,
+      Elevation +
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
     family = binomial(link = "logit"),
     data = dat_explicit
   )
 
-mod_hurdle_first_2 = 
+mod_hurdle_first_small = 
   feglm(
     MBF_Bin ~
+      Owner_Acres + 
       SiteClassMode +
-      Elevation + 
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Landowner + Year,
-    cluster = ~ Landowner,
-    family = binomial(link = "logit"),
-    data = dat_explicit
-  )
-
-mod_hurdle_first_3 = 
-  feglm(
-    MBF_Bin ~
-      SiteClassMode +
-      Elevation + 
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Landowner + Year,
-    cluster = ~ Landowner,
+      Elevation +
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
     family = binomial(link = "logit"),
     data = dat_small_explicit
   )
 
-mod_hurdle_first_4 = 
+mod_hurdle_first_large = 
   feglm(
     MBF_Bin ~
+      Owner_Acres + 
       SiteClassMode +
-      Elevation + 
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Landowner + Year,
-    cluster = ~ Landowner,
+      Elevation +
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
     family = binomial(link = "logit"),
     data = dat_large_explicit
   )
 
-etable(mod_hurdle_first_1, mod_hurdle_first_2, mod_hurdle_first_3, mod_hurdle_first_4)
+etable(mod_hurdle_first_all, mod_hurdle_first_small, mod_hurdle_first_large)
 
 #  Second Stage
 
-mod_hurdle_second_1 = 
+mod_hurdle_second_all = 
   feols(
-    log(MBF_Both) ~ 
+    MBF_Both ~
+      Owner_Acres + 
       SiteClassMode +
       Elevation +
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Year,
-    cluster = ~ Landowner,
-    data = dat)
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
+    data = dat_implicit
+  )
 
-mod_hurdle_second_2 = 
+mod_hurdle_second_small = 
   feols(
-    log(MBF_Both) ~ 
+    MBF_Both ~
+      Owner_Acres + 
       SiteClassMode +
       Elevation +
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Landowner + Year,
-    cluster = ~ Landowner,
-    data = dat)
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
+    data = dat_implicit_small
+  )
 
-mod_hurdle_second_3 = 
+mod_hurdle_second_large = 
   feols(
-    log(MBF_Both) ~ 
+    MBF_Both ~
+      Owner_Acres + 
       SiteClassMode +
       Elevation +
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Landowner + Year,
-    cluster = ~ Landowner,
-    data = dat_small)
+      Slope +
+      Distance_Place +
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      Fire_30 + 
+      CWD_Mean,
+    vcov = "hetero",
+    data = dat_implicit_large
+  )
 
-mod_hurdle_second_4 = 
-  feols(
-    log(MBF_Both) ~ 
-      SiteClassMode +
-      Elevation +
-      Distance_Mill +
-      MBF_Standing_Forward +
-      Stumpage_Lag_.[c(1, 5, 9)] +
-      Stumpage_Mean_20 +
-      Rate_Lag_.[c(1, 5, 9)] +
-      Rate_Mean_20 +
-      VPD_Lag_.[c(1, 5, 9)] +
-      VPD_Mean_20 +
-      Fire_30_Doughnut_Lag_1
-    | Landowner + Year,
-    cluster = ~ Landowner,
-    data = dat_large)
-
-
-etable(mod_hurdle_second_1, mod_hurdle_second_2, mod_hurdle_second_3, mod_hurdle_second_4)
+etable(mod_hurdle_second_all, mod_hurdle_second_small, mod_hurdle_second_large)
 
 #  AME
 
@@ -280,21 +240,25 @@ fun_marginal <-
   }
 
 mod_marginal = 
-  tibble(Specification = seq(1, 4),
-         Model_First = 
-           list(mod_hurdle_first_1,
-                mod_hurdle_first_2,
-                mod_hurdle_first_3,
-                mod_hurdle_first_4),
-         Model_Second = 
-           list(mod_hurdle_second_1,
-                mod_hurdle_second_2,
-                mod_hurdle_second_3,
-                mod_hurdle_second_4),
-         Covariates = 
-           mod_hurdle_first_1$coefficients %>% 
-           names %>% 
-           list) %>% 
+  tibble(
+    Specification = c("All", "Small", "Large"),
+    Model_First = 
+      list(
+        mod_hurdle_first_all,
+        mod_hurdle_first_small,
+        mod_hurdle_first_large
+      ),
+    Model_Second = 
+      list(
+        mod_hurdle_second_all,
+        mod_hurdle_second_small,
+        mod_hurdle_second_large
+      ),
+    Covariates = 
+      mod_hurdle_first_all$coefficients %>% 
+      names %>% 
+      list
+  ) %>% 
   unnest(Covariates) %>% 
   mutate(AME = 
            pmap(
@@ -303,12 +267,15 @@ mod_marginal =
                second = Model_Second, 
                var = Covariates),
              .f = fun_marginal,
-             data = dat_explicit)) %>% 
+             data = dat_explicit)
+  ) %>% 
   select(Specification, AME) %>% 
   unnest(AME) %>% 
-  pivot_wider(values_from = AME, 
-              names_from = Specification,
-              names_prefix = "Model_")
+  pivot_wider(
+    values_from = AME, 
+    names_from = Specification,
+    names_prefix = "Model_"
+  )
 
 #  SE
 
@@ -316,34 +283,34 @@ mod_marginal =
 
 # Exports
 
-library(modelsummary)
-library(flextable)
-
-modelsummary(
-  list("A" = mod_hurdle_first_1,
-       "B" = mod_hurdle_first_2,
-       "C" = mod_hurdle_first_3,
-       "D" = mod_hurdle_first_4),
-       stars = TRUE, 
-       output = "flextable") |> 
-  autofit() |> 
-  save_as_docx(path = "04_out/tab_first.docx")
-
-modelsummary(
-  list("A" = mod_hurdle_second_1,
-       "B" = mod_hurdle_second_2,
-       "C" = mod_hurdle_second_3,
-       "D" = mod_hurdle_second_4),
-  stars = TRUE, 
-  output = "flextable") |> 
-  autofit() |> 
-  save_as_docx(path = "04_out/tab_second.docx")
-
-mod_marginal %>% 
-  mutate(across(starts_with("Model"), ~ round(.x, 5))) %>% 
-  flextable %>% 
-  autofit %>% 
-  save_as_docx(path = "04_out/tab_third.docx")
+# library(modelsummary)
+# library(flextable)
+# 
+# modelsummary(
+#   list("A" = mod_hurdle_first_1,
+#        "B" = mod_hurdle_first_2,
+#        "C" = mod_hurdle_first_3,
+#        "D" = mod_hurdle_first_4),
+#        stars = TRUE, 
+#        output = "flextable") |> 
+#   autofit() |> 
+#   save_as_docx(path = "04_out/tab_first.docx")
+# 
+# modelsummary(
+#   list("A" = mod_hurdle_second_1,
+#        "B" = mod_hurdle_second_2,
+#        "C" = mod_hurdle_second_3,
+#        "D" = mod_hurdle_second_4),
+#   stars = TRUE, 
+#   output = "flextable") |> 
+#   autofit() |> 
+#   save_as_docx(path = "04_out/tab_second.docx")
+# 
+# mod_marginal %>% 
+#   mutate(across(starts_with("Model"), ~ round(.x, 5))) %>% 
+#   flextable %>% 
+#   autofit %>% 
+#   save_as_docx(path = "04_out/tab_third.docx")
 
 # Checking out mhurdle: appears to throw computational errors pretty often.
 

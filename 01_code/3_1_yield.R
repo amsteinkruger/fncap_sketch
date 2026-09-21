@@ -16,13 +16,16 @@ dat =
   mutate(Activity = Activity %>% factor,
          Pyrome = Pyrome %>% factor,
          County = County %>% factor,
-         District = District %>% factor)
+         District = District %>% factor) %>% 
+  # Alias the preferred landowner column for convenient references.
+  mutate(Landowner = Owner_Cotality_Frequent)
 
 #   Get acres and yield of (observed) standing timber. This is poorly implemented.
 
 dat_standing = 
   "03_intermediate/dat_notifications_1_9.csv" %>% 
   read_csv %>% 
+  mutate(Landowner = Owner_Cotality_Frequent) %>% 
   group_by(Landowner, QuarterCompletion) %>% 
   summarize(MBF_Standing = sum(MBF_2_DouglasFir) + sum(MBF_2_WesternHemlock),
             Acres_Standing = Acres_1 %>% sum) %>% 
@@ -75,353 +78,28 @@ dat_use_really =
   dat_use %>% 
   # Price_Stumpage_DouglasFir
   mutate(
-    Price_Stumpage_DouglasFir_Mean_1Y = 
-      mean(
-        c(Price_Stumpage_DouglasFir_Lag_1,
-          Price_Stumpage_DouglasFir_Lag_2,
-          Price_Stumpage_DouglasFir_Lag_3,
-          Price_Stumpage_DouglasFir_Lag_4),
-        na.rm = TRUE),
-    Price_Stumpage_DouglasFir_Mean_5Y = 
+    Price_Stumpage_DouglasFir_Mean = 
       rowMeans(
         pick(
-          starts_with("Price_Stumpage_DouglasFir_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Stumpage_DouglasFir_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Stumpage_DouglasFir_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Stumpage_WesternHemlock
-  mutate(
-    Price_Stumpage_WesternHemlock_Mean_1Y = 
-      mean(
-        c(Price_Stumpage_WesternHemlock_Lag_1,
-          Price_Stumpage_WesternHemlock_Lag_2,
-          Price_Stumpage_WesternHemlock_Lag_3,
-          Price_Stumpage_WesternHemlock_Lag_4),
-        na.rm = TRUE),
-    Price_Stumpage_WesternHemlock_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Stumpage_WesternHemlock_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Stumpage_WesternHemlock_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Stumpage_WesternHemlock_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Logs_DouglasFir_Sawmill
-  mutate(
-    Price_Logs_DouglasFir_Sawmill_Mean_1Y = 
-      mean(
-        c(Price_Logs_DouglasFir_Sawmill_Lag_1,
-          Price_Logs_DouglasFir_Sawmill_Lag_2,
-          Price_Logs_DouglasFir_Sawmill_Lag_3,
-          Price_Logs_DouglasFir_Sawmill_Lag_4),
-        na.rm = TRUE),
-    Price_Logs_DouglasFir_Sawmill_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Logs_DouglasFir_Sawmill_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Logs_DouglasFir_Sawmill_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Logs_DouglasFir_Sawmill_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Logs_DouglasFir_Pulp
-  mutate(
-    Price_Logs_DouglasFir_Pulp_Mean_1Y = 
-      mean(
-        c(Price_Logs_DouglasFir_Pulp_Lag_1,
-          Price_Logs_DouglasFir_Pulp_Lag_2,
-          Price_Logs_DouglasFir_Pulp_Lag_3,
-          Price_Logs_DouglasFir_Pulp_Lag_4),
-        na.rm = TRUE),
-    Price_Logs_DouglasFir_Pulp_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Logs_DouglasFir_Pulp_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Logs_DouglasFir_Pulp_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Logs_DouglasFir_Pulp_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Lumber_HemFir_Kiln_20
-  mutate(
-    Price_Lumber_HemFir_Kiln_20_Mean_1Y = 
-      mean(
-        c(Price_Lumber_HemFir_Kiln_20_Lag_1,
-          Price_Lumber_HemFir_Kiln_20_Lag_2,
-          Price_Lumber_HemFir_Kiln_20_Lag_3,
-          Price_Lumber_HemFir_Kiln_20_Lag_4),
-        na.rm = TRUE),
-    Price_Lumber_HemFir_Kiln_20_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_HemFir_Kiln_20_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Lumber_HemFir_Kiln_20_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_HemFir_Kiln_20_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Lumber_HemFir_Kiln_RL
-  mutate(
-    Price_Lumber_HemFir_Kiln_RL_Mean_1Y = 
-      mean(
-        c(Price_Lumber_HemFir_Kiln_RL_Lag_1,
-          Price_Lumber_HemFir_Kiln_RL_Lag_2,
-          Price_Lumber_HemFir_Kiln_RL_Lag_3,
-          Price_Lumber_HemFir_Kiln_RL_Lag_4),
-        na.rm = TRUE),
-    Price_Lumber_HemFir_Kiln_RL_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_HemFir_Kiln_RL_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Lumber_HemFir_Kiln_RL_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_HemFir_Kiln_RL_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Lumber_DouglasFir_Green_20
-  mutate(
-    Price_Lumber_DouglasFir_Green_20_Mean_1Y = 
-      mean(
-        c(Price_Lumber_DouglasFir_Green_20_Lag_1,
-          Price_Lumber_DouglasFir_Green_20_Lag_2,
-          Price_Lumber_DouglasFir_Green_20_Lag_3,
-          Price_Lumber_DouglasFir_Green_20_Lag_4),
-        na.rm = TRUE),
-    Price_Lumber_DouglasFir_Green_20_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_DouglasFir_Green_20_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Lumber_DouglasFir_Green_20_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_DouglasFir_Green_20_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Lumber_DouglasFir_Green_RL
-  mutate(
-    Price_Lumber_DouglasFir_Green_RL_Mean_1Y = 
-      mean(
-        c(Price_Lumber_DouglasFir_Green_RL_Lag_1,
-          Price_Lumber_DouglasFir_Green_RL_Lag_2,
-          Price_Lumber_DouglasFir_Green_RL_Lag_3,
-          Price_Lumber_DouglasFir_Green_RL_Lag_4),
-        na.rm = TRUE),
-    Price_Lumber_DouglasFir_Green_RL_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_DouglasFir_Green_RL_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Lumber_DouglasFir_Green_RL_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Lumber_DouglasFir_Green_RL_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Composite
-  mutate(
-    Price_Composite_Mean_1Y = 
-      mean(
-        c(Price_Composite_Lag_1,
-          Price_Composite_Lag_2,
-          Price_Composite_Lag_3,
-          Price_Composite_Lag_4),
-        na.rm = TRUE),
-    Price_Composite_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Composite_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Composite_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Composite_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # Price_Composite_DouglasFir_Green
-  mutate(
-    Price_Composite_DouglasFir_Green_Mean_1Y = 
-      mean(
-        c(Price_Composite_DouglasFir_Green_Lag_1,
-          Price_Composite_DouglasFir_Green_Lag_2,
-          Price_Composite_DouglasFir_Green_Lag_3,
-          Price_Composite_DouglasFir_Green_Lag_4),
-        na.rm = TRUE),
-    Price_Composite_DouglasFir_Green_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Composite_DouglasFir_Green_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Price_Composite_DouglasFir_Green_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Price_Composite_DouglasFir_Green_Lag_") & ends_with(as.character(1:40))),
+          starts_with("Price_Stumpage_DouglasFir_Lag_") & ends_with(as.character(21:32))),
         na.rm = TRUE
       )
   ) %>% 
   # Rate
   mutate(
-    Rate_Mean_1Y = 
-      mean(
-        c(Rate_Lag_1,
-          Rate_Lag_2,
-          Rate_Lag_3,
-          Rate_Lag_4),
-        na.rm = TRUE),
-    Rate_Mean_5Y = 
+    Rate_Mean = 
       rowMeans(
         pick(
-          starts_with("Rate_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    Rate_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("Rate_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # VPD
-  mutate(
-    VPD_Mean_1Y = 
-      mean(
-        c(VPD_Lag_1,
-          VPD_Lag_2,
-          VPD_Lag_3,
-          VPD_Lag_4),
-        na.rm = TRUE),
-    VPD_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("VPD_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    VPD_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("VPD_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # PPT
-  mutate(
-    PPT_Mean_1Y = 
-      mean(
-        c(PPT_Lag_1,
-          PPT_Lag_2,
-          PPT_Lag_3,
-          PPT_Lag_4),
-        na.rm = TRUE),
-    PPT_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("PPT_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    PPT_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("PPT_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # TMean
-  mutate(
-    TMean_Mean_1Y = 
-      mean(
-        c(TMean_Lag_1,
-          TMean_Lag_2,
-          TMean_Lag_3,
-          TMean_Lag_4),
-        na.rm = TRUE),
-    TMean_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("TMean_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    TMean_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("TMean_Lag_") & ends_with(as.character(1:40))),
-        na.rm = TRUE
-      )
-  ) %>% 
-  # TMax
-  mutate(
-    TMax_Mean_1Y = 
-      mean(
-        c(TMax_Lag_1,
-          TMax_Lag_2,
-          TMax_Lag_3,
-          TMax_Lag_4),
-        na.rm = TRUE),
-    TMax_Mean_5Y = 
-      rowMeans(
-        pick(
-          starts_with("TMax_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    TMax_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("TMax_Lag_") & ends_with(as.character(1:40))),
+          starts_with("Rate_Lag_") & ends_with(as.character(1:8))),
         na.rm = TRUE
       )
   ) %>% 
   # CWD
   mutate(
-    CWD_Mean_1Y = 
-      mean(
-        c(CWD_Lag_1,
-          CWD_Lag_2,
-          CWD_Lag_3,
-          CWD_Lag_4),
-        na.rm = TRUE),
-    CWD_Mean_5Y = 
+    CWD_Mean = 
       rowMeans(
         pick(
-          starts_with("CWD_Lag_") & ends_with(as.character(1:20))),
-        na.rm = TRUE
-      ),
-    CWD_Mean_10Y = 
-      rowMeans(
-        pick(
-          starts_with("CWD_Lag_") & ends_with(as.character(1:40))),
+          starts_with("CWD_Lag_") & ends_with(as.character(1:24))),
         na.rm = TRUE
       )
   )
@@ -430,177 +108,104 @@ dat_use_really =
 
 mod_1 = 
   dat_use_really %>% 
-  feols(MBF_Acre_Both ~ 
-          # Landowner-varying
-          Landowner_MBF_Percentile +
-          Landowner_MBF_Standing +
-          # Space-varying
-          SiteClassMode +
-          Elevation +
-          Slope + 
-          Distance_Road +
-          Distance_Mill +
-          Distance_Place +
-          ProportionDouglasFirTree +
-          Acres_Riparian_Proportion +
-          # Time-varying
-          #  1-Quarter Lag
-          # Price_Stumpage_DouglasFir_Lag_1 +
-          # Price_Stumpage_WesternHemlock_Lag_1 +
-          # Price_Logs_DouglasFir_Sawmill_Lag_1 +
-          # Price_Logs_DouglasFir_Pulp_Lag_1 +
-          # Price_Lumber_HemFir_Kiln_20_Lag_1 +
-          # Price_Lumber_HemFir_Kiln_RL_Lag_1 +
-          # Price_Lumber_DouglasFir_Green_20_Lag_1 +
-          # Price_Lumber_DouglasFir_Green_RL_Lag_1 +
-          # Price_Composite_Lag_1 +
-          # Price_Composite_DouglasFir_Green_Lag_1 +
-          # Rate_Lag_1 +
-          #  1-Year Mean
-          # Price_Stumpage_DouglasFir_Mean_1Y +
-          # Price_Stumpage_WesternHemlock_Mean_1Y +
-          # Price_Logs_DouglasFir_Sawmill_Mean_1Y +
-          # Price_Logs_DouglasFir_Pulp_Mean_1Y +
-          # Price_Lumber_HemFir_Kiln_20_Mean_1Y +
-          # Price_Lumber_HemFir_Kiln_RL_Mean_1Y +
-          # Price_Lumber_DouglasFir_Green_20_Mean_1Y +
-          # Price_Lumber_DouglasFir_Green_RL_Mean_1Y +
-          # Price_Composite_Mean_1Y +
-          # Price_Composite_DouglasFir_Green_Mean_1Y +
-          # Rate_Mean_1Y +
-          #  5-Year Mean
-          # Price_Stumpage_DouglasFir_Mean_5Y +
-          # Price_Stumpage_WesternHemlock_Mean_5Y +
-          # Price_Logs_DouglasFir_Sawmill_Mean_5Y +
-          # Price_Logs_DouglasFir_Pulp_Mean_5Y +
-          # Price_Lumber_HemFir_Kiln_20_Mean_5Y +
-          # Price_Lumber_HemFir_Kiln_RL_Mean_5Y +
-          # Price_Lumber_DouglasFir_Green_20_Mean_5Y +
-          # Price_Lumber_DouglasFir_Green_RL_Mean_5Y +
-          # Price_Composite_Mean_5Y +
-          # Price_Composite_DouglasFir_Green_Mean_5Y +
-          # Rate_Mean_5Y +
-          #  10-Year Mean
-          # Price_Stumpage_DouglasFir_Mean_10Y +
-          # Price_Stumpage_WesternHemlock_Mean_10Y +
-          # Price_Logs_DouglasFir_Sawmill_Mean_10Y +
-          # Price_Logs_DouglasFir_Pulp_Mean_10Y +
-          # Price_Lumber_HemFir_Kiln_20_Mean_10Y +
-          # Price_Lumber_HemFir_Kiln_RL_Mean_10Y +
-          # Price_Lumber_DouglasFir_Green_20_Mean_10Y +
-          # Price_Lumber_DouglasFir_Green_RL_Mean_10Y +
-          Price_Composite_Mean_10Y +
-          # Price_Composite_DouglasFir_Green_Mean_10Y +
-          Rate_Mean_10Y +
-          # Time- and space-varying
-          #  MTBS
-          Fire_0_Lag_1 +
-          Fire_15_Doughnut_Lag_1 +
-          Fire_30_Doughnut_Lag_1 +
-          Fire_Proportion_Lag_1 +
-          #  PRISM
-          #  1-Quarter Lag
-          # VPD_Lag_1 +
-          # PPT_Lag_1 +
-          # TMean_Lag_1 +
-          # TMax_Lag_1 +
-          #  1-Year Mean
-          # VPD_Mean_1Y +
-          # PPT_Mean_1Y +
-          # TMean_Mean_1Y +
-          # TMax_Mean_1Y +
-          #  5-Year Mean
-          # VPD_Mean_5Y +
-          # PPT_Mean_5Y +
-          # TMean_Mean_5Y +
-          # TMax_Mean_5Y +
-          #  10-Year Mean
-          VPD_Mean_10Y +
-          PPT_Mean_10Y +
-          TMean_Mean_10Y +
-          TMax_Mean_10Y +
-          # CWD
-          #  1-Quarter Lag
-          # CWD_Lag_1 +
-          #  1-Year Mean
-          # CWD_Mean_1Y +
-          #  5-Year Mean
-          # CWD_Mean_5Y +
-          #  10-Year Mean
-          CWD_Mean_10Y +
-          # Pyrome
-          Pyrome
-          )
+  feols(
+    MBF_Acre_Both ~ 
+      # Landowner-varying
+      Owner_Acres + 
+      Landowner_MBF_Percentile +
+      Landowner_MBF_Standing +
+      # Space-varying
+      SiteClassMode +
+      Elevation +
+      Slope + 
+      Distance_Road +
+      Distance_Mill +
+      Distance_Place +
+      ProportionDouglasFirTree +
+      Acres_Riparian_Proportion +
+      # Time-varying
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      # Time- and space-varying
+      #  MTBS
+      # Fire_0_Lag_1 +
+      # Fire_15_Doughnut_Lag_1 +
+      Fire_30_Doughnut_Lag_1 +
+      # Fire_Proportion_Lag_1 +
+      #  PRISM
+      # CWD
+      CWD_Mean +
+      # Pyrome
+      Pyrome
+  )
 
 mod_2 = 
   dat_use_really %>% 
-  feols(MBF_Acre_Both ~ 
-          # Landowner-varying
-          Landowner_MBF_Percentile +
-          Landowner_MBF_Standing +
-          # Space-varying
-          SiteClassMode +
-          Elevation +
-          Slope + 
-          Distance_Road +
-          Distance_Mill +
-          Distance_Place +
-          ProportionDouglasFirTree +
-          Acres_Riparian_Proportion +
-          # Time-varying
-          Price_Composite_Mean_10Y +
-          Rate_Mean_10Y +
-          # Time- and space-varying
-          #  MTBS
-          Fire_0_Lag_1 +
-          Fire_15_Doughnut_Lag_1 +
-          Fire_30_Doughnut_Lag_1 +
-          Fire_Proportion_Lag_1 +
-          #  PRISM
-          VPD_Mean_10Y +
-          PPT_Mean_10Y +
-          TMean_Mean_10Y +
-          TMax_Mean_10Y +
-          # CWD
-          CWD_Mean_10Y +
-          # Pyrome
-          Pyrome |
-          County)
+  feols(
+    MBF_Acre_Both ~ 
+      # Landowner-varying
+      Owner_Acres + 
+      Landowner_MBF_Percentile +
+      Landowner_MBF_Standing +
+      # Space-varying
+      SiteClassMode +
+      Elevation +
+      Slope + 
+      Distance_Road +
+      Distance_Mill +
+      Distance_Place +
+      ProportionDouglasFirTree +
+      Acres_Riparian_Proportion +
+      # Time-varying
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      # Time- and space-varying
+      #  MTBS
+      # Fire_0_Lag_1 +
+      # Fire_15_Doughnut_Lag_1 +
+      Fire_30_Doughnut_Lag_1 +
+      # Fire_Proportion_Lag_1 +
+      #  PRISM
+      # CWD
+      CWD_Mean +
+      # Pyrome
+      Pyrome |
+      County
+    )
 
 mod_3 = 
   dat_use_really %>% 
-  feols(MBF_Acre_Both ~ 
-          # Landowner-varying
-          # Landowner_MBF_Percentile +
-          # Landowner_MBF_Standing +
-          # Space-varying
-          SiteClassMode +
-          Elevation +
-          Slope + 
-          Distance_Road +
-          Distance_Mill +
-          Distance_Place +
-          ProportionDouglasFirTree +
-          Acres_Riparian_Proportion +
-          # Time-varying
-          Price_Composite_Mean_10Y +
-          Rate_Mean_10Y +
-          # Time- and space-varying
-          #  MTBS
-          Fire_0_Lag_1 +
-          Fire_15_Doughnut_Lag_1 +
-          Fire_30_Doughnut_Lag_1 +
-          Fire_Proportion_Lag_1 +
-          #  PRISM
-          VPD_Mean_10Y +
-          PPT_Mean_10Y +
-          TMean_Mean_10Y +
-          TMax_Mean_10Y +
-          # CWD
-          CWD_Mean_10Y +
-          # Pyrome
-          Pyrome |
-          County + Landowner)
+  feols(
+    MBF_Acre_Both ~ 
+      # Landowner-varying
+      Owner_Acres + 
+      Landowner_MBF_Percentile +
+      Landowner_MBF_Standing +
+      # Space-varying
+      SiteClassMode +
+      Elevation +
+      Slope + 
+      Distance_Road +
+      Distance_Mill +
+      Distance_Place +
+      ProportionDouglasFirTree +
+      Acres_Riparian_Proportion +
+      # Time-varying
+      Price_Stumpage_DouglasFir_Mean +
+      Rate_Mean +
+      # Time- and space-varying
+      #  MTBS
+      # Fire_0_Lag_1 +
+      # Fire_15_Doughnut_Lag_1 +
+      Fire_30_Doughnut_Lag_1 +
+      # Fire_Proportion_Lag_1 +
+      #  PRISM
+      # CWD
+      CWD_Mean +
+      # Pyrome
+      Pyrome |
+      County + Landowner
+  )
 
 modelsummary(
   list("No FE" = mod_1,
@@ -618,36 +223,34 @@ fun_model =
     
     model = 
       dat %>% 
-      feols(MBF_Acre_Both ~ 
-              # Landowner-varying
-              Landowner_MBF_Percentile +
-              # Landowner_MBF_Standing +
-              # Space-varying
-              SiteClassMode +
-              Elevation +
-              Slope + 
-              # Distance_Road +
-              # Distance_Mill +
-              Distance_Place +
-              ProportionDouglasFirTree +
-              Acres_Riparian_Proportion +
-              # Time-varying
-              Price_Composite_Mean_10Y +
-              Rate_Mean_10Y +
-              # Time- and space-varying
-              #  MTBS
-              # Fire_0_Lag_1 +
-              # Fire_15_Doughnut_Lag_1 +
-              Fire_30_Doughnut_Lag_1 +
-              # Fire_Proportion_Lag_1 +
-              #  PRISM
-              # VPD_Mean_10Y +
-              # PPT_Mean_10Y +
-              # TMean_Mean_10Y +
-              # TMax_Mean_10Y +
-              #  CWD
-              CWD_Mean_10Y
-            )
+      feols(
+        MBF_Acre_Both ~ 
+          # Landowner-varying
+          Owner_Acres + 
+          Landowner_MBF_Percentile +
+          Landowner_MBF_Standing +
+          # Space-varying
+          SiteClassMode +
+          Elevation +
+          Slope + 
+          Distance_Road +
+          Distance_Mill +
+          Distance_Place +
+          ProportionDouglasFirTree +
+          Acres_Riparian_Proportion +
+          # Time-varying
+          Price_Stumpage_DouglasFir_Mean +
+          Rate_Mean +
+          # Time- and space-varying
+          #  MTBS
+          # Fire_0_Lag_1 +
+          # Fire_15_Doughnut_Lag_1 +
+          Fire_30_Doughnut_Lag_1 +
+          # Fire_Proportion_Lag_1 +
+          #  PRISM
+          # CWD
+          CWD_Mean
+      )
     
     return(model)
 
