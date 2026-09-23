@@ -53,56 +53,45 @@ dat_implicit_large = dat_implicit %>% filter(Landowner %in% vec_large)
   
 # Do:
 
-# (1) Hurdle, No Inventory
-# (2) Hurdle, Inventory
-# (3) Hurdle, Inventory, Small Firms Only
-# (4) Hurdle, Inventory, Large Firms Only (Preferred)
+# (1-3) Craggit First-Stage, All/Small/Large
+# (1-3) Craggit Second-Stage, All/Small/Large
+# (1-3) Craggit AME, All/Small/Large
 
-# AME, SE via Delta
+# (1-3) Craggit First-/Second-/AME, All
+# (1-3) Craggit First-/Second-/AME, Small
+# (1-3) Craggit First-/Second-/AME, Large
 
 # (1) Linear
 # (2) Tobit
 # (3) Heckit
 # (4) Craggit
 
-# AME, SE via Delta
+# Dataframes out for ggplot and latex
 
-# More specifications with more/fewer covariates?
+# Formulae
+
+formula_first = 
+  MBF_Bin ~ 
+  Owner_Acres + 
+  SiteClassMode + 
+  Price_Stumpage_DouglasFir_Mean + 
+  Rate_Mean +
+  Fire_30 + 
+  CWD_Mean
+
+formula_second = 
+  MBF_Both ~ 
+  Owner_Acres + 
+  SiteClassMode + 
+  Price_Stumpage_DouglasFir_Mean + 
+  Rate_Mean +
+  Fire_30 + 
+  CWD_Mean
 
 # Demo
 
-mod_0_implicit = 
-  feols(
-    MBF_Both ~ 
-      # owner variables
-      Owner_Acres + # this does vary over time, just not much
-      SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
-      # time-varying
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      # time- and owner-varying
-      Fire_30 + 
-      CWD_Mean,
-    vcov = "hetero",
-    data = dat_implicit)
-
-mod_0_explicit = 
-  feols(
-    MBF_Both ~ 
-      Owner_Acres + 
-      SiteClassMode +
-      Elevation +
-      Slope +
-      Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 + 
-      CWD_Mean,
-    vcov = "hetero",
-    data = dat_explicit)
+mod_0_implicit = feols(formula_second, vcov = "hetero", data = dat_implicit)
+mod_0_explicit = feols(formula_second, vcov = "hetero", data = dat_explicit)
 
 etable(mod_0_implicit, mod_0_explicit)
 
@@ -112,16 +101,7 @@ etable(mod_0_implicit, mod_0_explicit)
 
 mod_hurdle_first_all = 
   feglm(
-    MBF_Bin ~
-      Owner_Acres + 
-      SiteClassMode +
-      # Elevation +
-      # Slope +
-      # Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 + 
-      CWD_Mean,
+    formula_first,
     vcov = "hetero",
     family = binomial(link = "probit"),
     glm.iter = 50,
@@ -131,16 +111,7 @@ mod_hurdle_first_all =
 
 mod_hurdle_first_small = 
   feglm(
-    MBF_Bin ~
-      Owner_Acres +
-      SiteClassMode +
-      # Elevation +
-      # Slope +
-      # Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 +
-      CWD_Mean,
+    formula_first,
     vcov = "hetero",
     family = binomial(link = "probit"),
     data = dat_explicit_small,
@@ -150,16 +121,7 @@ mod_hurdle_first_small =
 
 mod_hurdle_first_large = 
   feglm(
-    MBF_Bin ~
-      Owner_Acres + 
-      SiteClassMode +
-      # Elevation +
-      # Slope +
-      # Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 + 
-      CWD_Mean,
+    formula_first,
     vcov = "hetero",
     family = binomial(link = "probit"),
     data = dat_explicit_large,
@@ -173,147 +135,179 @@ etable(mod_hurdle_first_all, mod_hurdle_first_small, mod_hurdle_first_large)
 
 mod_hurdle_second_all = 
   feols(
-    MBF_Both ~
-      Owner_Acres + 
-      SiteClassMode +
-      # Elevation +
-      # Slope +
-      # Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 + 
-      CWD_Mean,
+    formula_second,
     vcov = "hetero",
     data = dat_implicit
   )
 
 mod_hurdle_second_small = 
   feols(
-    MBF_Both ~
-      Owner_Acres + 
-      SiteClassMode +
-      # Elevation +
-      # Slope +
-      # Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 + 
-      CWD_Mean,
+    formula_second,
     vcov = "hetero",
     data = dat_implicit_small
   )
 
 mod_hurdle_second_large = 
   feols(
-    MBF_Both ~
-      Owner_Acres + 
-      SiteClassMode +
-      # Elevation +
-      # Slope +
-      # Distance_Place +
-      Price_Stumpage_DouglasFir_Mean +
-      Rate_Mean +
-      Fire_30 + 
-      CWD_Mean,
+    formula_second,
     vcov = "hetero",
     data = dat_implicit_large
   )
 
 etable(mod_hurdle_second_all, mod_hurdle_second_small, mod_hurdle_second_large)
 
-#  AME
+#  AME Functions
 
 fun_ame_inner <-
-  function(mod_first, mod_second, vec_p, vec_mu, vec_var) { # vec_var not a vec as a argument
+  function(mod_first, mod_second, vec_eta, vec_p, vec_mu, var) {
     
-    mean(vec_p * (1 - vec_p) * coef(mod_first)[vec_var] * vec_mu + vec_p * coef(mod_second[vec_var]))
+    mean(dnorm(vec_eta) * coef(mod_first)[[var]] * vec_mu + vec_p * coef(mod_second)[[var]], na.rm = TRUE)
     
   }
 
 fun_ame_outer <-
   function(formula_first, formula_second, data_first, data_second) {
     
-    mod_first <- feglm(formula_first, data = data_first, family = binomial("logit"), glm.iter = 50, vcov = "hetero")
-    mod_second <- feols(formula_second, data = data_second, vcov = "hetero")
+    mod_first <- feglm(formula_first, data = data_first, family = binomial("probit"), glm.iter = 25, glm.tol = 1e-08) # Defaults for glm.*.
+    mod_second <- feols(formula_second, data = data_second)
     
-    vec_p <- predict(mod_first, newdata = data_first, type = "response")
-    vec_mu <- predict(mod_second, newdata = data_second)
+    vec_eta <- predict(mod_first, newdata = data_first, type = "link")
+    vec_p   <- predict(mod_first, newdata = data_first, type = "response")
+    vec_mu  <- predict(mod_second, newdata = data_first, type = "response")
     
-    vec_var <- mod_first %>% coef %>% names
+    vec_var <- mod_first %>% coef %>% names %>% setdiff("(Intercept)")
     
-    vec_ame = map(vec_var, ~ fun_ame_inner(mod_first, mod_second, vec_p, vec_mu, .x))
+    vec_ame = 
+      map_dbl(
+        vec_var, 
+        ~ fun_ame_inner(mod_first, mod_second, vec_eta, vec_p, vec_mu, .x)
+      )
     
     return(vec_ame)
     
   }
 
-fun_marginal <- 
-  function(var, first, second, data){
-    
-    # Estimate probabilities of production for each observation. (p)
-    
-    vec_predict_first <- predict(first, newdata = data, type = "response") 
-    
-    # Estimate conditional production for each observation. (mu)
-    
-    vec_predict_second <- predict(second, newdata = data, type = "response")
+#   Test
 
-    # Assign coefficient estimates.
-    val_gamma <- coef(first)[var]
-    val_beta  <- coef(second)[var]
-    
-    # Calculate AMEs.
-    val_ame <- vec_predict_first * (1 - vec_predict_first) * val_gamma * vec_predict_second + vec_predict_first * val_beta
-    
-    # Return.
-    tibble(Variable = var, AME = mean(val_ame, na.rm = TRUE))
-    
-  }
+fun_ame_outer(
+  formula_first,
+  formula_second,
+  dat_explicit_small,
+  dat_implicit_small
+)
 
-mod_marginal = 
+#  Computation
+
+#   AME
+
+dat_ame = 
   tibble(
-    Specification = c("All", "Small", "Large"),
-    Model_First = 
-      list(
-        mod_hurdle_first_all,
-        mod_hurdle_first_small,
-        mod_hurdle_first_large
-      ),
-    Model_Second = 
-      list(
-        mod_hurdle_second_all,
-        mod_hurdle_second_small,
-        mod_hurdle_second_large
-      ),
-    Covariates = 
-      mod_hurdle_first_all$coefficients %>% 
-      names %>% 
-      list
+    Subset = c("All", "Small", "Large"),
+    Data_Explicit = list(dat_explicit, dat_explicit_small, dat_explicit_large),
+    Data_Implicit = list(dat_implicit, dat_implicit_small, dat_implicit_large)
   ) %>% 
-  unnest(Covariates) %>% 
-  mutate(AME = 
-           pmap(
-             .l = 
-               list(
-                 first = Model_First, 
-                 second = Model_Second, 
-                 var = Covariates
-               ),
-             .f = fun_marginal,
-             data = dat_explicit
-           )
+  mutate(
+    AME = 
+      map2(
+        Data_Explicit,
+        Data_Implicit,
+        ~ fun_ame_outer(
+          formula_first,
+          formula_second,
+          .x,
+          .y
+        )
+      ) %>% 
+      map(
+        ~ tibble(
+          Var = 
+            c(
+              "Owner_Acres", 
+              "SiteClassMode",
+              "Price_Stumpage_DouglasFir_Mean",
+              "Rate_Mean",
+              "Fire_30",
+              "CWD_Mean"
+            ),
+          AME = .x
+        )
+      )
   ) %>% 
-  select(Specification, AME) %>% 
+  select(Subset, AME) %>% 
+  unnest(AME)
+
+#   SE
+
+# It seems like there's some nonlinear increase in runtime with draws related to throwing datasets around.
+# No idea where to start fixing that.
+# ~1h for 1000 draws with three subsets and 32 cores running. 
+
+library(furrr)
+
+plan(multisession, workers = 32)
+
+set.seed(0112358) 
+
+dat_se = 
+  tibble(Draw = 1:1000) %>% 
+  mutate(
+    Landowners_All = map(Draw, ~ dat_implicit$Landowner %>% unique %>% sample(replace = TRUE)),
+    Landowners_Small = map(Draw, ~ dat_implicit$Landowner %>% unique %>% sample(replace = TRUE)),
+    Landowners_Large = map(Draw, ~ dat_implicit$Landowner %>% unique %>% sample(replace = TRUE))
+  ) %>% 
+  pivot_longer(
+    starts_with("Landowners"), 
+    names_prefix = "Landowners_", 
+    names_to = "Subset", 
+    values_to = "Landowners"
+  ) %>% 
+  mutate(
+    data_first = Landowners %>% future_map(~ filter(dat_explicit, Landowner %in% .x)),
+    data_second = Landowners %>% future_map(~ filter(dat_implicit, Landowner %in% .x)), 
+    AME = 
+      future_map2( # Note futures. 
+        data_first,
+        data_second,
+        ~ fun_ame_outer(
+          formula_first,
+          formula_second,
+          .x,
+          .y
+        ),
+        .progress = TRUE
+      ) %>% 
+      map(
+        ~ tibble(
+          Var = 
+            c(
+              "Owner_Acres", 
+              "SiteClassMode",
+              "Price_Stumpage_DouglasFir_Mean",
+              "Rate_Mean",
+              "Fire_30",
+              "CWD_Mean"
+            ),
+          AME = .x
+        )
+      )
+  ) %>% 
+  select(-Landowners) %>% 
   unnest(AME) %>% 
-  pivot_wider(
-    values_from = AME, 
-    names_from = Specification,
-    names_prefix = "Model_"
-  )
+  group_by(Var, Subset) %>% 
+  summarize(
+    AME_Bootstrap = mean(AME),
+    SE = sd(AME),
+    CI_01 = quantile(AME, 0.01),
+    CI_05 = quantile(AME, 0.05),
+    CI_10 = quantile(AME, 0.10),
+    CI_90 = quantile(AME, 0.90),
+    CI_95 = quantile(AME, 0.95),
+    CI_99 = quantile(AME, 0.99)) %>% 
+  ungroup
 
-#  SE
+#   p
 
-
+# join and compute
 
 # Exports
 

@@ -1,3 +1,15 @@
+2026/09/22
+
+Track down collinearity issue with Rate_Mean. 
+
+So what's the deal with heteroskedasticity-robust standard errors from bootstrapping? Something with the var-covar mat?
+
+Code would be nicer with a single expression of variables for (1) naming AMEs, SEs and (2) formulae.
+
+Setting up a large function to run the whole analysis on each subset of interest would be neat for readability. 
+
+(then piping that into latex for export)
+
 2026/09/21
 
 For SEs, discard delta because joint covariance structure is unclear.
