@@ -56,6 +56,10 @@ dat_implicit =
   "03_intermediate/dat_notifications_1_9.csv" %>% 
   read_csv %>% 
   mutate(Landowner = Owner_Cotality_Frequent) %>% # Patch for modifications to land ownership workflow. 
+  group_by(Landowner) %>% 
+  mutate(Landowner_ID = cur_group_id()) %>% 
+  ungroup %>% 
+  relocate(Landowner_ID, .after = "UID") %>% 
   # Handle pyromes and counties. Assign firms to their modal pyrome or county. Break ties on alphabetical order.
   group_by(Landowner, Pyrome) %>% 
   mutate(Pyrome_Count = n()) %>% 
@@ -77,7 +81,7 @@ dat_implicit =
          MBF_WesternHemlock = MBF_2_WesternHemlock,
          Acres = Acres_1) %>% 
   mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
-  group_by(Landowner, Owner_Acres, QuarterCompletion, Pyrome, County, District) %>% 
+  group_by(Landowner, Landowner_ID, Owner_Acres, QuarterCompletion, Pyrome, County, District) %>% 
   # Note that sums follow means to avoid quiet failure on weighting by a sum. 
   summarize(Count = n(),
             across(
@@ -178,6 +182,7 @@ dat_implicit_out =
   left_join(dat_standing) %>% 
   select(
     Landowner,
+    Landowner_ID, 
     Owner_Acres,
     Pyrome,
     County,
@@ -217,6 +222,7 @@ dat_explicit =
     dat_implicit_out %>% 
       select(
         Landowner,
+        Landowner_ID, 
         Pyrome,
         County,
         District
@@ -225,10 +231,16 @@ dat_explicit =
   ) %>% 
   left_join(dat_standing_explicit) %>% 
   left_join(
+    "03_intermediate/dat_owners_join.csv" %>% read_csv %>% select(-Owner_FERNS),
+    by = c("Landowner" = "Owner_Cotality_Frequent", "QuarterCompletion" = "Year_Quarter")
+  ) %>% 
+  left_join(
     dat_implicit_out %>% 
       select(
         -c(
           Landowner, 
+          Landowner_ID,
+          Owner_Acres,
           Pyrome, 
           County,
           District,
@@ -239,11 +251,15 @@ dat_explicit =
         )
       ) %>% 
       group_by(QuarterCompletion) %>% 
-      summarize(across(everything(), ~ mean(.x, na.rm = TRUE)))) %>% 
+      summarize(across(everything(), ~ mean(.x, na.rm = TRUE))) %>% 
+      ungroup
+  ) %>% 
   anti_join(dat_implicit_out, by = c("Landowner", "QuarterCompletion")) %>% 
   bind_rows(dat_implicit_out, .) %>% 
   arrange(Landowner, QuarterCompletion) %>% 
-  mutate(Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric,
-         across(c("Count", starts_with(c("MBF", "Acres"))), ~ replace_na(.x, 0))) %T>% 
+  mutate(
+    Quarter = QuarterCompletion %>% str_split_i("_", 2) %>% as.numeric,
+    across(c("Count", starts_with(c("MBF", "Acres"))), ~ replace_na(.x, 0))
+  ) %T>% 
   # Export.
   write_csv("03_intermediate/dat_firms_explicit_3_1.csv")

@@ -13,43 +13,44 @@ time_start = Sys.time()
 dat_implicit = 
   "03_intermediate/dat_firms_implicit_3_1.csv" %>% 
   read_csv %>% 
-  drop_na(Landowner) %>% 
-  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock)
+  drop_na(Landowner, Owner_Acres) %>% 
+  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
+  relocate(MBF_Both, .after = "Landowner_ID") %>% 
+  select(Landowner_ID, QuarterCompletion, MBF_Both, Owner_Acres, SiteClassMode, Price_Stumpage_DouglasFir_Mean, Rate_Mean, Fire_30, CWD_Mean)
 
 dat_explicit = 
   "03_intermediate/dat_firms_explicit_3_1.csv" %>% 
   read_csv %>% 
-  drop_na(Landowner) %>% 
+  drop_na(Landowner, Owner_Acres) %>% 
   mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
   mutate(MBF_Bin = ifelse(MBF_Both > 0, 1, 0)) %>% 
-  relocate(MBF_Bin, MBF_Both, .after = "Count")
+  relocate(MBF_Both, MBF_Both, .after = "Landowner_ID") %>% 
+  select(Landowner_ID, QuarterCompletion, MBF_Bin, MBF_Both, Owner_Acres, SiteClassMode, Price_Stumpage_DouglasFir_Mean, Rate_Mean, Fire_30, CWD_Mean)
 
 # Split data by ODF's Small Forestland Owner (SFO) definition.
 #  This should be in 0_7 or 1_3. 
 
 dat_explicit_small = 
   dat_explicit %>% 
-  group_by(Landowner) %>% 
-  # mutate(MBF_All = sum(MBF_Both)) %>% 
-  mutate(Owner_Acres_Min = min(Owner_Acres, na.rm = TRUE)) %>% 
+  group_by(Landowner_ID) %>% 
+  mutate(Owner_Acres_Max = max(Owner_Acres, na.rm = TRUE)) %>% 
   ungroup %>% 
-  # filter(MBF_All <= quantile(MBF_All, 0.50))
-  filter(Owner_Acres_Min <= 5000)
+  filter(Owner_Acres_Max < 5000)
 
 dat_explicit_large = 
   dat_explicit %>% 
-  group_by(Landowner) %>% 
+  group_by(Landowner_ID) %>% 
   # mutate(MBF_All = sum(MBF_Both)) %>% 
-  mutate(Owner_Acres_Min = min(Owner_Acres, na.rm = TRUE)) %>% 
+  mutate(Owner_Acres_Max = max(Owner_Acres, na.rm = TRUE)) %>% 
   ungroup %>% 
   # filter(MBF_All > quantile(MBF_All, 0.50))
-  filter(Owner_Acres_Min > 5000)
+  filter(Owner_Acres_Max >= 5000)
 
-vec_small = dat_explicit_small$Landowner %>% unique
-vec_large = dat_explicit_large$Landowner %>% unique
+vec_small = dat_explicit_small$Landowner_ID %>% unique
+vec_large = dat_explicit_large$Landowner_ID %>% unique
 
-dat_implicit_small = dat_implicit %>% filter(Landowner %in% vec_small)
-dat_implicit_large = dat_implicit %>% filter(Landowner %in% vec_large)
+dat_implicit_small = dat_implicit %>% filter(Landowner_ID %in% vec_small)
+dat_implicit_large = dat_implicit %>% filter(Landowner_ID %in% vec_large)
   
 # Do:
 
@@ -88,14 +89,7 @@ formula_second =
   Fire_30 + 
   CWD_Mean
 
-# Demo
-
-mod_0_implicit = feols(formula_second, vcov = "hetero", data = dat_implicit)
-mod_0_explicit = feols(formula_second, vcov = "hetero", data = dat_explicit)
-
-etable(mod_0_implicit, mod_0_explicit)
-
-# Hurdle Models?
+# Hurdle Models
 
 #  First Stage
 
@@ -240,20 +234,21 @@ dat_ame =
 
 # It seems like there's some nonlinear increase in runtime with draws related to throwing datasets around.
 # No idea where to start fixing that.
+# Could also be that the problem is in the many, many string comparisons in each filter().
 # ~1h for 1000 draws with three subsets and 32 cores running. 
 
 library(furrr)
 
-plan(multisession, workers = 32)
+plan(multisession, workers = 4)
 
 set.seed(0112358) 
 
 dat_se = 
-  tibble(Draw = 1:1000) %>% 
+  tibble(Draw = 1:12) %>% 
   mutate(
-    Landowners_All = map(Draw, ~ dat_implicit$Landowner %>% unique %>% sample(replace = TRUE)),
-    Landowners_Small = map(Draw, ~ dat_implicit$Landowner %>% unique %>% sample(replace = TRUE)),
-    Landowners_Large = map(Draw, ~ dat_implicit$Landowner %>% unique %>% sample(replace = TRUE))
+    Landowners_All = map(Draw, ~ dat_implicit$Landowner_ID %>% unique %>% sample(replace = TRUE)),
+    Landowners_Small = map(Draw, ~ dat_implicit_small$Landowner_ID %>% unique %>% sample(replace = TRUE)),
+    Landowners_Large = map(Draw, ~ dat_implicit_large$Landowner_ID %>% unique %>% sample(replace = TRUE))
   ) %>% 
   pivot_longer(
     starts_with("Landowners"), 
@@ -262,8 +257,8 @@ dat_se =
     values_to = "Landowners"
   ) %>% 
   mutate(
-    data_first = Landowners %>% future_map(~ filter(dat_explicit, Landowner %in% .x)),
-    data_second = Landowners %>% future_map(~ filter(dat_implicit, Landowner %in% .x)), 
+    data_first = Landowners %>% map(~ filter(dat_explicit, Landowner_ID %in% .x)),
+    data_second = Landowners %>% map(~ filter(dat_implicit, Landowner_ID %in% .x)), 
     AME = 
       future_map2( # Note futures. 
         data_first,
@@ -274,6 +269,7 @@ dat_se =
           .x,
           .y
         ),
+        .options = furrr_options(seed = TRUE),
         .progress = TRUE
       ) %>% 
       map(
