@@ -1,12 +1,6 @@
 # Visualize the study region.
 
-pal_fire = brewer.pal(9, "Reds")[c(4, 6, 8)] %>% rev
-pal_fire_single = brewer.pal(9, "Reds")[7]
-pal_timber = brewer.pal(9, "Greens")[7]
-pal_both = c(pal_fire, pal_timber)
-pal_both_double = c(pal_timber, pal_fire_single)
-
-pal_inset = brewer.pal(9, "Blues")[8]
+pal = c(brewer.pal(9, "Greens")[7], brewer.pal(9, "Reds")[6], brewer.pal(9, "Reds")[8]) %>% rev
 
 #  Data
 
@@ -20,14 +14,24 @@ dat_bounds =
 
 dat_box = 
   dat_bounds %>% 
-  buffer(50000) %>% 
+  buffer(150000) %>% 
   ext 
 
 dat_box_vect = 
   dat_box %>% 
   as.polygons
 
+dat_box_more = 
+  dat_bounds %>% 
+  buffer(500000) %>% 
+  ext 
+
+dat_box_more_vect = 
+  dat_box_more %>% 
+  as.polygons
+
 crs(dat_box_vect) <- "EPSG:2992"
+crs(dat_box_more_vect) <- "EPSG:2992"
 
 #   States
 
@@ -42,8 +46,6 @@ dat_states =
              "Hawaii",
              "Puerto Rico",
              "United States Virgin Islands")) %>% 
-  # filter(STUSPS == "OR") %>% 
-  # select(STUSPS) %>% 
   project("EPSG:2992")
 
 dat_states_inset = dat_states %>% project("EPSG:5070")
@@ -135,7 +137,7 @@ dat_owner =
   group_by(Owner) %>% 
   summarize %>% 
   ungroup %>% 
-  mutate(Fill = "Private Forest")
+  mutate(Fill = "Private\nForestland")
 
 #   Fires
 
@@ -145,20 +147,14 @@ dat_mtbs =
   project("EPSG:2992") %>% 
   makeValid %>% 
   crop(dat_bounds) %>% 
-  mutate(Year_MTBS = ig_date %>% year, 
-         .keep = "none") %>% 
-  filter(Year_MTBS > 2009) %>% 
-  # mutate(Fill = 
-  #          case_when(Year_MTBS %in% 1984:1999 ~ "Wildfire,\n1984-1999",
-  #                    Year_MTBS %in% 2000:2019 ~ "Wildfire,\n2000-2019",
-  #                    Year_MTBS %in% 2020:2025 ~ "Wildfire,\n2020-2025") %>% 
-  #          factor %>% 
-  #          fct_rev)
-  mutate(Fill = "Wildfires, 2010-2025")
-
-#    Intersection
-
-# dat_both = intersect(dat_owner, dat_mtbs)
+  mutate(Year_MTBS = ig_date %>% year, .keep = "none") %>% 
+  mutate(
+    Fill =
+      case_when(Year_MTBS %in% 1985:2004 ~ "Wildfire,\n1985-2004",
+                Year_MTBS %in% 2005:2024 ~ "Wildfire,\n2005-2024") %>%
+      factor %>%
+      fct_rev
+  )
 
 #  Visualizations
 
@@ -166,9 +162,6 @@ dat_mtbs =
 
 vis_main = 
   ggplot() + 
-  # geom_spatvector(data = dat_ocean_box,
-  #                 fill = "grey100",
-  #                 color = "black") +
   geom_spatvector(data = dat_states_box,
                   fill = "grey90",
                   color = "black") +
@@ -180,7 +173,7 @@ vis_main =
                   color = "black") +
   geom_spatvector(data = dat_box_vect,
                   fill = NA,
-                  color = pal_inset) +
+                  color = "black") +
   geom_spatvector(data = dat_owner,
                   aes(fill = Fill),
                   color = NA,
@@ -189,7 +182,7 @@ vis_main =
                   aes(fill = Fill),
                   color = NA,
                   alpha = 0.75) +
-  scale_fill_manual(values = pal_both_double, guide = guide_legend(reverse = TRUE)) +
+  scale_fill_manual(values = pal) + # , guide = guide_legend(reverse = TRUE)
   coord_sf(xlim = dat_box[1:2],
            ylim = dat_box[3:4]) +
   theme_void() +
@@ -205,54 +198,18 @@ vis_main =
         legend.title = element_blank(),
         plot.margin = margin(0, 0, 0, 0))
 
-#   State Inset
-
-vis_oregon =
-  ggplot() + 
-  # geom_spatvector(data = dat_ocean_oregon,
-  #                 fill = "grey80",
-  #                 color = "black") +
-  geom_spatvector(data = dat_states_oregon,
-                  fill = "grey90",
-                  color = "black") +
-  geom_spatvector(data = dat_oregon,
-                  fill = "grey95",
-                  color = "black") +
-  geom_spatvector(data = dat_bounds,
-                  fill = "grey100",
-                  color = "black") +
-  geom_spatvector(data = dat_box_vect,
-                  fill = NA,
-                  color = pal_inset) +
-  geom_spatvector(data = dat_box_oregon_vect,
-                  fill = NA,
-                  color = pal_inset) +
-  # geom_spatvector(data = dat_owner,
-  #                 aes(fill = Fill),
-  #                 color = NA,
-  #                 alpha = 1.00) +
-  # geom_spatvector(data = dat_mtbs,
-  #                 aes(fill = Fill),
-  #                 color = NA,
-  #                 alpha = 0.75) +
-  # scale_fill_manual(values = pal_both) +
-  coord_sf(xlim = dat_box_oregon[1:2],
-           ylim = dat_box_oregon[3:4]) +
-  theme_void() +
-  theme(legend.position = "none")
-  
-#   Country Inset
+#   Inset
 
 vis_states =
   ggplot() + 
-  # geom_spatvector(data = dat_ocean_states,
-  #                 fill = "grey50",
-  #                 color = "black") +
+  geom_spatvector(data = dat_ocean_states,
+                  fill = "grey100",
+                  color = NA) +
   geom_spatvector(data = dat_can,
-                  fill = "grey85",
+                  fill = "grey75",
                   color = "black") +
   geom_spatvector(data = dat_mex,
-                  fill = "grey85",
+                  fill = "grey75",
                   color = "black") +
   geom_spatvector(data = dat_states_inset,
                   fill = "grey90",
@@ -263,24 +220,13 @@ vis_states =
   geom_spatvector(data = dat_bounds,
                   fill = "grey100",
                   color = "black") +
-  geom_spatvector(data = dat_box_vect,
+  geom_spatvector(data = dat_box_more_vect,
                   fill = NA,
-                  color = pal_inset) +
-  geom_spatvector(data = dat_box_oregon_vect,
-                  fill = NA,
-                  color = pal_inset) +
+                  color = brewer.pal(9, "Reds")[7],
+                  linewidth = 0.75) +
   geom_spatvector(data = dat_box_states_vect,
                   fill = NA,
-                  color = pal_inset) +
-  # geom_spatvector(data = dat_owner,
-  #                 aes(fill = Fill),
-  #                 color = NA,
-  #                 alpha = 1.00) +
-  # geom_spatvector(data = dat_mtbs,
-  #                 aes(fill = Fill),
-  #                 color = NA,
-  #                 alpha = 0.75) +
-  # scale_fill_manual(values = pal_both) +
+                  color = "black") +
   coord_sf(xlim = dat_box_states[1:2],
            ylim = dat_box_states[3:4]) +
   theme_void() +
@@ -288,12 +234,25 @@ vis_states =
 
 # Patchwork
 
-vis_all = (plot_spacer() | vis_main | (vis_oregon / vis_states)) + plot_layout(widths = c(1.00, 46.75, 52.25))
+# vis_all = (plot_spacer() | vis_main | (vis_oregon / vis_states)) + plot_layout(widths = c(1.00, 46.75, 52.25))
+
+# ggdraw
+
+library(cowplot)
+
+vis = 
+  ggdraw() + 
+  draw_plot(vis_main) +
+  draw_plot(vis_states, x = 0.23, y = 0.8045, height = 0.1560)
 
 # Export
 
 ggsave("04_out/Paper_FirmSupply/vis_1_map.png",
-       vis_all,
+       vis,
        dpi = 300,
-       height = 4.00,
-       width = 5.00)
+       width = 3.00,
+       height = 4.00)
+
+# Consider a time series for a second panel. 
+
+# dat_mtbs %>% group_by(Year_MTBS, Fill) %>% summarize(Count = n()) %>% ungroup %>% ggplot() + geom_col(aes(x = Year_MTBS %>% factor, y = Count, fill = Fill))

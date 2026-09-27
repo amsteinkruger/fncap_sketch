@@ -28,7 +28,7 @@ dat_explicit =
   select(Landowner_ID, QuarterCompletion, MBF_Bin, MBF_Both, Owner_Acres, SiteClassMode, Price_Stumpage_DouglasFir_Mean, Rate_Mean, Fire_30, CWD_Mean)
 
 # Split data by ODF's Small Forestland Owner (SFO) definition.
-#  This should be in 0_7 or 1_3. 
+#  This should be in 0_7 or 1_3. Or 1_9. 
 
 dat_explicit_small = 
   dat_explicit %>% 
@@ -232,19 +232,18 @@ dat_ame =
 
 #   SE
 
-# It seems like there's some nonlinear increase in runtime with draws related to throwing datasets around.
-# No idea where to start fixing that.
-# Could also be that the problem is in the many, many string comparisons in each filter().
-# ~1h for 1000 draws with three subsets and 32 cores running. 
+# One hour for 10000 draws with 16 cores.  
+# Note that additional cores incur start-up costs. Trying 32 threw an error.
+# Note also that using numeric Landowner_ID instead of string Landowner matters. 
 
 library(furrr)
 
-plan(multisession, workers = 4)
+plan(multisession, workers = 16)
 
 set.seed(0112358) 
 
 dat_se = 
-  tibble(Draw = 1:12) %>% 
+  tibble(Draw = 1:10000) %>% 
   mutate(
     Landowners_All = map(Draw, ~ dat_implicit$Landowner_ID %>% unique %>% sample(replace = TRUE)),
     Landowners_Small = map(Draw, ~ dat_implicit_small$Landowner_ID %>% unique %>% sample(replace = TRUE)),
@@ -301,9 +300,39 @@ dat_se =
     CI_99 = quantile(AME, 0.99)) %>% 
   ungroup
 
-#   p
+#   Statistics
 
-# join and compute
+dat_out = 
+  dat_ame %>% 
+  left_join(dat_se) %>% 
+  mutate(
+    AME_Difference = abs(AME - AME_Bootstrap),
+    AME_Quotient = AME_Difference / AME,
+    AME_Check_Sign = (AME > 0) == (AME_Bootstrap > 0),
+    AME_Check_Magnitude = AME_Difference < 1e-05,
+    z = AME / SE,
+    p = 2 * pnorm(-abs(z)),
+    stars = 
+      case_when(
+        p <= 0.01 ~ "***",
+        p <= 0.05 ~ "**",
+        p <= 0.1 ~ "*",
+        p <= 1 ~ ""
+      ),
+    CI_Wald_05 = AME - qnorm(0.95) * SE,
+    CI_Wald_95 = AME + qnorm(0.95) * SE
+  ) %>% 
+  mutate(across(is.numeric, ~ round(.x, 5))) %>% # Round for export. 
+  relocate(AME_Bootstrap, .before = "AME_Difference") %>% 
+  relocate(starts_with("CI_Wald"), .after = "CI_99") %>% 
+  relocate(z, p, stars, .after = "SE") %T>% 
+  write_csv("03_intermediate/dat_bootstrap.csv")
+
+#  Stop timing. 
+
+time_end = Sys.time()
+
+time_end - time_start
 
 # Exports
 

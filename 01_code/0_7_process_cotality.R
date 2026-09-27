@@ -177,11 +177,21 @@ dat_crosswalk_counties =
   
 #    Join NN.
 
+#     Set up data objects. 
+
 dat_pb_nest = 
   dat_pb_less %>% 
   distinct(FIPS_CODE) %>% 
   arrange(FIPS_CODE) %>% 
   mutate(DATA_PB = FIPS_CODE %>% map(~ filter(dat_pb_less_spatial, FIPS_CODE == .x)))
+
+#     Set up furrr.
+
+plan(multisession, workers = 16)
+
+set.seed(0112358) 
+
+#     Run NN and wrangle. 
 
 dat_parcels_nest = 
   dat_parcels %>% 
@@ -192,9 +202,11 @@ dat_parcels_nest =
   mutate(DATA_PARCELS = COUNTY %>% map(~ filter(dat_parcels, COUNTY == .x))) %>% 
   select(-COUNTY)
 
+#      PB to parcels.
+
 dat_pb_parcels = 
   left_join(dat_pb_nest, dat_parcels_nest) %>% 
-  mutate(DATA_NEAREST = map2(DATA_PB, DATA_PARCELS, nearest)) %>% 
+  mutate(DATA_NEAREST = future_map2(DATA_PB, DATA_PARCELS, nearest)) %>% 
   mutate(
     DATA_OUT = 
       DATA_NEAREST %>% 
@@ -220,10 +232,12 @@ dat_pb_parcels =
   unnest(DATA_OUT) %T>% 
   write_csv("03_intermediate/dat_pb_parcels.csv")
 
+#      Parcels to PB.
+
 dat_parcels_pb = 
   left_join(dat_parcels_nest, dat_pb_nest) %>% 
   drop_na(FIPS_CODE) %>% # Eliminate an oddball county from the parcel subset. 
-  mutate(DATA_NEAREST = map2(DATA_PARCELS, DATA_PB, nearest)) %>% 
+  mutate(DATA_NEAREST = future_map2(DATA_PARCELS, DATA_PB, nearest)) %>% 
   mutate(
     DATA_OUT = 
       DATA_NEAREST %>% 
@@ -254,7 +268,7 @@ dat_parcels_pb =
 dat_pb_bind = 
   dat_pb_less %>% 
   select(all_of(vec_pb_names_bind)) %>% 
-  semi_join(dat_pb_parcels)
+  semi_join(dat_pb_parcels) # This is the step where data are lost from a parcels-PB perspective. 
 
 #   Owner Transfers
 
