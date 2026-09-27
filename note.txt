@@ -1,3 +1,7 @@
+2026/09/27
+
+Note that using numeric landowner IDs would probably be helpful as early as 0_7. 
+
 2026/09/22
 
 Track down collinearity issue with Rate_Mean. 

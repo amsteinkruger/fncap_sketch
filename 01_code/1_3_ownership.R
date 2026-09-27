@@ -42,6 +42,14 @@ dat_owners =
   drop_na(Landowner_Company_Reviewed) %>%
   select(1:2)
 
+#   Set up counties.
+
+dat_counties = 
+  "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
+  vect(layer = "County") %>% 
+  select(County = NAMELSAD, FIPS_Code = GEOID) %>% 
+  project("EPSG:2992")
+
 #   Handle notifications. 
   
 dat_notifications =
@@ -53,45 +61,82 @@ dat_notifications =
   semi_join(dat_owners) %>% 
   left_join(dat_owners) %>% 
   # Centroids
-  centroids
+  centroids %>% 
+  # Counties
+  intersect(dat_counties)
 
+dat_notifications_nest = 
+  dat_notifications %>% 
+  as_tibble %>% 
+  distinct(FIPS_Code) %>% 
+  arrange(FIPS_Code) %>% 
+  mutate(Data_Notifications = FIPS_Code %>% map(~ filter(dat_notifications, FIPS_Code == .x)))
+  
 #  Set up parcels for nearest-neighbor computation. 
 
 dat_parcels = 
   "03_intermediate/dat_parcels_points.gdb" %>% 
   vect %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %>% 
+  left_join("03_intermediate/dat_crosswalk_counties.csv" %>% read_csv) %>% 
+  rename(FIPS_Code = FIPS_CODE) %>% 
+  mutate(FIPS_Code = FIPS_Code %>% as.character)
+  
+dat_parcels_nest = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  distinct(FIPS_Code) %>% 
+  arrange(FIPS_Code) %>% 
+  mutate(Data_Parcels = FIPS_Code %>% map(~ filter(dat_parcels, FIPS_Code == .x)))
 
 #  Get nearest neighbors (parcels to notifications).
 
+#   Set up futures.
+
+plan(multisession, workers = 1)
+
+set.seed(0112358)
+
+#   Run NN over counties. 
+
 dat_nearest = 
-  dat_notifications %>% 
-  nearest(dat_parcels) %>% 
-  as_tibble
-
-dat_nearest_parcels = 
-  dat_parcels %>% 
-  as_tibble %>% 
-  mutate(ROW = row_number()) %>% 
-  semi_join(dat_nearest_flat, by = c("ROW" = "to_id"))
-
-dat_nearest_notifications = 
-  dat_notifications %>% 
-  as_tibble %>% 
-  select(
-    UID, 
-    NOAPID, 
-    Landowner_Company, 
-    DateStart # Using a year-quarter from change detection would be better.
-  ) %>%  
+  dat_notifications_nest %>% 
+  left_join(dat_parcels_nest) %>% 
+  slice_head(n = 3) %>% 
+  mutate(Data_Nearest = future_map2(Data_Notifications, Data_Parcels, nearest)) %>% 
   mutate(
-    Year_Quarter = paste0(DateStart %>% year, "_", DateStart %>% quarter),
-    Row = row_number()
+    Data_Out = 
+      Data_Nearest %>% 
+      map(as_tibble) %>% 
+      map(~ select(.x, ends_with("id"))) %>% 
+      map2(
+        Data_Notifications, 
+        ~ left_join(
+          .x, 
+          .y %>% as_tibble %>% select(UID) %>% mutate(from_id = row_number())
+        )
+      ) %>% 
+      map2(
+        Data_Parcels, 
+        ~ left_join(
+          .x, 
+          .y %>% as_tibble %>% select(PARCEL) %>% mutate(to_id = row_number())
+        )
+      ) %>% 
+      map(~ select(.x, UID, PARCEL))
   ) %>% 
-  left_join(dat_nearest %>% select(Row = from_id, Parcel_Row = to_id)) %>% 
-  left_join(dat_nearest_parcels %>% select(Parcel_Row = ROW, Parcel = PARCEL)) %>% 
-  select(-ends_with("Row"), -DateStart) %T>% 
-  write_csv("03_intermediate/dat_notifications_parcels.csv")
+  select(Data_Out) %>% 
+  unnest(Data_Out) %>% 
+  left_join(
+    dat_notifications %>% 
+      as_tibble %>% 
+      select(UID, NOAPID, Landowner_Company, DateStart) %>% # Note that quarter of harvest would be ideal. 
+      mutate(Year_Quarter = paste0(DateStart %>% year, "_", DateStart %>% quarter)) %>% 
+      select(-DateStart)
+    ) %T>% 
+  write_csv("03_intermediate/dat_notifications_parcels_test.csv")
+
+# revised work stops here
 
 #  Get owners. 
 

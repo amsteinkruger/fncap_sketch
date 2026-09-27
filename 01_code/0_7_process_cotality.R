@@ -173,7 +173,8 @@ dat_crosswalk_counties =
   group_by(COUNTY) %>% 
   filter(COUNT == max(COUNT)) %>% 
   ungroup %>% 
-  select(-COUNT)
+  select(-COUNT) %T>% 
+  write_csv("03_intermediate/dat_crosswalk_counties.csv")
   
 #    Join NN.
 
@@ -185,14 +186,6 @@ dat_pb_nest =
   arrange(FIPS_CODE) %>% 
   mutate(DATA_PB = FIPS_CODE %>% map(~ filter(dat_pb_less_spatial, FIPS_CODE == .x)))
 
-#     Set up furrr.
-
-plan(multisession, workers = 16)
-
-set.seed(0112358) 
-
-#     Run NN and wrangle. 
-
 dat_parcels_nest = 
   dat_parcels %>% 
   as_tibble %>% 
@@ -201,6 +194,14 @@ dat_parcels_nest =
   arrange(FIPS_CODE) %>% 
   mutate(DATA_PARCELS = COUNTY %>% map(~ filter(dat_parcels, COUNTY == .x))) %>% 
   select(-COUNTY)
+
+#     Set up futures.
+
+plan(multisession, workers = 16)
+
+set.seed(0112358)
+
+#     Run NN and wrangle. 
 
 #      PB to parcels.
 
@@ -268,11 +269,11 @@ dat_parcels_pb =
 dat_pb_bind = 
   dat_pb_less %>% 
   select(all_of(vec_pb_names_bind)) %>% 
-  semi_join(dat_pb_parcels) # This is the step where data are lost from a parcels-PB perspective. 
+  semi_join(dat_parcels_pb) # Choosing dat_parcels_pb preserves the complete landscape of parcels for matching to notifications.
 
 #   Owner Transfers
 
-#    Reduce to Lane County.
+#    Reduce to the region of interest. 
 
 dat_ot_less = dat_ot %>% filter(FIPS_CODE %in% vec_counties_fips)
 
@@ -292,7 +293,7 @@ dat_ot_bind =
       str_remove_all("_-_STATIC") %>% 
       str_replace_all("SALE_DERIVED_", "SALE_")
   ) %>% 
-  semi_join(dat_pb_parcels)
+  semi_join(dat_parcels_pb) # As above. 
 
 #   Prepare an implicit panel. 
 
