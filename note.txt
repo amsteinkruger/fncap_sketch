@@ -1,6 +1,16 @@
+2026/09/28
+
+Before running covariates on full portfolios, rerun portfolios after dropping ownerless parcels and nonsense
+e.g. waterways? that turn up in quick plots
+
+this kind of problem is good motivation to fall back on Cotality points and zonal statistics instead of parcels
+
+if nothing else, compare parcel acreage to cotality/CLIP acreage
+
+
 2026/09/27
 
-Note that using numeric landowner IDs would probably be helpful as early as 0_7. 
+Note that using numeric landowner IDs would be helpful as early as 0_7. 
 
 2026/09/22
 

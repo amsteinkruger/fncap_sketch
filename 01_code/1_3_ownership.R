@@ -1,8 +1,9 @@
 # Handle land ownership. 
 
 #  (1) Assign owner strings to notifications by nearest neighbors (notifications-parcels).
-#  (2) Assign acres to owners. 
-#  (3) Combine results for later joins. 
+#  (2) Assemble land portfolios from landowners associated with notifications. 
+#  (3) Assign acres to owners. 
+#  (4) Combine results for later joins. 
 
 #  Clear the environment.
 
@@ -91,19 +92,12 @@ dat_parcels_nest =
 
 #  Get nearest neighbors (parcels to notifications).
 
-#   Set up futures.
-
-plan(multisession, workers = 1)
-
-set.seed(0112358)
-
 #   Run NN over counties. 
 
 dat_nearest = 
   dat_notifications_nest %>% 
   left_join(dat_parcels_nest) %>% 
-  slice_head(n = 3) %>% 
-  mutate(Data_Nearest = future_map2(Data_Notifications, Data_Parcels, nearest)) %>% 
+  mutate(Data_Nearest = map2(Data_Notifications, Data_Parcels, nearest)) %>% 
   mutate(
     Data_Out = 
       Data_Nearest %>% 
@@ -133,45 +127,59 @@ dat_nearest =
       select(UID, NOAPID, Landowner_Company, DateStart) %>% # Note that quarter of harvest would be ideal. 
       mutate(Year_Quarter = paste0(DateStart %>% year, "_", DateStart %>% quarter)) %>% 
       select(-DateStart)
-    ) %T>% 
-  write_csv("03_intermediate/dat_notifications_parcels_test.csv")
-
-# revised work stops here
+    ) %>% 
+  relocate(PARCEL, .after = "Year_Quarter") %T>% 
+  write_csv("03_intermediate/dat_notifications_parcels.csv")
 
 #  Get owners. 
 
-dat_parcel_clip = "03_intermediate/dat_pb_parcels.csv" %>% read_csv 
+dat_parcel_clip = "03_intermediate/dat_parcels_pb.csv" %>% read_csv 
   
 dat_owners = "03_intermediate/data_cotality_explicit.csv" %>% read_csv
 
-dat_nearest_notifications_owners = 
-  dat_nearest_notifications %>% 
-  left_join(dat_parcel_clip, by = c("Parcel" = "PARCEL")) %>% # Note many-many.
-  left_join(dat_owners, by = c("CLIP", "Year_Quarter" = "YEAR_QUARTER")) %>% # Note NA for 2014.
-  # Deal with ambiguous parcel-CLIP-owner matches.
-  # For now, Keep first owner in alphabetical order. This is wholly arbitrary. 
-  arrange(UID, OWNER) %>% 
-  group_by(UID) %>% 
-  filter(row_number() == 1) %>% 
-  ungroup %>% 
+dat_notifications_owners = 
+  dat_nearest %>% 
+  left_join(dat_parcel_clip) %>% 
+  left_join(dat_owners, by = c("CLIP", "Year_Quarter" = "YEAR_QUARTER")) %>% # NA via PB. 
   # Clean up and export. 
   select(UID, NOAPID, Owner_FERNS = Landowner_Company, Owner_Cotality = OWNER, Year_Quarter) %T>% 
   write_csv("03_intermediate/dat_notifications_owners.csv")
   
 #  (2) 
 
+dat_parcels_polygons = 
+  "03_intermediate/dat_parcels_polygons.gdb" %>% 
+  vect %>% 
+  project("EPSG:2992") %>% 
+  select(PARCEL)
+
+dat_portfolios = 
+  dat_parcels_polygons %>% 
+  left_join(
+    dat_notifications_owners %>% 
+      distinct(Owner_Cotality) %>% 
+      semi_join(dat_owners, ., by = c("OWNER" = "Owner_Cotality")) %>% 
+      left_join(dat_parcel_clip)
+  ) %>% 
+  drop_na(CLIP) %>% 
+  select(Owner_Cotality = OWNER, Year_Quarter = YEAR_QUARTER, CLIP, Parcel = PARCEL) %>% 
+  arrange(Owner_Cotality, Year_Quarter, CLIP, Parcel) %T>% 
+  writeVector("03_intermediate/dat_portfolios.gdb")
+
+#  (3)
+
 dat_acres = 
   "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>% # Watch out for invalid geometries.
   vect %>% 
   as_tibble %>% 
-  select(PARCEL = OBJECTID, METERS = Shape_Area) %>% 
+  select(PARCEL = OBJECTID, METERS = Shape_Area) %>% # Meters are assumed. This would be worth computing. 
   left_join(dat_parcel_clip) %>% 
   drop_na(CLIP) %>% 
   mutate(ACRES = METERS * 0.00024711) %>% 
   select(CLIP, ACRES)
   
 vec_owners = 
-  dat_nearest_notifications_owners %>% 
+  dat_notifications_owners %>% 
   drop_na(Owner_Cotality) %>% 
   pull(Owner_Cotality) %>% 
   unique
@@ -189,10 +197,10 @@ dat_owners_acres =
   rename(Year_Quarter = YEAR_QUARTER, Owner_Cotality = OWNER, Owner_Acres = ACRES) %T>% 
   write_csv("03_intermediate/dat_owners_acres.csv")
 
-#  (3)
+#  (4)
 
 dat_join = 
-  dat_nearest_notifications_owners %>% 
+  dat_notifications_owners %>% 
   group_by(Owner_FERNS, Owner_Cotality) %>% 
   summarize(Owner_Cotality_Count = n()) %>% 
   group_by(Owner_FERNS) %>% 
