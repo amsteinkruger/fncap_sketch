@@ -8,6 +8,12 @@ rm(list = ls())
 
 time_start = Sys.time()
 
+#  Set up futures.
+
+par_cores = 16
+
+plan(multisession, workers = par_cores)
+
 #  TOC:
 
 #    Elevation
@@ -21,20 +27,32 @@ time_start = Sys.time()
 #    Road Distance
 #    City Distance
 
-#  Notifications
+#  Parcels
 
-# dat_notifications = 
-#   "03_intermediate/dat_notifications_1_5.gdb" %>% 
-#   vect %>% 
-#   makeValid(buffer = TRUE)
-# 
-# dat_notifications_less = 
-#   dat_notifications %>% 
-#   select(UID)
+dat_parcels = 
+  "03_intermediate/dat_portfolios.gdb" %>% 
+  vect %>% 
+  distinct(Parcel) %T>% 
+  # slice_sample(n = 1000) %T>% 
+  writeVector("03_intermediate/dat_portfolios_distinct.gdb")
 
-dat_portfolios = "03_intermediate/dat_portfolios.gdb" %>% vect
+# Template
 
-dat_portfolios_less = dat_portfolios %>% distinct(Parcel) # Is this working as intended?
+# dat_parcels_ = 
+#   tibble(Chunk = 1:par_cores) %>% 
+#   mutate(
+#     Data_Portfolios = 
+#       Chunk %>% 
+#       future_map(
+#         ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+#           vect %>% 
+#           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+#           filter(Chunk == .x) %>% 
+#           centroids %>% 
+#           as_tibble, 
+#         .options = furrr_options(seed = TRUE)
+#       )
+#   )
 
 #  Bounds
 
@@ -45,35 +63,67 @@ dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
 dat_elevation = 
   "02_data/1_6_1_USGS_Elevation/Elevation.tif" %>% 
   rast %>% 
-  crop(dat_bounds %>% project("EPSG:4269"),
-       mask = TRUE) %>% 
+  crop(dat_bounds %>% project("EPSG:4269"), mask = TRUE) %>% 
   mutate(Elevation = Elevation * 3.2808399) %>% # Meters to feet for consistency with the CRS.
-  project("EPSG:2992")
+  project("EPSG:2992") %T>% 
+  writeRaster("03_intermediate/dat_elevation.tif")
 
-dat_join_elevation =
-  dat_portfolios_less %>%
-  extract(x = dat_elevation,
-          y = .,
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE) %>%
-  rename(Elevation = 2) %>%
-  as_tibble
+dat_parcels_elevation = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(-Chunk) %>% 
+          extract(
+            x = "03_intermediate/dat_elevation.tif" %>% rast,
+            y = .,
+            fun = mean,
+            ID = FALSE,
+            bind = TRUE
+          ) %>%
+          as_tibble, 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk)
 
 # Slope
   
-dat_slope = dat_elevation %>% terrain(v = "slope")
+dat_slope = 
+  dat_elevation %>% 
+  terrain(v = "slope") %T>% 
+  writeRaster("03_intermediate/dat_slope.tif")
 
-dat_join_slope =
-  dat_portfolios_less %>%
-  extract(x = dat_slope,
-          y = .,
-          fun = mean,
-          ID = FALSE,
-          bind = TRUE,
-          na.rm = TRUE) %>%
-  rename(Slope = 2) %>%
-  as_tibble
+dat_parcels_slope = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(-Chunk) %>% 
+          extract(
+            x = "03_intermediate/dat_slope.tif" %>% rast,
+            y = .,
+            fun = mean,
+            ID = FALSE,
+            bind = TRUE
+          ) %>%
+          as_tibble, 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk)
 
 # Riparian Zones and Slopes
 
@@ -183,13 +233,28 @@ dat_pyrome =
   rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
   filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
   select(Pyrome = WHICH) %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %T>% 
+  writeVector("03_intermediate/dat_pyromes.gdb")
 
-dat_join_pyrome = 
-  dat_portfolios_less %>% 
-  centroids(inside = TRUE) %>% 
-  intersect(dat_pyrome) %>% 
-  as_tibble
+dat_parcels_pyromes = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(-Chunk) %>% 
+          centroids %>% 
+          intersect("03_intermediate/dat_pyromes.gdb" %>% vect) %>%
+          as_tibble, 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk)
 
 #  ODF Private Forest Districts
 
@@ -199,13 +264,28 @@ dat_districts =
   select(District = pf_dist) %>%
   project("EPSG:2992") %>%
   makeValid(buffer = TRUE) %>%
-  crop(dat_bounds)
-  
-dat_join_districts = 
-  dat_portfolios_less %>% 
-  centroids(inside = TRUE) %>% 
-  intersect(dat_districts) %>% 
-  as_tibble
+  crop(dat_bounds) %T>% 
+  writeVector("03_intermediate/dat_districts.gdb")
+
+dat_parcels_districts = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(-Chunk) %>% 
+          centroids %>% 
+          intersect("03_intermediate/dat_districts.gdb" %>% vect) %>%
+          as_tibble, 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk)
 
 #  Counties
 
@@ -213,13 +293,28 @@ dat_counties =
   "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
   vect(layer = "County") %>% 
   select(County = NAMELSAD) %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %T>% 
+  writeVector("03_intermediate/dat_counties.gdb")
 
-dat_join_counties = 
-  dat_portfolios_less %>% 
-  centroids(inside = TRUE) %>% 
-  intersect(dat_counties) %>% 
-  as_tibble
+dat_parcels_counties = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(-Chunk) %>% 
+          centroids %>% 
+          intersect("03_intermediate/dat_counties.gdb" %>% vect) %>%
+          as_tibble, 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk)
 
 #  Distances
 
@@ -231,7 +326,8 @@ dat_mills =
   vect(geom = c("Long", "Lat"),
        crs = "EPSG:4326") %>% # This could be wrong!
   project("EPSG:2992") %>% 
-  crop(dat_bounds)
+  crop(dat_bounds) %T>% 
+  writeVector("03_intermediate/dat_mills.gdb")
 
 dat_join_mills = 
   dat_portfolios_less %>% 
@@ -240,18 +336,39 @@ dat_join_mills =
   as.data.frame %>% 
   bind_cols(dat_portfolios_less %>% as_tibble, .) %>% 
   pivot_longer(cols = starts_with("V")) %>% 
-  group_by(UID) %>% 
+  group_by(Parcel) %>% 
   filter(value == min(value)) %>% 
   ungroup %>% 
-  distinct(UID, value) %>% 
+  distinct(Parcel, value) %>% 
   mutate(value = value / 5280) %>% 
-  select(UID, Distance_Mill = value)
+  select(Parcel, Distance_Mill = value)
+
+dat_parcels_mills = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(-Chunk) %>% 
+          centroids %>% 
+          intersect("03_intermediate/dat_counties.gdb" %>% vect) %>%
+          as_tibble, 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk)
 
 #   Roads
 
 dat_roads = 
   "02_data/1_6_5_ODT_Roads/All_Public_Roads.geojson" %>% 
   vect %>% 
+  select(OBJECTID) %>% 
   crop(dat_bounds %>% project("EPSG:4326")) %>% 
   project("EPSG:2992")
 
@@ -279,19 +396,19 @@ dat_join_cities =
   as.data.frame %>% 
   bind_cols(dat_portfolios_less %>% as_tibble, .) %>% 
   pivot_longer(cols = starts_with("V")) %>% 
-  group_by(UID) %>% 
+  group_by(Parcel) %>% 
   filter(value == min(value)) %>% 
   ungroup %>% 
-  distinct(UID, value) %>% # For multiple occurrences of a minimum value. 
+  distinct(Parcel, value) %>% # For multiple occurrences of a minimum value. 
   mutate(value = value / 5280) %>% 
-  select(UID, Distance_Place = value)
+  select(Parcel, Distance_Place = value)
 
 #   Combined
 
-dat_join_distance = 
-  dat_join_roads %>% 
-  left_join(dat_join_mills) %>% 
-  left_join(dat_join_cities)
+# dat_join_distance = 
+#   dat_join_roads %>% 
+#   left_join(dat_join_mills) %>% 
+#   left_join(dat_join_cities)
 
 #  Export
 
