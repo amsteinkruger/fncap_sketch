@@ -1,3 +1,8 @@
+2026/09/29
+
+Remember to worry about geospatial/parcel/CLIP differences in area. 
+
+
 2026/09/28
 
 Before running covariates on full portfolios, rerun portfolios after dropping ownerless parcels and nonsense

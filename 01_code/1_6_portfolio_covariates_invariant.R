@@ -16,6 +16,7 @@ plan(multisession, workers = par_cores)
 
 #  TOC:
 
+#    Area
 #    Elevation
 #    Slope
 #    Flow Lines (Skipping)
@@ -32,27 +33,8 @@ plan(multisession, workers = par_cores)
 dat_parcels = 
   "03_intermediate/dat_portfolios.gdb" %>% 
   vect %>% 
-  distinct(Parcel) %T>% 
-  # slice_sample(n = 1000) %T>% 
+  distinct(Parcel, Area) %T>% 
   writeVector("03_intermediate/dat_portfolios_distinct.gdb")
-
-# Template
-
-# dat_parcels_ = 
-#   tibble(Chunk = 1:par_cores) %>% 
-#   mutate(
-#     Data_Portfolios = 
-#       Chunk %>% 
-#       future_map(
-#         ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
-#           vect %>% 
-#           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
-#           filter(Chunk == .x) %>% 
-#           centroids %>% 
-#           as_tibble, 
-#         .options = furrr_options(seed = TRUE)
-#       )
-#   )
 
 #  Bounds
 
@@ -78,7 +60,7 @@ dat_parcels_elevation =
           vect %>% 
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
-          select(-Chunk) %>% 
+          select(Parcel) %>% 
           extract(
             x = "03_intermediate/dat_elevation.tif" %>% rast,
             y = .,
@@ -110,7 +92,7 @@ dat_parcels_slope =
           vect %>% 
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
-          select(-Chunk) %>% 
+          select(Parcel) %>% 
           extract(
             x = "03_intermediate/dat_slope.tif" %>% rast,
             y = .,
@@ -123,7 +105,8 @@ dat_parcels_slope =
       )
   ) %>% 
   unnest(Data_Parcels) %>% 
-  select(-Chunk)
+  select(-Chunk) %>% 
+  rename(Slope = slope)
 
 # Riparian Zones and Slopes
 
@@ -246,7 +229,7 @@ dat_parcels_pyromes =
           vect %>% 
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
-          select(-Chunk) %>% 
+          select(Parcel) %>% 
           centroids %>% 
           intersect("03_intermediate/dat_pyromes.gdb" %>% vect) %>%
           as_tibble, 
@@ -277,7 +260,7 @@ dat_parcels_districts =
           vect %>% 
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
-          select(-Chunk) %>% 
+          select(Parcel) %>% 
           centroids %>% 
           intersect("03_intermediate/dat_districts.gdb" %>% vect) %>%
           as_tibble, 
@@ -306,7 +289,7 @@ dat_parcels_counties =
           vect %>% 
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
-          select(-Chunk) %>% 
+          select(Parcel) %>% 
           centroids %>% 
           intersect("03_intermediate/dat_counties.gdb" %>% vect) %>%
           as_tibble, 
@@ -329,20 +312,6 @@ dat_mills =
   crop(dat_bounds) %T>% 
   writeVector("03_intermediate/dat_mills.gdb")
 
-dat_join_mills = 
-  dat_portfolios_less %>% 
-  centroids %>% 
-  distance(dat_mills) %>% 
-  as.data.frame %>% 
-  bind_cols(dat_portfolios_less %>% as_tibble, .) %>% 
-  pivot_longer(cols = starts_with("V")) %>% 
-  group_by(Parcel) %>% 
-  filter(value == min(value)) %>% 
-  ungroup %>% 
-  distinct(Parcel, value) %>% 
-  mutate(value = value / 5280) %>% 
-  select(Parcel, Distance_Mill = value)
-
 dat_parcels_mills = 
   tibble(Chunk = 1:par_cores) %>% 
   mutate(
@@ -353,14 +322,16 @@ dat_parcels_mills =
           vect %>% 
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
-          select(-Chunk) %>% 
+          select(Parcel) %>% 
           centroids %>% 
-          intersect("03_intermediate/dat_counties.gdb" %>% vect) %>%
-          as_tibble, 
+          nearest("03_intermediate/dat_mills.gdb" %>% vect) %>%
+          as_tibble %>% 
+          mutate(Distance_Mill = distance / 5280, .keep = "none"), 
         .options = furrr_options(seed = TRUE)
       )
   ) %>% 
   unnest(Data_Parcels) %>% 
+  bind_cols(dat_parcels %>% as_tibble, .) %>% 
   select(-Chunk)
 
 #   Roads
@@ -370,69 +341,122 @@ dat_roads =
   vect %>% 
   select(OBJECTID) %>% 
   crop(dat_bounds %>% project("EPSG:4326")) %>% 
-  project("EPSG:2992")
+  project("EPSG:2992") %T>% 
+  writeVector("03_intermediate/dat_roads.gdb")
 
-dat_join_roads = 
-  dat_portfolios_less %>% 
-  centroids %>% 
-  nearest(dat_roads) %>% 
-  as_tibble %>% 
-  mutate(Distance_Road = distance / 5280,
-         .keep = "none") %>% 
-  bind_cols(dat_portfolios_less %>% as_tibble, .)
+dat_parcels_roads = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(Parcel) %>% 
+          centroids %>% 
+          nearest("03_intermediate/dat_roads.gdb" %>% vect) %>%
+          as_tibble %>% 
+          mutate(Distance_Road = distance / 5280, .keep = "none"), 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  bind_cols(dat_parcels %>% as_tibble, .) %>% 
+  select(-Chunk)
 
 #   Cities
 
 dat_cities = 
-  "02_data/1_6_6_TIGER/TIGER.gdb" %>% 
-  vect %>% 
+  rbind(
+    "02_data/1_6_6_TIGER/TIGER.gdb" %>% vect(layer = "Incorporated_Place"),
+    "02_data/1_6_6_TIGER/TIGER.gdb" %>% vect(layer = "Census_Designated_Place")
+  ) %>% 
   crop(dat_bounds %>% project("EPSG:4269")) %>% 
-  project("EPSG:2992")
+  centroids %>% 
+  project("EPSG:2992") %T>% 
+  writeVector("03_intermediate/dat_cities.gdb")
 
-dat_join_cities = 
-  dat_portfolios_less %>% 
-  centroids %>% # Check whether INTPTLAT, INTPTLON are more informative than centroids.
-  distance(dat_cities) %>% 
-  as.data.frame %>% 
-  bind_cols(dat_portfolios_less %>% as_tibble, .) %>% 
-  pivot_longer(cols = starts_with("V")) %>% 
-  group_by(Parcel) %>% 
-  filter(value == min(value)) %>% 
+dat_parcels_cities = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(Parcel) %>% 
+          centroids %>% 
+          nearest("03_intermediate/dat_cities.gdb" %>% vect) %>%
+          as_tibble %>% 
+          mutate(Distance_City = distance / 5280, .keep = "none"), 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>% 
+  bind_cols(dat_parcels %>% as_tibble, .) %>% 
+  select(-Chunk)
+
+#  Join to portfolios in a panel and export. 
+
+dat_parcels_covariates = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  left_join(dat_parcels_elevation) %>% 
+  left_join(dat_parcels_slope) %>% 
+  left_join(dat_parcels_pyromes) %>% 
+  left_join(dat_parcels_districts) %>% 
+  left_join(dat_parcels_counties) %>% 
+  left_join(dat_parcels_roads) %>% 
+  left_join(dat_parcels_mills) %>% 
+  left_join(dat_parcels_cities)
+
+dat_portfolios = "03_intermediate/dat_portfolios.gdb" %>% vect %>% as_tibble
+
+dat_portfolios_covariates = 
+  dat_portfolios %>% 
+  # filter(Year_Quarter %in% c("2016_1", "2016_2", "2016_3", "2016_4")) %>% 
+  left_join(dat_parcels_covariates) %>% 
+  pivot_longer(
+    cols = c(Pyrome, District, County), 
+    names_to = "Region_Type",
+    values_to = "Region_Name"
+  ) %>% 
+  mutate(Region_Name = Region_Name %>% str_replace_all(" ", "_")) %>% 
+  group_by(Owner_Cotality, Year_Quarter, Region_Type, Region_Name) %>% 
+  summarize(
+    across(c(Elevation, Slope, starts_with("Distance")), ~ weighted.mean(.x, Area, na.rm = TRUE)),
+    Area = sum(Area, na.rm = TRUE)
+  ) %>% 
+  group_by(Owner_Cotality, Year_Quarter, Region_Type) %>% 
+  mutate(Area_Proportion = Area / sum(Area, na.rm = TRUE)) %>% 
   ungroup %>% 
-  distinct(Parcel, value) %>% # For multiple occurrences of a minimum value. 
-  mutate(value = value / 5280) %>% 
-  select(Parcel, Distance_Place = value)
-
-#   Combined
-
-# dat_join_distance = 
-#   dat_join_roads %>% 
-#   left_join(dat_join_mills) %>% 
-#   left_join(dat_join_cities)
-
-#  Export
-
-#   Modify this to (1) join everything together then (2) sum to landowners
-#   where land area is the thing of interest. So sneak extent() in there. 
-#   e.g. acres in county, % acres in county
-#   so geospatial joins are with distinct(Parcel), then final joins/aggs are by owner and quarter
-
-# dat_notifications_out = 
-#   dat_notifications %>% 
-#   # Growth
-#   left_join(dat_join_elevation) %>% 
-#   left_join(dat_join_slope) %>% 
-#   left_join(dat_join_riparian) %>% 
-#   left_join(dat_join_pyrome) %>% 
-#   left_join(dat_join_districts) %>%
-#   left_join(dat_join_counties) %>% 
-#   left_join(dat_join_distance) %T>% 
-#   # Export with spatial data. 
-#   writeVector("03_intermediate/dat_notifications_1_6.gdb") %>% 
-#   # Export without spatial data. 
-#   as_tibble %T>% 
-#   write_csv("03_intermediate/dat_notifications_1_6.csv")
-
+  arrange(desc(Region_Type), Region_Name, Owner_Cotality, Year_Quarter) %>% 
+  pivot_wider(
+    names_from = c(Region_Type, Region_Name),
+    names_glue = "{Region_Type}_{Region_Name}_{.value}",
+    values_from = starts_with("Area"),
+    values_fill = 0
+  ) %>% 
+  mutate(
+    Area = 
+      Pyrome_Marine_Northwest_Coast_Forest_Area +
+      Pyrome_Klamath_Mountains_Area + 
+      Pyrome_Middle_Cascades_Area +
+      Pyrome_NA_Area
+  ) %>% 
+  relocate(Area, .after = "Year_Quarter") %>% 
+  relocate(starts_with("County") & ends_with("Proportion"), .after = "Distance_City") %>% 
+  relocate(starts_with("County") & ends_with("Area"), .after = "Distance_City") %>% 
+  relocate(starts_with("District") & ends_with("Proportion"), .after = "Distance_City") %>% 
+  relocate(starts_with("District") & ends_with("Area"), .after = "Distance_City") %>% 
+  relocate(starts_with("Pyrome") & ends_with("Proportion"), .after = "Distance_City") %>% 
+  relocate(starts_with("Pyrome") & ends_with("Area"), .after = "Distance_City") %T>% 
+  write_csv("03_intermediate/dat_portfolios_covariates_invariant.csv")
+  
 #  Stop timing. 
 
 time_end = Sys.time()

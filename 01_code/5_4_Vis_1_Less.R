@@ -14,8 +14,11 @@ dat_bounds =
 
 dat_box = 
   dat_bounds %>% 
-  buffer(150000) %>% 
+  buffer(25000) %>% 
   ext 
+
+dat_box[2] <- dat_box[2] + 50000
+dat_box[3] <- dat_box[3] + 15000
 
 dat_box_vect = 
   dat_box %>% 
@@ -33,19 +36,42 @@ dat_box_more_vect =
 crs(dat_box_vect) <- "EPSG:2992"
 crs(dat_box_more_vect) <- "EPSG:2992"
 
+#   Countries
+
+dat_usa = 
+  "USA" %>% 
+  gadm(country = ., level = 1, path = tempdir()) %>% 
+  filter(NAME_1 %!in% c("Alaska", "Hawaii")) %>% 
+  project("EPSG:5070")
+  
+dat_box_usa =
+  dat_usa %>% 
+  aggregate %>% 
+  buffer(250000) %>% 
+  ext
+  
+dat_box_usa_vect =
+  dat_box_usa %>% 
+  as.polygons
+
+crs(dat_box_states_vect) <- "EPSG:5070"
+
+dat_can = 
+  "CAN" %>% 
+  gadm(country = ., level = 1, path = tempdir()) %>% 
+  project("EPSG:5070") %>% 
+  crop(dat_box_usa_vect)
+
+dat_mex = 
+  "MEX" %>% 
+  gadm(country = ., level = 1, path = tempdir()) %>% 
+  project("EPSG:5070") %>% 
+  crop(dat_box_usa_vect)
+
 #   States
 
 dat_states = 
-  "02_data/1_2_1_Census_States" %>% 
-  vect %>% 
-  filter(NAME %!in% 
-           c("Alaska",
-             "American Samoa",
-             "Commonwealth of the Northern Mariana Islands",
-             "Guam",
-             "Hawaii",
-             "Puerto Rico",
-             "United States Virgin Islands")) %>% 
+  dat_usa %>% 
   project("EPSG:2992")
 
 dat_states_inset = dat_states %>% project("EPSG:5070")
@@ -68,7 +94,7 @@ crs(dat_box_states_vect) <- "EPSG:5070"
 
 #   Oregon
 
-dat_oregon = dat_states %>% filter(NAME == "Oregon")
+dat_oregon = dat_states %>% filter(NAME_1 == "Oregon")
 
 dat_box_oregon = 
   dat_oregon %>% 
@@ -83,48 +109,9 @@ crs(dat_box_oregon_vect) <- "EPSG:2992"
 
 dat_states_oregon = dat_states %>% crop(dat_box_oregon)
 
-dat_oregon_inset = dat_states_inset %>% filter(NAME == "Oregon")
+dat_oregon_inset = dat_states_inset %>% filter(NAME_1 == "Oregon")
 
 dat_oregon_box = dat_oregon %>% crop(dat_box)
-
-#   MEX/CAN
-
-dat_can = 
-  "CAN" %>% 
-  gadm(country = ., level = 1, path = tempdir()) %>% 
-  project("EPSG:5070") %>% 
-  crop(dat_box_states_vect)
-
-dat_mex = 
-  "MEX" %>% 
-  gadm(country = ., level = 1, path = tempdir()) %>% 
-  project("EPSG:5070") %>% 
-  crop(dat_box_states_vect)
-
-#   Ocean
-
-dat_ocean_box = dat_box_vect %>% erase(dat_states)
-
-dat_ocean_oregon = dat_box_oregon_vect %>% erase(dat_states)
-
-dat_ocean_states = 
-  dat_box_states_vect %>% 
-  erase(dat_states_inset) %>% 
-  erase(dat_can) %>% 
-  erase(dat_mex)
-
-#   Pyromes/Ecoregions
-
-dat_pyromes = 
-  "02_data/1_2_2_USFS_Pyromes/Data/Pyromes_CONUS_20200206.shp" %>% 
-  vect %>% 
-  rename(WHICH = NAME) %>% # Band-Aid for a reserved attribute name.
-  filter(WHICH %in% c("Marine Northwest Coast Forest", "Klamath Mountains", "Middle Cascades")) %>% 
-  select(Pyrome = WHICH) %>% 
-  project("EPSG:2992") %>% 
-  crop(dat_bounds)
-
-#   Places
 
 #   Private Forest/Timberland
 
@@ -162,17 +149,17 @@ dat_mtbs =
 
 vis_main = 
   ggplot() + 
+  geom_spatvector(data = dat_box_vect,
+                  fill = NA,
+                  color = "black") +
   geom_spatvector(data = dat_states_box,
-                  fill = "grey90",
+                  fill = "grey80",
                   color = "black") +
   geom_spatvector(data = dat_oregon_box,
-                  fill = "grey95",
+                  fill = "grey90",
                   color = "black") +
   geom_spatvector(data = dat_bounds,
                   fill = "grey100",
-                  color = "black") +
-  geom_spatvector(data = dat_box_vect,
-                  fill = NA,
                   color = "black") +
   geom_spatvector(data = dat_owner,
                   aes(fill = Fill),
@@ -202,20 +189,20 @@ vis_main =
 
 vis_states =
   ggplot() + 
-  geom_spatvector(data = dat_ocean_states,
-                  fill = "grey100",
-                  color = NA) +
+  geom_spatvector(data = dat_box_states_vect,
+                  fill = "white",
+                  color = "black") +
   geom_spatvector(data = dat_can,
-                  fill = "grey75",
+                  fill = "grey70",
                   color = "black") +
   geom_spatvector(data = dat_mex,
-                  fill = "grey75",
+                  fill = "grey70",
                   color = "black") +
   geom_spatvector(data = dat_states_inset,
-                  fill = "grey90",
+                  fill = "grey80",
                   color = "black") +
   geom_spatvector(data = dat_oregon,
-                  fill = "grey95",
+                  fill = "grey90",
                   color = "black") +
   geom_spatvector(data = dat_bounds,
                   fill = "grey100",
@@ -224,13 +211,9 @@ vis_states =
                   fill = NA,
                   color = brewer.pal(9, "Reds")[7],
                   linewidth = 0.75) +
-  geom_spatvector(data = dat_box_states_vect,
-                  fill = NA,
-                  color = "black") +
   coord_sf(xlim = dat_box_states[1:2],
            ylim = dat_box_states[3:4]) +
-  theme_void() +
-  theme(legend.position = "none")
+  theme_void()
 
 # Patchwork
 
@@ -243,7 +226,7 @@ library(cowplot)
 vis = 
   ggdraw() + 
   draw_plot(vis_main) +
-  draw_plot(vis_states, x = 0.23, y = 0.8045, height = 0.1560)
+  draw_plot(vis_states, x = 0.21, y = 0.83, height = 0.13)
 
 # Export
 

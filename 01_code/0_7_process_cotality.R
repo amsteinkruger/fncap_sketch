@@ -126,12 +126,13 @@ dat_pb_less_spatial %>%
 dat_parcels = 
   "02_data/0_0_0_Cotality/1_Parcels/2020_shapefile" %>%
   read_sf %>% 
-  select(PARCEL = OBJECTID, COUNTY = County) %>% 
+  select(PARCEL = OBJECTID, COUNTY = County, AREA = Shape_Area) %>% 
   mutate(
     VALID_GEOM = st_is_valid(geometry),
-    EMPTY_GEOM = st_is_empty(geometry)) %>% 
+    EMPTY_GEOM = st_is_empty(geometry)
+  ) %>% 
   filter(VALID_GEOM & !EMPTY_GEOM) %>% 
-  select(PARCEL, COUNTY) %>% 
+  select(-ends_with("GEOM")) %>% 
   vect %>% 
   crop(dat_bounds) %T>%
   writeVector("03_intermediate/dat_parcels_polygons.gdb") %>%

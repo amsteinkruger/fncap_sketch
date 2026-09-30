@@ -151,7 +151,7 @@ dat_parcels_polygons =
   "03_intermediate/dat_parcels_polygons.gdb" %>% 
   vect %>% 
   project("EPSG:2992") %>% 
-  select(PARCEL)
+  select(PARCEL, AREA)
 
 dat_portfolios = 
   dat_parcels_polygons %>% 
@@ -162,8 +162,8 @@ dat_portfolios =
       left_join(dat_parcel_clip)
   ) %>% 
   drop_na(CLIP) %>% 
-  select(Owner_Cotality = OWNER, Year_Quarter = YEAR_QUARTER, CLIP, Parcel = PARCEL) %>% 
-  arrange(Owner_Cotality, Year_Quarter, CLIP, Parcel) %T>% 
+  select(Owner_Cotality = OWNER, Year_Quarter = YEAR_QUARTER, CLIP, Parcel = PARCEL, Area = AREA) %>% 
+  arrange(Owner_Cotality, Year_Quarter, CLIP, Parcel, Area) %T>% 
   writeVector("03_intermediate/dat_portfolios.gdb")
 
 #  (3)
