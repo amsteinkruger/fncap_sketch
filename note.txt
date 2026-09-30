@@ -2,6 +2,8 @@
 
 Remember to worry about geospatial/parcel/CLIP differences in area. 
 
+For MTBS, what if intersects() returns a simpler/faster result than intersect()?
+
 
 2026/09/28
 

@@ -48,7 +48,7 @@ dat_elevation =
   crop(dat_bounds %>% project("EPSG:4269"), mask = TRUE) %>% 
   mutate(Elevation = Elevation * 3.2808399) %>% # Meters to feet for consistency with the CRS.
   project("EPSG:2992") %T>% 
-  writeRaster("03_intermediate/dat_elevation.tif")
+  writeRaster("03_intermediate/dat_elevation.tif", overwrite = TRUE)
 
 dat_parcels_elevation = 
   tibble(Chunk = 1:par_cores) %>% 
@@ -80,7 +80,7 @@ dat_parcels_elevation =
 dat_slope = 
   dat_elevation %>% 
   terrain(v = "slope") %T>% 
-  writeRaster("03_intermediate/dat_slope.tif")
+  writeRaster("03_intermediate/dat_slope.tif", overwrite = TRUE)
 
 dat_parcels_slope = 
   tibble(Chunk = 1:par_cores) %>% 
@@ -418,7 +418,6 @@ dat_portfolios = "03_intermediate/dat_portfolios.gdb" %>% vect %>% as_tibble
 
 dat_portfolios_covariates = 
   dat_portfolios %>% 
-  # filter(Year_Quarter %in% c("2016_1", "2016_2", "2016_3", "2016_4")) %>% 
   left_join(dat_parcels_covariates) %>% 
   pivot_longer(
     cols = c(Pyrome, District, County), 
@@ -448,14 +447,16 @@ dat_portfolios_covariates =
       Pyrome_Middle_Cascades_Area +
       Pyrome_NA_Area
   ) %>% 
-  relocate(Area, .after = "Year_Quarter") %>% 
-  relocate(starts_with("County") & ends_with("Proportion"), .after = "Distance_City") %>% 
-  relocate(starts_with("County") & ends_with("Area"), .after = "Distance_City") %>% 
-  relocate(starts_with("District") & ends_with("Proportion"), .after = "Distance_City") %>% 
-  relocate(starts_with("District") & ends_with("Area"), .after = "Distance_City") %>% 
-  relocate(starts_with("Pyrome") & ends_with("Proportion"), .after = "Distance_City") %>% 
-  relocate(starts_with("Pyrome") & ends_with("Area"), .after = "Distance_City") %T>% 
-  write_csv("03_intermediate/dat_portfolios_covariates_invariant.csv")
+  relocate(Area, .after = "Year_Quarter") %T>% 
+  # relocate(starts_with("County") & ends_with("Proportion"), .after = "Distance_City") %>% 
+  # relocate(starts_with("County") & ends_with("Area"), .after = "Distance_City") %>% 
+  # relocate(starts_with("District") & ends_with("Proportion"), .after = "Distance_City") %>% 
+  # relocate(starts_with("District") & ends_with("Area"), .after = "Distance_City") %>% 
+  # relocate(starts_with("Pyrome") & ends_with("Proportion"), .after = "Distance_City") %>% 
+  # relocate(starts_with("Pyrome") & ends_with("Area"), .after = "Distance_City") %T>% 
+  write_csv("03_intermediate/dat_portfolios_covariates_invariant.csv") %>% 
+  select(-starts_with(c("Pyrome", "District", "County"))) %T>% 
+  write_csv("03_intermediate/dat_portfolios_covariates_invariant_less.csv")
   
 #  Stop timing. 
 

@@ -8,14 +8,18 @@ rm(list = ls())
 
 time_start = Sys.time()
 
+#  Set up futures.
+
+par_cores = 16
+
+plan(multisession, workers = par_cores)
+
 #  TOC:
 
 #   Spatial
 
 #    MTBS
 #    VPD
-#    Temperature
-#    Precipitation
 #    CWD
 
 #   Not Spatial
@@ -23,50 +27,58 @@ time_start = Sys.time()
 #    Prices
 #    Effective Federal Funds Rate
 
+#  Parcels
+
+dat_parcels = "03_intermediate/dat_portfolios.gdb" %>% vect
+
+dat_parcels_less = dat_parcels %>% distinct(Parcel)
+
+dat_parcels_quarters = dat_parcels %>% as_tibble %>% select(Parcel, Year_Quarter)
+
 #  Notifications
 
-dat_notifications = 
-  "03_intermediate/dat_notifications_1_6.gdb" %>% 
-  vect %>% 
-  makeValid(buffer = TRUE)
-
-dat_notifications_less = 
-  dat_notifications %>% 
-  select(UID)
-
-dat_notifications_years = 
-  dat_notifications %>% 
-  mutate(Year = DateStart %>% year) %>% 
-  select(UID, Year)
-
-dat_notifications_quarters = 
-  dat_notifications %>% 
-  as_tibble %>% 
-  select(UID, DateStart, DateEnd) %>% 
-  # Get year-quarter components. 
-  mutate(YearStart = DateStart %>% year,
-         MonthStart = DateStart %>% month,
-         QuarterStart = MonthStart %>% multiply_by(1 / 3) %>% ceiling,
-         YearEnd = DateEnd %>% year,
-         MonthEnd = DateEnd %>% month,
-         QuarterEnd = MonthEnd %>% multiply_by(1 / 3) %>% ceiling) %>% # ,
-  # Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  # Get intervening years and quarters. 
-  mutate(Years = map2(YearStart, YearEnd, seq),
-         Quarters = seq(1, 4) %>% list) %>% 
-  unnest(Years) %>% 
-  unnest(Quarters) %>% 
-  # Get conditions for keeping quarters.
-  mutate(CheckStart = (Years == YearStart & Quarters < QuarterStart),
-         CheckEnd = (Years == YearEnd & Quarters > QuarterEnd)) %>% 
-  # Get year-quarter. 
-  mutate(YearQuarter = paste0(Years, "_Q", Quarters)) %>% 
-  # Clean up. 
-  filter(!CheckStart & !CheckEnd) %>% 
-  select(UID,
-         YearQuarter,
-         Year = Years,
-         Quarter = Quarters)
+# dat_notifications = 
+#   "03_intermediate/dat_notifications_1_6.gdb" %>% 
+#   vect %>% 
+#   makeValid(buffer = TRUE)
+# 
+# dat_notifications_less = 
+#   dat_notifications %>% 
+#   select(UID)
+# 
+# dat_notifications_years = 
+#   dat_notifications %>% 
+#   mutate(Year = DateStart %>% year) %>% 
+#   select(UID, Year)
+# 
+# dat_notifications_quarters = 
+#   dat_notifications %>% 
+#   as_tibble %>% 
+#   select(UID, DateStart, DateEnd) %>% 
+#   # Get year-quarter components. 
+#   mutate(YearStart = DateStart %>% year,
+#          MonthStart = DateStart %>% month,
+#          QuarterStart = MonthStart %>% multiply_by(1 / 3) %>% ceiling,
+#          YearEnd = DateEnd %>% year,
+#          MonthEnd = DateEnd %>% month,
+#          QuarterEnd = MonthEnd %>% multiply_by(1 / 3) %>% ceiling) %>% # ,
+#   # Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+#   # Get intervening years and quarters. 
+#   mutate(Years = map2(YearStart, YearEnd, seq),
+#          Quarters = seq(1, 4) %>% list) %>% 
+#   unnest(Years) %>% 
+#   unnest(Quarters) %>% 
+#   # Get conditions for keeping quarters.
+#   mutate(CheckStart = (Years == YearStart & Quarters < QuarterStart),
+#          CheckEnd = (Years == YearEnd & Quarters > QuarterEnd)) %>% 
+#   # Get year-quarter. 
+#   mutate(YearQuarter = paste0(Years, "_Q", Quarters)) %>% 
+#   # Clean up. 
+#   filter(!CheckStart & !CheckEnd) %>% 
+#   select(UID,
+#          YearQuarter,
+#          Year = Years,
+#          Quarter = Quarters)
 
 #  Bounds
 
@@ -80,128 +92,119 @@ dat_mtbs =
   project("EPSG:2992") %>% 
   makeValid %>% 
   crop(dat_bounds) %>% 
-  mutate(Year_MTBS = ig_date %>% year,
-         Month_MTBS = ig_date %>% month,
-         Quarter_MTBS = Month_MTBS %>% multiply_by(1 / 3) %>% ceiling, 
-         .keep = "none")
+  mutate(
+    Year_MTBS = ig_date %>% year,
+    Month_MTBS = ig_date %>% month,
+    Quarter_MTBS = ceiling(Month_MTBS / 3), 
+    .keep = "none"
+  )
 
-#  No Buffer
-
-dat_join_mtbs_0 = 
-  dat_notifications_less %>% 
-  full_join(dat_notifications_quarters) %>% 
-  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-  intersect(dat_mtbs) %>% 
+dat_parcels_mtbs = 
+  dat_parcels_less %>% 
+  distance(dat_mtbs) %>% 
+  round(0) %>% 
+  divide_by(3280.84) %>% # ft to km
   as_tibble %>% 
-  mutate(Quarters = Year * 4 + Quarter,
-         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
-  select(UID, YearQuarter, starts_with("Quarters_")) %>% 
-  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
-               names_to = "Lag",
-               values_to = "Quarters") %>% 
-  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
-         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
-  group_by(UID, YearQuarter, Lag) %>% 
-  summarize(Fire_0 = sum(Check)) %>% 
-  ungroup
-
-#  15km Buffer
-
-dat_join_mtbs_15 = 
-  dat_notifications_less %>% 
-  buffer(width = 15 * 3280.84) %>% # Kilometers to feet.
-  full_join(dat_notifications_quarters) %>% 
-  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-  intersect(dat_mtbs) %>% 
-  as_tibble %>% 
-  mutate(Quarters = Year * 4 + Quarter,
-         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
-  select(UID, YearQuarter, starts_with("Quarters_")) %>% 
-  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
-               names_to = "Lag",
-               values_to = "Quarters") %>% 
-  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
-         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
-  group_by(UID, YearQuarter, Lag) %>% 
-  summarize(Fire_15 = sum(Check)) %>% 
-  ungroup
-
-#  30km Buffer
-
-dat_join_mtbs_30 = 
-  dat_notifications_less %>% 
-  buffer(width = 30 * 3280.84) %>% # Kilometers to feet.
-  full_join(dat_notifications_quarters) %>% 
-  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-  intersect(dat_mtbs) %>% 
-  as_tibble %>% 
-  mutate(Quarters = Year * 4 + Quarter,
-         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
-  select(UID, YearQuarter, starts_with("Quarters_")) %>% 
-  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
-               names_to = "Lag",
-               values_to = "Quarters") %>% 
-  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
-         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
-  group_by(UID, YearQuarter, Lag) %>% 
-  summarize(Fire_30 = sum(Check)) %>% 
-  ungroup
+  mutate(Row_Parcel = row_number()) %>% 
+  left_join(dat_parcels_less %>% as_tibble %>% mutate(Row_Parcel = row_number())) %>% 
+  select(-Row_Parcel) %>% 
+  pivot_longer(-Parcel) %>% 
+  group_by(Parcel) %>% 
+  mutate(Row_MTBS = row_number()) %>% 
+  ungroup %>% 
+  left_join(dat_mtbs %>% as_tibble %>% mutate(Row_MTBS = row_number())) %>% 
+  mutate(Year_Quarter_MTBS = paste0(Year_MTBS, "_", Quarter_MTBS)) %>% 
+  select(Parcel, Distance = value, Year_Quarter_MTBS) %>% 
+  group_by(Parcel, Year_Quarter_MTBS) %>% 
+  summarize(
+    Fire_0 = sum(Distance == 0),
+    Fire_15 = sum(Distance <= 15),
+    Fire_30 = sum(Distance <= 30)
+  ) %>% 
+  ungroup %>% 
+  mutate(
+    Fire_15_Doughnut = Fire_15 - Fire_0,
+    Fire_30_Doughnut = Fire_30 - Fire_15
+  ) %>% 
+  left_join(
+    expand_grid(
+      Parcel = unique(.$Parcel), 
+      Year_Quarter_MTBS = paste0(rep(1985:2024, each = 4), "_", rep(1:4, times = length(1985:2024)))
+    ),
+    .
+  ) %>% 
+  arrange(Parcel, Year_Quarter_MTBS) %>% 
+  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% 
+  pivot_longer(starts_with("Fire"), names_to = "Variable", values_to = "Count") %>% 
+  group_by(Parcel, Variable) %>% 
+  mutate(
+    across(
+      Count,
+      .fns = set_names(
+        lapply(1:120, \(k) ~lag(.x, k)),
+        paste0("Lag_", 1:120)
+      )
+    )
+  ) %>% 
+  ungroup %>% 
+  filter(Year_Quarter_MTBS > "2014_4") %>% 
+  rename(Count_Lag_0 = Count) %>% 
+  rename_with(.cols = starts_with("Count"), ~ str_remove(.x, "Count_")) %>% 
+  pivot_wider(names_from = "Variable", values_from = starts_with("Lag")) %T>% 
+  write_csv("03_intermediate/dat_parcels_mtbs.csv")
 
 #  Proportion within fire perimeters. Skipping this to avoid geospatial pain. 
 
-dat_join_mtbs_proportion =
-  dat_notifications_less %>% 
-  left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
-  full_join(dat_notifications_quarters) %>% 
-  makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-  intersect(dat_mtbs) %>% 
-  mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381) %>% # Get acres burnt.
-  # Dissolve multiple fires in the same notification in the same quarter.
-  #  This doesn't happen empirically, does it?
-  group_by(UID,
-           YearQuarter,
-           Year,
-           Quarter,
-           Year_MTBS,
-           Quarter_MTBS,
-           Acres_1) %>% 
-  summarize(Acres_Burnt = sum(Acres_Burnt)) %>% 
-  ungroup %>% 
-  #  This does not happen empirically.
-  as_tibble %>% 
-  mutate(Quarters = Year * 4 + Quarter,
-         Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-         across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
-  select(UID, YearQuarter, starts_with("Quarters_"), starts_with("Acres_")) %>% 
-  pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
-               names_to = "Lag",
-               values_to = "Quarters") %>% 
-  mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
-         Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
-  filter(Check) %>% 
-  mutate(Fire_Proportion = Acres_Burnt / Acres_1) %>% 
-  group_by(UID, YearQuarter, Lag) %>% 
-  summarize(Fire_Proportion = max(Fire_Proportion)) %>% # Using max() is subjective. 
-  ungroup %>% 
-  mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
+# dat_join_mtbs_proportion =
+#   dat_notifications_less %>% 
+#   left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
+#   full_join(dat_notifications_quarters) %>% 
+#   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
+#   intersect(dat_mtbs) %>% 
+#   mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381) %>% # Get acres burnt.
+#   # Dissolve multiple fires in the same notification in the same quarter.
+#   #  This doesn't happen empirically, does it?
+#   group_by(UID,
+#            YearQuarter,
+#            Year,
+#            Quarter,
+#            Year_MTBS,
+#            Quarter_MTBS,
+#            Acres_1) %>% 
+#   summarize(Acres_Burnt = sum(Acres_Burnt)) %>% 
+#   ungroup %>% 
+#   #  This does not happen empirically.
+#   as_tibble %>% 
+#   mutate(Quarters = Year * 4 + Quarter,
+#          Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
+#          across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
+#   select(UID, YearQuarter, starts_with("Quarters_"), starts_with("Acres_")) %>% 
+#   pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
+#                names_to = "Lag",
+#                values_to = "Quarters") %>% 
+#   mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
+#          Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
+#   filter(Check) %>% 
+#   mutate(Fire_Proportion = Acres_Burnt / Acres_1) %>% 
+#   group_by(UID, YearQuarter, Lag) %>% 
+#   summarize(Fire_Proportion = max(Fire_Proportion)) %>% # Using max() is subjective. 
+#   ungroup %>% 
+#   mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
 
 # Combine
 
-dat_join_mtbs = 
-  dat_join_mtbs_0 %>% 
-  left_join(dat_join_mtbs_15) %>% 
-  left_join(dat_join_mtbs_30) %>% 
-  mutate(Fire_15_Doughnut = Fire_15 - Fire_0,
-         Fire_30_Doughnut = Fire_30 - Fire_15) %>% 
-  left_join(dat_join_mtbs_proportion) %>% 
-  pivot_wider(names_from = Lag,
-              names_prefix = "Lag_",
-              values_from = starts_with("Fire")) %>% 
-  left_join(dat_notifications_quarters %>% as_tibble, .) %>% 
-  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)))
+# dat_join_mtbs = 
+#   dat_join_mtbs_0 %>% 
+#   left_join(dat_join_mtbs_15) %>% 
+#   left_join(dat_join_mtbs_30) %>% 
+#   mutate(Fire_15_Doughnut = Fire_15 - Fire_0,
+#          Fire_30_Doughnut = Fire_30 - Fire_15) %>% 
+#   left_join(dat_join_mtbs_proportion) %>% 
+#   pivot_wider(names_from = Lag,
+#               names_prefix = "Lag_",
+#               values_from = starts_with("Fire")) %>% 
+#   left_join(dat_notifications_quarters %>% as_tibble, .) %>% 
+#   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)))
 
 # VPD
 
@@ -438,9 +441,9 @@ dat_notifications_out =
   dat_join_mtbs %>% 
   rename(Year_Quarter = YearQuarter) %>% 
   left_join(dat_join_vpd) %>% 
-  left_join(dat_join_ppt) %>% 
-  left_join(dat_join_tmean) %>% 
-  left_join(dat_join_tmax) %>% 
+  # left_join(dat_join_ppt) %>% 
+  # left_join(dat_join_tmean) %>% 
+  # left_join(dat_join_tmax) %>% 
   left_join(dat_join_cwd) %>% 
   left_join(dat_join_price) %>% 
   left_join(dat_join_rate) %T>% 
