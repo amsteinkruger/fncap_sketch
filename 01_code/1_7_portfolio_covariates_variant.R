@@ -31,9 +31,16 @@ plan(multisession, workers = par_cores)
 
 dat_parcels = "03_intermediate/dat_portfolios.gdb" %>% vect
 
-dat_parcels_less = dat_parcels %>% distinct(Parcel)
-
-dat_parcels_quarters = dat_parcels %>% as_tibble %>% select(Parcel, Year_Quarter)
+dat_parcels_less = 
+  dat_parcels %>% 
+  distinct(Parcel) %T>% 
+  writeVector("03_intermediate/dat_portfolios_distinct.gdb")
+  
+dat_parcels_more = 
+  dat_parcels_less %>% 
+  as_tibble %>% 
+  mutate(Row_Parcel = row_number()) %T>% 
+  write_csv("03_intermediate/dat_portfolios_distinct.csv")
 
 #  Notifications
 
@@ -92,295 +99,271 @@ dat_mtbs =
   project("EPSG:2992") %>% 
   makeValid %>% 
   crop(dat_bounds) %>% 
+  arrange(ig_date) %>% 
   mutate(
     Year_MTBS = ig_date %>% year,
     Month_MTBS = ig_date %>% month,
     Quarter_MTBS = ceiling(Month_MTBS / 3), 
-    .keep = "none"
-  )
+    Year_Quarter_MTBS = paste0(Year_MTBS, "_", Quarter_MTBS),
+    Row_MTBS = row_number()
+  ) %>% 
+  select(Row_MTBS, Year_Quarter_MTBS) %T>% 
+  writeVector("03_intermediate/dat_mtbs.gdb")
+
+fun_parcels_mtbs = function(Chunk){
+  
+  dat_parcels_less = 
+    "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+    vect %>% 
+    mutate(Row_Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+    filter(Row_Chunk == Chunk) %>% 
+    select(Parcel)
+    
+  dat_parcels_more = 
+    "03_intermediate/dat_portfolios_distinct.csv" %>% 
+    read_csv %>% 
+    mutate(Row_Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+    filter(Row_Chunk == Chunk) %>% 
+    select(Parcel, Row_Parcel)
+  
+  vec_parcels = dat_parcels_more$Parcel
+  
+  dat_mtbs = "03_intermediate/dat_mtbs.gdb" %>% vect
+  
+  result = 
+    dat_parcels_less %>% 
+    distance(dat_mtbs) %>% 
+    round(0) %>% 
+    divide_by(3280.84) %>% # ft to km
+    as_tibble %>% 
+    mutate(Row_Parcel = row_number()) %>% 
+    left_join(dat_parcels_more) %>% 
+    select(-Row_Parcel) %>% 
+    pivot_longer(-Parcel) %>% 
+    group_by(Parcel) %>% 
+    mutate(Row_MTBS = row_number()) %>% 
+    ungroup %>% 
+    left_join(dat_mtbs %>% as_tibble) %>% 
+    select(Parcel, Distance = value, Year_Quarter_MTBS) %>% 
+    group_by(Parcel, Year_Quarter_MTBS) %>% 
+    summarize(
+      Fire_0 = sum(Distance == 0),
+      Fire_15 = sum(Distance <= 15),
+      Fire_30 = sum(Distance <= 30)
+    ) %>% 
+    ungroup %>% 
+    mutate(
+      Fire_15_Doughnut = Fire_15 - Fire_0,
+      Fire_30_Doughnut = Fire_30 - Fire_15
+    ) %>% 
+    left_join(
+      expand_grid(
+        Parcel = vec_parcels, 
+        Year_Quarter_MTBS = paste0(rep(1985:2024, each = 4), "_", rep(1:4, times = length(1985:2024)))
+      ),
+      .
+    ) %>% 
+    arrange(Parcel, Year_Quarter_MTBS) %>% 
+    mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% 
+    pivot_longer(starts_with("Fire"), names_to = "Variable", values_to = "Count") %>% 
+    group_by(Parcel, Variable) %>% 
+    mutate(
+      across(
+        Count,
+        .fns = set_names(
+          lapply(1:120, \(k) ~lag(.x, k)),
+          paste0("Lag_", 1:120)
+        )
+      )
+    ) %>% 
+    ungroup %>% 
+    filter(Year_Quarter_MTBS > "2014_4") %>% 
+    rename(Count_Lag_0 = Count) %>% 
+    rename_with(.cols = starts_with("Count"), ~ str_remove(.x, "Count_")) %>% 
+    pivot_wider(names_from = "Variable", values_from = starts_with("Lag"))
+  
+    return(result)
+  
+  }
 
 dat_parcels_mtbs = 
-  dat_parcels_less %>% 
-  distance(dat_mtbs) %>% 
-  round(0) %>% 
-  divide_by(3280.84) %>% # ft to km
-  as_tibble %>% 
-  mutate(Row_Parcel = row_number()) %>% 
-  left_join(dat_parcels_less %>% as_tibble %>% mutate(Row_Parcel = row_number())) %>% 
-  select(-Row_Parcel) %>% 
-  pivot_longer(-Parcel) %>% 
-  group_by(Parcel) %>% 
-  mutate(Row_MTBS = row_number()) %>% 
-  ungroup %>% 
-  left_join(dat_mtbs %>% as_tibble %>% mutate(Row_MTBS = row_number())) %>% 
-  mutate(Year_Quarter_MTBS = paste0(Year_MTBS, "_", Quarter_MTBS)) %>% 
-  select(Parcel, Distance = value, Year_Quarter_MTBS) %>% 
-  group_by(Parcel, Year_Quarter_MTBS) %>% 
-  summarize(
-    Fire_0 = sum(Distance == 0),
-    Fire_15 = sum(Distance <= 15),
-    Fire_30 = sum(Distance <= 30)
-  ) %>% 
-  ungroup %>% 
-  mutate(
-    Fire_15_Doughnut = Fire_15 - Fire_0,
-    Fire_30_Doughnut = Fire_30 - Fire_15
-  ) %>% 
-  left_join(
-    expand_grid(
-      Parcel = unique(.$Parcel), 
-      Year_Quarter_MTBS = paste0(rep(1985:2024, each = 4), "_", rep(1:4, times = length(1985:2024)))
-    ),
-    .
-  ) %>% 
-  arrange(Parcel, Year_Quarter_MTBS) %>% 
-  mutate(across(starts_with("Fire"), ~ replace_na(.x, 0))) %>% 
-  pivot_longer(starts_with("Fire"), names_to = "Variable", values_to = "Count") %>% 
-  group_by(Parcel, Variable) %>% 
-  mutate(
-    across(
-      Count,
-      .fns = set_names(
-        lapply(1:120, \(k) ~lag(.x, k)),
-        paste0("Lag_", 1:120)
-      )
-    )
-  ) %>% 
-  ungroup %>% 
-  filter(Year_Quarter_MTBS > "2014_4") %>% 
-  rename(Count_Lag_0 = Count) %>% 
-  rename_with(.cols = starts_with("Count"), ~ str_remove(.x, "Count_")) %>% 
-  pivot_wider(names_from = "Variable", values_from = starts_with("Lag")) %T>% 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(Data_Parcels = Chunk %>% future_map(fun_parcels_mtbs, .options = furrr_options(seed = TRUE))) %>% 
+  unnest(Data_Parcels) %>% 
+  select(-Chunk) %T>% 
   write_csv("03_intermediate/dat_parcels_mtbs.csv")
 
-#  Proportion within fire perimeters. Skipping this to avoid geospatial pain. 
-
-# dat_join_mtbs_proportion =
-#   dat_notifications_less %>% 
-#   left_join(dat_notifications %>% as_tibble %>% select(UID, Acres_1)) %>% 
-#   full_join(dat_notifications_quarters) %>% 
-#   makeValid(buffer = TRUE) %>% # A handful of polygons become invalid on joining. 
-#   intersect(dat_mtbs) %>% 
-#   mutate(Acres_Burnt = expanse(., unit = "ha") * 2.47105381) %>% # Get acres burnt.
-#   # Dissolve multiple fires in the same notification in the same quarter.
-#   #  This doesn't happen empirically, does it?
-#   group_by(UID,
-#            YearQuarter,
-#            Year,
-#            Quarter,
-#            Year_MTBS,
-#            Quarter_MTBS,
-#            Acres_1) %>% 
-#   summarize(Acres_Burnt = sum(Acres_Burnt)) %>% 
-#   ungroup %>% 
-#   #  This does not happen empirically.
-#   as_tibble %>% 
-#   mutate(Quarters = Year * 4 + Quarter,
-#          Quarters_MTBS = Year_MTBS * 4 + Quarter_MTBS,
-#          across(Quarters, lapply(0:40, \(k) ~ .x - k))) %>% 
-#   select(UID, YearQuarter, starts_with("Quarters_"), starts_with("Acres_")) %>% 
-#   pivot_longer(cols = starts_with("Quarters_") & !ends_with("MTBS"),
-#                names_to = "Lag",
-#                values_to = "Quarters") %>% 
-#   mutate(Lag = Lag %>% str_split_i("_", 2) %>% as.numeric %>% `-` (1),
-#          Check = (Quarters - Quarters_MTBS) %in% 0:120) %>% 
-#   filter(Check) %>% 
-#   mutate(Fire_Proportion = Acres_Burnt / Acres_1) %>% 
-#   group_by(UID, YearQuarter, Lag) %>% 
-#   summarize(Fire_Proportion = max(Fire_Proportion)) %>% # Using max() is subjective. 
-#   ungroup %>% 
-#   mutate(Fire_Proportion = ifelse(Fire_Proportion > 1, 1, Fire_Proportion))
-
-# Combine
-
-# dat_join_mtbs = 
-#   dat_join_mtbs_0 %>% 
-#   left_join(dat_join_mtbs_15) %>% 
-#   left_join(dat_join_mtbs_30) %>% 
-#   mutate(Fire_15_Doughnut = Fire_15 - Fire_0,
-#          Fire_30_Doughnut = Fire_30 - Fire_15) %>% 
-#   left_join(dat_join_mtbs_proportion) %>% 
-#   pivot_wider(names_from = Lag,
-#               names_prefix = "Lag_",
-#               values_from = starts_with("Fire")) %>% 
-#   left_join(dat_notifications_quarters %>% as_tibble, .) %>% 
-#   mutate(across(starts_with("Fire"), ~ replace_na(.x, 0)))
+dat_portfolios_mtbs = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  select(Owner_Cotality, Parcel, Year_Quarter) %>% 
+  left_join(dat_parcels_mtbs, by = c("Parcel", "Year_Quarter" = "Year_Quarter_MTBS")) %T>% 
+  write_csv("03_intermediate/dat_portfolios_mtbs.csv")
 
 # VPD
 
 dat_vpd = "03_intermediate/data_vpd.tif" %>% rast
 
-dat_notifications_vpd = 
-  dat_notifications_less %>% 
-  terra::extract(dat_vpd, 
-                 ., 
-                 fun = mean,
-                 na.rm = TRUE) %T>% 
-  write_csv("03_intermediate/data_notifications_vpd.csv")
+dat_parcels_vpd = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(Parcel) %>% 
+          extract(
+            x = "03_intermediate/data_vpd.tif" %>% rast,
+            y = .,
+            fun = mean,
+            ID = FALSE,
+            bind = TRUE
+          ) %>%
+          as_tibble %>% 
+          pivot_longer(
+            -Parcel, 
+            names_to = "Year_Month", 
+            names_prefix = "VPD_", 
+            values_to = "VPD"
+          ) %>% 
+          mutate(
+            Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
+            Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
+            Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+            Year_Quarter = paste0(Year, "_", Quarter)
+          ) %>% 
+          group_by(Parcel, Year_Quarter) %>% 
+          summarize(VPD = mean(VPD, na.rm = TRUE)) %>% 
+          group_by(Parcel) %>% 
+          mutate(
+            across(
+              VPD,
+              .fns = set_names(
+                lapply(1:40, \(k) ~lag(.x, k)),
+                paste0("Lag_", 1:40)
+              )
+            )
+          ) %>% 
+          ungroup %>% 
+          filter(Year_Quarter > "2014_4") %>% 
+          rename(VPD_Lag_0 = VPD), 
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>%
+  select(-Chunk)
 
-dat_join_vpd = 
-  dat_notifications_vpd %>% 
-  bind_cols(dat_notifications_less %>% as_tibble,
-            .) %>% 
-  select(-ID) %>% 
-  pivot_longer(cols = starts_with("VPD"),
-               names_prefix = "VPD_",
-               names_to = "Year_Month",
-               values_to = "VPD") %>% 
-  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
-         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  group_by(UID, Year_Quarter) %>% 
-  summarize(VPD = mean(VPD, na.rm = TRUE)) %>% 
-  group_by(UID) %>% 
-  mutate(across(VPD, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  ungroup
-
-# Temperature
-
-#  Mean
-
-dat_tmean = "03_intermediate/data_tmean.tif" %>% rast
-
-dat_notifications_tmean = 
-  dat_notifications_less %>% 
-  terra::extract(dat_tmean, 
-                 ., 
-                 fun = mean,
-                 na.rm = TRUE) %T>% 
-  write_csv("03_intermediate/data_notifications_tmean.csv")
-
-dat_join_tmean = 
-  dat_notifications_tmean %>% 
-  bind_cols(dat_notifications_less %>% as_tibble,
-            .) %>% 
-  select(-ID) %>% 
-  pivot_longer(cols = starts_with("TMean"),
-               names_prefix = "TMean_",
-               names_to = "Year_Month",
-               values_to = "TMean") %>% 
-  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
-         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  group_by(UID, Year_Quarter) %>% 
-  summarize(TMean = mean(TMean, na.rm = TRUE)) %>% 
-  group_by(UID) %>% 
-  mutate(across(TMean, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  ungroup
-
-
-#  Max
-
-dat_tmax = "03_intermediate/data_tmax.tif" %>% rast
-
-dat_notifications_tmax = 
-  dat_notifications_less %>% 
-  terra::extract(dat_tmax, 
-                 ., 
-                 fun = mean,
-                 na.rm = TRUE) %T>% 
-  write_csv("03_intermediate/data_notifications_tmax.csv")
-
-dat_join_tmax = 
-  dat_notifications_tmax %>% 
-  bind_cols(dat_notifications_less %>% as_tibble,
-            .) %>% 
-  select(-ID) %>% 
-  pivot_longer(cols = starts_with("TMax"),
-               names_prefix = "TMax_",
-               names_to = "Year_Month",
-               values_to = "TMax") %>% 
-  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
-         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  group_by(UID, Year_Quarter) %>% 
-  summarize(TMax = mean(TMax, na.rm = TRUE)) %>% 
-  group_by(UID) %>% 
-  mutate(across(TMax, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  ungroup
-
-# Precipitation
-
-dat_ppt = "03_intermediate/data_ppt.tif" %>% rast
-
-dat_notifications_ppt = 
-  dat_notifications_less %>% 
-  terra::extract(dat_ppt, 
-                 ., 
-                 fun = mean,
-                 na.rm = TRUE) %T>% 
-  write_csv("03_intermediate/data_notifications_ppt.csv")
-
-dat_join_ppt = 
-  dat_notifications_ppt %>% 
-  bind_cols(dat_notifications_less %>% as_tibble,
-            .) %>% 
-  select(-ID) %>% 
-  pivot_longer(cols = starts_with("PPT"),
-               names_prefix = "PPT_",
-               names_to = "Year_Month",
-               values_to = "PPT") %>% 
-  mutate(Year = Year_Month %>% str_split_i("_", 1) %>% as.numeric,
-         Month = Year_Month %>% str_split_i("_", 2) %>% as.numeric,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  group_by(UID, Year_Quarter) %>% 
-  summarize(PPT = mean(PPT, na.rm = TRUE)) %>% 
-  group_by(UID) %>% 
-  mutate(across(PPT, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  ungroup
+dat_portfolios_vpd = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  select(Owner_Cotality, Parcel, Year_Quarter) %>% 
+  left_join(dat_parcels_vpd) %T>% 
+  write_csv("03_intermediate/dat_portfolios_vpd.csv")
 
 # CWD
 
 dat_cwd = "03_intermediate/data_cwd.tif" %>% rast
 
-dat_notifications_cwd = 
-  dat_notifications_less %>% 
-  terra::extract(dat_cwd,
-                 .,
-                 fun = mean,
-                 na.rm = TRUE) %T>% 
-  write_csv("03_intermediate/data_notifications_cwd.csv")
-
-dat_join_cwd = 
-  dat_notifications_cwd %>% 
-  bind_cols(dat_notifications_less %>% as_tibble,
-            .) %>% 
+dat_parcels_cwd = 
+  dat_parcels_less %>% 
+  terra::extract(dat_cwd, ., fun = mean, na.rm = TRUE) %>% 
+  bind_cols(dat_parcels_less %>% as_tibble, .) %>% 
   select(-ID) %>% 
-  pivot_longer(cols = !UID,
-               names_to = "Year",
-               values_to = "CWD") %>% 
+  pivot_longer(
+    cols = !Parcel,
+    names_to = "Year",
+    values_to = "CWD"
+  ) %>% 
   mutate(Year = Year %>% as.numeric) %>% 
-  full_join(tibble(Year = rep(2005:2025, each = 4), 
-                   Quarter = rep(1:4, length(2005:2025))),
-            relationship = "many-to-many") %>% 
-  mutate(Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-  group_by(UID) %>% 
+  full_join(
+    tibble(Year = rep(2005:2025, each = 4), 
+           Quarter = rep(1:4, length(2005:2025))),
+    relationship = "many-to-many"
+  ) %>% 
+  mutate(Year_Quarter = paste0(Year, "_", Quarter)) %>% 
+  select(Parcel, Year_Quarter, CWD) %>% 
+  group_by(Parcel) %>% 
   mutate(across(CWD, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  ungroup
+  ungroup %>% 
+  rename(CWD_Lag_0 = CWD) %T>% 
+  write_csv("03_intermediate/data_parcels_cwd.csv")
 
+dat_parcels_cwd = 
+  tibble(Chunk = 1:par_cores) %>% 
+  mutate(
+    Data_Parcels = 
+      Chunk %>% 
+      future_map(
+        ~ "03_intermediate/dat_portfolios_distinct.gdb" %>% 
+          vect %>% 
+          mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
+          filter(Chunk == .x) %>% 
+          select(Parcel) %>% 
+          extract(
+            x = "03_intermediate/data_cwd.tif" %>% rast,
+            y = .,
+            fun = mean,
+            ID = FALSE,
+            bind = TRUE
+          ) %>%
+          as_tibble %>% 
+          rename_with(.cols = starts_with("X"), ~ str_replace(.x, "X", "")) %>% 
+          pivot_longer(
+            cols = !Parcel,
+            names_to = "Year",
+            values_to = "CWD"
+          ) %>%
+          mutate(Year = Year %>% as.numeric) %>%
+          full_join(
+            tibble(Year = rep(2005:2025, each = 4),
+                   Quarter = rep(1:4, length(2005:2025))),
+            relationship = "many-to-many"
+          ) %>%
+          mutate(Year_Quarter = paste0(Year, "_", Quarter)) %>%
+          select(Parcel, Year_Quarter, CWD) %>%
+          group_by(Parcel) %>%
+          mutate(across(CWD, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>%
+          ungroup %>%
+          filter(Year_Quarter > "2014_4") %>% 
+          rename(CWD_Lag_0 = CWD),
+        .options = furrr_options(seed = TRUE)
+      )
+  ) %>% 
+  unnest(Data_Parcels) %>%
+  select(-Chunk)
+
+dat_portfolios_cwd = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  select(Owner_Cotality, Parcel, Year_Quarter) %>% 
+  left_join(dat_parcels_cwd) %T>% 
+  write_csv("03_intermediate/dat_portfolios_cwd.csv")
+  
 # Prices
 
 #  Producer Price Index, BLS via FRED
-#   Note that this is the only available timber/lumber series with reasonable coverage. 
 
 dat_ppi = 
   "02_data/1_7_2_BLS/data_ppi_lumber.csv" %>% 
   read_csv %>% 
-  mutate(Year = observation_date %>% year,
-         Month = observation_date %>% month,
-         Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
+  mutate(
+    Year = observation_date %>% year,
+    Month = observation_date %>% month,
+    Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
+    Year_Quarter = paste0(Year, "_Q", Quarter)
+  ) %>% 
   filter(Year %in% 2005:2025) %>% 
   group_by(Year_Quarter) %>% 
   summarize(PPI = WPU08 %>% mean) %>% 
   ungroup %>% 
-  mutate(Check = Year_Quarter == max(Year_Quarter),
-         Reference = ifelse(Check, PPI, NA) %>% max(na.rm = TRUE),
-         Factor_PPI = Reference / PPI) %>% 
+  mutate(
+    Check = Year_Quarter == max(Year_Quarter),
+    Reference = ifelse(Check, PPI, NA) %>% max(na.rm = TRUE),
+    Factor_PPI = Reference / PPI
+  ) %>% 
   select(Year_Quarter, Factor_PPI)
 
 #  Stumpage, LogLines/FastMarkets
@@ -431,23 +414,11 @@ dat_join_rate =
   ungroup %>% 
   mutate(across(Rate, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
   filter(Year_Quarter > "2004_Q4" & Year_Quarter < "2025_Q1") %>% 
-  left_join(dat_notifications_quarters %>% 
-              select(UID, Year_Quarter = YearQuarter), 
-            .)
+  left_join(dat_notifications_quarters %>% select(UID, Year_Quarter = YearQuarter), .)
 
-#  Export
+#  Aggregate parcel covariates to portfolios and export. 
 
-dat_notifications_out = 
-  dat_join_mtbs %>% 
-  rename(Year_Quarter = YearQuarter) %>% 
-  left_join(dat_join_vpd) %>% 
-  # left_join(dat_join_ppt) %>% 
-  # left_join(dat_join_tmean) %>% 
-  # left_join(dat_join_tmax) %>% 
-  left_join(dat_join_cwd) %>% 
-  left_join(dat_join_price) %>% 
-  left_join(dat_join_rate) %T>% 
-  write_csv("03_intermediate/dat_notifications_1_7.csv")
+
 
 #  Stop timing. 
 

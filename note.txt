@@ -1,18 +1,17 @@
+2026/10/01
+
+ 1. Join and export time-varying covariates.
+ 2. Combine all covariates in panel of portfolios (in 5_1). 
+ 3. Revisit site class and species. 
+ 4. Estimate. 
+
 2026/09/29
 
 Remember to worry about geospatial/parcel/CLIP differences in area. 
 
-For MTBS, what if intersects() returns a simpler/faster result than intersect()?
-
-
 2026/09/28
 
-Before running covariates on full portfolios, rerun portfolios after dropping ownerless parcels and nonsense
-e.g. waterways? that turn up in quick plots
-
-this kind of problem is good motivation to fall back on Cotality points and zonal statistics instead of parcels
-
-if nothing else, compare parcel acreage to cotality/CLIP acreage
+Watch out for nonsense parcel matches and area mismatches (CLIP vs. parcel). 
 
 
 2026/09/27

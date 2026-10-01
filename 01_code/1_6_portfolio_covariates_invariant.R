@@ -19,8 +19,6 @@ plan(multisession, workers = par_cores)
 #    Area
 #    Elevation
 #    Slope
-#    Flow Lines (Skipping)
-#    Steep Slopes (Skipping)
 #    Pyromes
 #    ODF Private Forest Districts
 #    Counties
@@ -107,106 +105,6 @@ dat_parcels_slope =
   unnest(Data_Parcels) %>% 
   select(-Chunk) %>% 
   rename(Slope = slope)
-
-# Riparian Zones and Slopes
-
-#  Flow Lines
-
-# dat_join_riparian =
-#   # "02_data/1_6_3_FPA/Hydrography_Flow_Line.geojson" %>%
-#   "02_data/1_6_3_FPA/Hydrography_Flow_Line.gdb" %>%
-#   vect %>% # 5'
-#   select(FPAStreamSize,
-#          StreamName,
-#          StreamPermanence,
-#          StreamTermination,
-#          StreamWaterUse,
-#          FishPresence,
-#          SSBTStatus,
-#          DistanceToFish,
-#          DistanceToSSBT) %>%
-#   crop(dat_bounds) %>% 
-#   # This is where you could split the spatvector by stream attributes for different buffer widths. 
-#   buffer(20) %>% 
-#   # Find intersections. 
-#   intersect(dat_notifications, .) %>%
-#   # Combine intersections. This is important because intersections can overlap. 
-#   group_by(UID, Acres_1) %>%
-#   summarize %>%
-#   ungroup %>%
-#   # Calculate areas of intersections. 
-#   mutate(Acres_Riparian = expanse(., unit = "ha") * 2.47105381) %>% 
-#   as_tibble %>% 
-#   # Calculate proportional areas of intersections.
-#   mutate(Acres_Riparian_Proportion = Acres_Riparian / Acres_1) %>% 
-#   # Correct for one oddball case.
-#   mutate(Acres_Riparian_Proportion = ifelse(Acres_Riparian_Proportion > 1, 1, Acres_Riparian_Proportion)) %>% 
-#   # Tag on to all notifications and add a binary variable.
-#   left_join(dat_notifications_less, .) %>% 
-#   mutate(Acres_Riparian = Acres_Riparian %>% replace_na(0),
-#          Acres_Riparian_Proportion = Acres_Riparian_Proportion %>% replace_na(0),
-#          Acres_Riparian_Binary = ifelse(Acres_Riparian > 0, 1, 0)) %>% 
-#   # Tidy up.
-#   as_tibble %>% 
-#   select(-Acres_1)
-
-#  Sediment Source Areas
-
-# dat_fpa_2 =
-#   "02_data/1_6_3_FPA/Topography_Designated_Sediment_Source_Area.gdb" %>%
-#   vect %>%
-#   select(TriggerSource) %>% 
-#   crop(dat_bounds %>% project("EPSG:3857")) %>%
-#   project("EPSG:2992") %>%
-#   intersect(dat_notifications_less_1, .) %>%
-#   select(UID) %>%
-#   as_tibble %>%
-#   mutate(FPA_2 = 1) %>%
-#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
-#   distinct %>% 
-#   mutate(FPA_2 = FPA_2 %>% replace_na(0))
-
-#  Flow Traversal Areas
-
-# So, the flow traversal areas are described by points. This is silly.
-# They should be lines. Specifically, lines with fewer (than 4000000) vertices.
-# So: figure out geospatial operations to turn points into sensible lines.
-
-# dat_fpa_3 =
-#   "02_data/1_6_3_FPA/Topography_Debris_Flow_Traversal_Area.gdb" %>%
-#   vect %>%
-#   slice_sample(n = 10) %>% # Testing runtimes.
-#   crop(dat_bounds %>% project("EPSG:3857")) %>%
-#   project("EPSG:2992") %>%
-#   intersect(dat_notifications_less_1, .) %>%
-#   select(UID) %>%
-#   as_tibble %>%
-#   mutate(FPA_3 = 1) %>%
-#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
-#   distinct %>%
-#   mutate(FPA_3 = FPA_3 %>% replace_na(0))
-
-#  Flow Traversal Subbasins
-
-# dat_fpa_4 =
-#   "02_data/1_6_3_FPA/opography_Debris_Flow_Traversal_Subbasin.gdb" %>%
-#   vect %>%
-#   crop(dat_bounds %>% project("EPSG:3857")) %>%
-#   project("EPSG:2992") %>%
-#   intersect(dat_notifications_less_1, .) %>%
-#   select(UID) %>%
-#   as_tibble %>%
-#   mutate(FPA_4 = 1) %>%
-#   left_join(dat_notifications_less_1 %>% as_tibble, .) %>%
-#   distinct %>% 
-#   mutate(FPA_4 = FPA_4 %>% replace_na(0))
-
-# dat_join_fpa =
-#   dat_fpa_1 %>%
-#   left_join(dat_fpa_2) %>%
-#   left_join(dat_fpa_3) %>%
-#   left_join(dat_fpa_4) %>% 
-#   as_tibble
 
 #  Pyromes
 
@@ -448,12 +346,6 @@ dat_portfolios_covariates =
       Pyrome_NA_Area
   ) %>% 
   relocate(Area, .after = "Year_Quarter") %T>% 
-  # relocate(starts_with("County") & ends_with("Proportion"), .after = "Distance_City") %>% 
-  # relocate(starts_with("County") & ends_with("Area"), .after = "Distance_City") %>% 
-  # relocate(starts_with("District") & ends_with("Proportion"), .after = "Distance_City") %>% 
-  # relocate(starts_with("District") & ends_with("Area"), .after = "Distance_City") %>% 
-  # relocate(starts_with("Pyrome") & ends_with("Proportion"), .after = "Distance_City") %>% 
-  # relocate(starts_with("Pyrome") & ends_with("Area"), .after = "Distance_City") %T>% 
   write_csv("03_intermediate/dat_portfolios_covariates_invariant.csv") %>% 
   select(-starts_with(c("Pyrome", "District", "County"))) %T>% 
   write_csv("03_intermediate/dat_portfolios_covariates_invariant_less.csv")
