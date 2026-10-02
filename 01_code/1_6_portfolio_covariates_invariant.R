@@ -59,18 +59,27 @@ dat_parcels_elevation =
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
           select(Parcel) %>% 
-          extract(
-            x = "03_intermediate/dat_elevation.tif" %>% rast,
-            y = .,
-            fun = mean,
-            ID = FALSE,
-            bind = TRUE
-          ) %>%
+          sf::st_as_sf() %>% 
+          exact_extract(
+            x = "03_intermediate/dat_elevation.tif" %>% rast, 
+            y = ., 
+            fun = "mean", 
+            append_cols = "Parcel", 
+            max_cells_in_memory = 1e+09
+          ) %>% 
+          # extract(
+          #   x = "03_intermediate/dat_elevation.tif" %>% rast,
+          #   y = .,
+          #   fun = mean,
+          #   ID = FALSE,
+          #   bind = TRUE
+          # ) %>%
           as_tibble, 
         .options = furrr_options(seed = TRUE)
       )
   ) %>% 
   unnest(Data_Parcels) %>% 
+  rename(Elevation = mean) %>% 
   select(-Chunk)
 
 # Slope
@@ -91,20 +100,28 @@ dat_parcels_slope =
           mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>%
           filter(Chunk == .x) %>% 
           select(Parcel) %>% 
-          extract(
-            x = "03_intermediate/dat_slope.tif" %>% rast,
-            y = .,
-            fun = mean,
-            ID = FALSE,
-            bind = TRUE
-          ) %>%
+          sf::st_as_sf() %>% 
+          exact_extract(
+            x = "03_intermediate/dat_slope.tif" %>% rast, 
+            y = ., 
+            fun = "mean", 
+            append_cols = "Parcel", 
+            max_cells_in_memory = 1e+09
+          ) %>% 
+          # extract(
+          #   x = "03_intermediate/dat_slope.tif" %>% rast,
+          #   y = .,
+          #   fun = mean,
+          #   ID = FALSE,
+          #   bind = TRUE
+          # ) %>%
           as_tibble, 
         .options = furrr_options(seed = TRUE)
       )
   ) %>% 
   unnest(Data_Parcels) %>% 
-  select(-Chunk) %>% 
-  rename(Slope = slope)
+  rename(Slope = mean) %>% 
+  select(-Chunk)
 
 #  Pyromes
 
@@ -299,6 +316,10 @@ dat_parcels_cities =
   select(-Chunk)
 
 #  Join to portfolios in a panel and export. 
+
+# Does this return one row for each owner-quarter combination?
+# If not, why?
+# If so, where do additional rows end up appearing?
 
 dat_parcels_covariates = 
   dat_parcels %>% 

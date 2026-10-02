@@ -15,6 +15,7 @@ library(furrr) # Beware futures.
 library(sf)
 library(terra)
 library(tidyterra)
+library(exactextractr)
 library(geodata)
 
 #  Visualization

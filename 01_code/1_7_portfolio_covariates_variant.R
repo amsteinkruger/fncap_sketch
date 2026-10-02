@@ -42,51 +42,6 @@ dat_parcels_more =
   mutate(Row_Parcel = row_number()) %T>% 
   write_csv("03_intermediate/dat_portfolios_distinct.csv")
 
-#  Notifications
-
-# dat_notifications = 
-#   "03_intermediate/dat_notifications_1_6.gdb" %>% 
-#   vect %>% 
-#   makeValid(buffer = TRUE)
-# 
-# dat_notifications_less = 
-#   dat_notifications %>% 
-#   select(UID)
-# 
-# dat_notifications_years = 
-#   dat_notifications %>% 
-#   mutate(Year = DateStart %>% year) %>% 
-#   select(UID, Year)
-# 
-# dat_notifications_quarters = 
-#   dat_notifications %>% 
-#   as_tibble %>% 
-#   select(UID, DateStart, DateEnd) %>% 
-#   # Get year-quarter components. 
-#   mutate(YearStart = DateStart %>% year,
-#          MonthStart = DateStart %>% month,
-#          QuarterStart = MonthStart %>% multiply_by(1 / 3) %>% ceiling,
-#          YearEnd = DateEnd %>% year,
-#          MonthEnd = DateEnd %>% month,
-#          QuarterEnd = MonthEnd %>% multiply_by(1 / 3) %>% ceiling) %>% # ,
-#   # Year_Quarter = paste0(Year, "_Q", Quarter)) %>% 
-#   # Get intervening years and quarters. 
-#   mutate(Years = map2(YearStart, YearEnd, seq),
-#          Quarters = seq(1, 4) %>% list) %>% 
-#   unnest(Years) %>% 
-#   unnest(Quarters) %>% 
-#   # Get conditions for keeping quarters.
-#   mutate(CheckStart = (Years == YearStart & Quarters < QuarterStart),
-#          CheckEnd = (Years == YearEnd & Quarters > QuarterEnd)) %>% 
-#   # Get year-quarter. 
-#   mutate(YearQuarter = paste0(Years, "_Q", Quarters)) %>% 
-#   # Clean up. 
-#   filter(!CheckStart & !CheckEnd) %>% 
-#   select(UID,
-#          YearQuarter,
-#          Year = Years,
-#          Quarter = Quarters)
-
 #  Bounds
 
 dat_bounds = "03_intermediate/dat_bounds.gdb" %>% vect
@@ -353,7 +308,7 @@ dat_ppi =
     Year = observation_date %>% year,
     Month = observation_date %>% month,
     Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-    Year_Quarter = paste0(Year, "_Q", Quarter)
+    Year_Quarter = paste0(Year, "_", Quarter)
   ) %>% 
   filter(Year %in% 2005:2025) %>% 
   group_by(Year_Quarter) %>% 
@@ -371,54 +326,104 @@ dat_ppi =
 dat_price_stumpage =
   "03_intermediate/data_stumpage.csv" %>% 
   read_csv %>% 
+  mutate(Year_Quarter = Year_Quarter %>% str_remove("Q")) %>% 
   left_join(dat_ppi) %>% 
   mutate(Price_Stumpage_DouglasFir = Price_Stumpage_DouglasFir * Factor_PPI,
          Price_Stumpage_WesternHemlock = Price_Stumpage_WesternHemlock * Factor_PPI) %>% 
   select(Year_Quarter, starts_with("Price_Stumpage_")) %>% 
   arrange(Year_Quarter) %>% 
-  mutate(across(starts_with("Price_Stumpage_"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40))))
+  mutate(across(starts_with("Price_Stumpage_"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
+  filter(Year_Quarter > "2014_4") %>% 
+  rename(
+    Price_Stumpage_DouglasFir_Lag_0 = Price_Stumpage_DouglasFir,
+    Price_Stumpage_WesternHemlock_Lag_0 = Price_Stumpage_WesternHemlock 
+  )
 
 #  Lumber Prices, FastMarkets
 
 dat_price_lumber = 
   "03_intermediate/data_lumber.csv" %>% 
   read_csv %>% 
+  mutate(Year_Quarter = Year_Quarter %>% str_remove("Q")) %>% 
   left_join(dat_ppi) %>% 
   pivot_longer(cols = starts_with("Price")) %>% 
   mutate(value = value * Factor_PPI) %>% 
   pivot_wider(names_from = name,
               values_from = value) %>% 
   select(-Factor_PPI) %>% 
-  mutate(across(starts_with("Price"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40))))
-
-#  Join
-
-dat_join_price = 
-  dat_notifications_quarters %>% 
-  select(UID, Year_Quarter = YearQuarter) %>% 
-  left_join(dat_price_stumpage) %>% 
-  left_join(dat_price_lumber)
+  mutate(across(starts_with("Price"), setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
+  filter(Year_Quarter > "2014_4")
 
 #  Effective Federal Funds Rate
 
-dat_join_rate = 
+dat_rate = 
   "02_data/1_7_4_FRED/FEDFUNDS.csv" %>% 
   read_csv %>% 
   mutate(Year = observation_date %>% year,
          Month = observation_date %>% month,
          Quarter = Month %>% multiply_by(1 / 3) %>% ceiling,
-         Year_Quarter = paste0(Year, "_Q", Quarter),
+         Year_Quarter = paste0(Year, "_", Quarter),
          Rate = FEDFUNDS) %>% 
   group_by(Year_Quarter) %>% 
   summarize(Rate = Rate %>% mean) %>% 
   ungroup %>% 
   mutate(across(Rate, setNames(lapply(1:40, \(k) ~ lag(.x, k)), paste0("Lag_", 1:40)))) %>% 
-  filter(Year_Quarter > "2004_Q4" & Year_Quarter < "2025_Q1") %>% 
-  left_join(dat_notifications_quarters %>% select(UID, Year_Quarter = YearQuarter), .)
+  filter(Year_Quarter > "2014_4" & Year_Quarter < "2025_1") %>% 
+  rename(Rate_Lag_0 = Rate)
 
 #  Aggregate parcel covariates to portfolios and export. 
 
-
+dat_portfolios = 
+  dat_parcels %>% 
+  as_tibble %>% 
+  select(Owner_Cotality, Year_Quarter, Parcel, Area) %>% 
+  left_join(dat_portfolios_vpd) %>% 
+  left_join(dat_portfolios_cwd) %>%
+  left_join(
+    dat_portfolios_mtbs %>% 
+      rename_with(
+        .cols = starts_with("Lag"), 
+        .fn = 
+          ~ paste(
+            str_split_i(.x, "_", 3), 
+            str_split_i(.x, "_", 4), 
+            str_split_i(.x, "_", 5), 
+            str_split_i(.x, "_", 1), 
+            str_split_i(.x, "_", 2),
+            sep = "_"
+          ) %>% 
+          str_replace("_NA_", "_")
+      )
+  ) %>%
+  select(-ends_with(as.character(21:120))) %>% # Flag.
+  group_by(Owner_Cotality) %>% 
+  nest %>% 
+  ungroup %>% 
+  mutate(Chunk = (row_number() * par_cores / nrow(.)) %>% ceiling) %>% 
+  unnest(data) %>% 
+  group_by(Chunk) %>% 
+  nest %>% 
+  ungroup %>% 
+  mutate(
+    data = 
+      data %>% 
+      map(
+        ~ .x %>% 
+          select(-Parcel) %>% 
+          group_by(Owner_Cotality, Year_Quarter) %>% 
+          summarize(
+            across(-Area, ~ weighted.mean(.x, Area, na.rm = TRUE)),
+            Area = sum(Area, na.rm = TRUE)
+          ) %>% 
+          ungroup %>% 
+          relocate(Area, .after = Year_Quarter)
+      )
+  ) %>% 
+  unnest(data) %>% 
+  select(-Chunk) %>% 
+  left_join(dat_price_stumpage) %>% 
+  left_join(dat_rate) %T>% 
+  write_csv("03_intermediate/dat_portfolios_covariates_variant.csv")
 
 #  Stop timing. 
 

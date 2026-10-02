@@ -1,9 +1,23 @@
 2026/10/01
 
- 1. Join and export time-varying covariates.
- 2. Combine all covariates in panel of portfolios (in 5_1). 
- 3. Revisit site class and species. 
- 4. Estimate. 
+Problem: invariant covariates are sneaking additional rows in. 
+
+Revisit notification set-up to check where ownership is coming from. 
+
+What's worth discussing?
+
+ - QA/QC on land portfolios.
+ - Workflows splitting on notifications vs. portfolios. 
+ - Lewis critique -- heterogeneity in ownership, productivity, and wildfire exposure.
+ - Logit
+ - Linear
+ - AME
+ - Stata's churdle as an alternative.
+
+ 1. Join and export time-varying covariates. (x)
+ 2. Combine all covariates in panel of portfolios (in 5_1).  (x)
+ 3. Revisit site class and species. (x)
+ 4. Estimate. (~)
 
 2026/09/29
 

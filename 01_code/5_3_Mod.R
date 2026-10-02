@@ -10,47 +10,17 @@ time_start = Sys.time()
 
 #  Get data. 
 
-dat_implicit = 
-  "03_intermediate/dat_firms_implicit_3_1.csv" %>% 
-  read_csv %>% 
-  drop_na(Landowner, Owner_Acres) %>% 
-  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
-  relocate(MBF_Both, .after = "Landowner_ID") %>% 
-  select(Landowner_ID, QuarterCompletion, MBF_Both, Owner_Acres, SiteClassMode, Price_Stumpage_DouglasFir_Mean, Rate_Mean, Fire_30, CWD_Mean)
+dat_implicit = "03_intermediate/dat_panel_portfolios_implicit.csv" %>% read_csv
+dat_explicit = "03_intermediate/dat_panel_portfolios_explicit.csv" %>%  read_csv
 
-dat_explicit = 
-  "03_intermediate/dat_firms_explicit_3_1.csv" %>% 
-  read_csv %>% 
-  drop_na(Landowner, Owner_Acres) %>% 
-  mutate(MBF_Both = MBF_DouglasFir + MBF_WesternHemlock) %>% 
-  mutate(MBF_Bin = ifelse(MBF_Both > 0, 1, 0)) %>% 
-  relocate(MBF_Both, MBF_Both, .after = "Landowner_ID") %>% 
-  select(Landowner_ID, QuarterCompletion, MBF_Bin, MBF_Both, Owner_Acres, SiteClassMode, Price_Stumpage_DouglasFir_Mean, Rate_Mean, Fire_30, CWD_Mean)
-
-# Split data by ODF's Small Forestland Owner (SFO) definition.
-#  This should be in 0_7 or 1_3. Or 1_9. 
-
-dat_explicit_small = 
-  dat_explicit %>% 
-  group_by(Landowner_ID) %>% 
-  mutate(Owner_Acres_Max = max(Owner_Acres, na.rm = TRUE)) %>% 
-  ungroup %>% 
-  filter(Owner_Acres_Max < 5000)
-
-dat_explicit_large = 
-  dat_explicit %>% 
-  group_by(Landowner_ID) %>% 
-  # mutate(MBF_All = sum(MBF_Both)) %>% 
-  mutate(Owner_Acres_Max = max(Owner_Acres, na.rm = TRUE)) %>% 
-  ungroup %>% 
-  # filter(MBF_All > quantile(MBF_All, 0.50))
-  filter(Owner_Acres_Max >= 5000)
+dat_explicit_small = dat_explicit %>% filter(Landowner_SFO)
+dat_explicit_large = dat_explicit %>% filter(!Landowner_SFO)
 
 vec_small = dat_explicit_small$Landowner_ID %>% unique
 vec_large = dat_explicit_large$Landowner_ID %>% unique
 
-dat_implicit_small = dat_implicit %>% filter(Landowner_ID %in% vec_small)
-dat_implicit_large = dat_implicit %>% filter(Landowner_ID %in% vec_large)
+dat_implicit_small = dat_implicit %>% filter(Landowner_SFO)
+dat_implicit_large = dat_implicit %>% filter(!Landowner_SFO)
   
 # Do:
 
@@ -73,21 +43,52 @@ dat_implicit_large = dat_implicit %>% filter(Landowner_ID %in% vec_large)
 
 formula_first = 
   MBF_Bin ~ 
-  Owner_Acres + 
-  SiteClassMode + 
+  Acres_Owned + 
   Price_Stumpage_DouglasFir_Mean + 
+  # Price_Stumpage_WesternHemlock_Mean + 
   Rate_Mean +
-  Fire_30 + 
-  CWD_Mean
+  Proportion_DouglasFir +
+  Site_Class +
+  Elevation +
+  Slope +
+  # Distance_Road + 
+  # Distance_Mill + 
+  Distance_City +
+  Pyrome_Klamath_Mountains_Area_Proportion +
+  Pyrome_Middle_Cascades_Area_Proportion +
+  # VPD_Mean +
+  CWD_Mean +
+  # Fire_15_Doughnut_Mean_4 +
+  # Fire_15_Doughnut_Mean_8 +
+  Fire_15_Doughnut_Mean_12 +
+  # Fire_30_Doughnut_Mean_4 +
+  # Fire_30_Doughnut_Mean_8 +
+  Fire_30_Doughnut_Mean_12
+
 
 formula_second = 
   MBF_Both ~ 
-  Owner_Acres + 
-  SiteClassMode + 
+  Acres_Owned + 
   Price_Stumpage_DouglasFir_Mean + 
+  # Price_Stumpage_WesternHemlock_Mean + 
   Rate_Mean +
-  Fire_30 + 
-  CWD_Mean
+  Proportion_DouglasFir +
+  Site_Class +
+  Elevation +
+  Slope +
+  # Distance_Road + 
+  # Distance_Mill + 
+  Distance_City +
+  Pyrome_Klamath_Mountains_Area_Proportion +
+  Pyrome_Middle_Cascades_Area_Proportion +
+  # VPD_Mean +
+  CWD_Mean +
+  # Fire_15_Doughnut_Mean_4 +
+  # Fire_15_Doughnut_Mean_8 +
+  Fire_15_Doughnut_Mean_12 +
+  # Fire_30_Doughnut_Mean_4 +
+  # Fire_30_Doughnut_Mean_8 +
+  Fire_30_Doughnut_Mean_12
 
 # Hurdle Models
 
