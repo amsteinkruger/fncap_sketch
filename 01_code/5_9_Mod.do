@@ -1,47 +1,48 @@
 * Models for processed notifications. 
 
-*  Folders
+*  Workspace
 
-*   Either go down a couple folders or go up one. 
-
-* cd "GitHub/fncap_sketch"
 * cd ..
 
 *  Data
 
 clear
 
-import delimited "03_intermediate/dat_firms_implicit_3_1.csv"
+import delimited "03_intermediate/dat_panel_portfolios_implicit.csv"
 
-gen mbf_both = mbf_douglasfir + mbf_westernhemlock
+destring price* rate* site_class proportion* vpd_mean cwd_mean fire*, replace ignore("NA")
 
 *  Linear
 
-reg mbf_both siteclassmode elevation distance_mill stumpage_mean_20 rate_mean_20 vpd_mean_20 fire_30_doughnut_lag_1
+reg mbf_both acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4
 
 *  Tobit
 
 clear
 
-import delimited "03_intermediate/dat_firms_explicit_3_1.csv"
+import delimited "03_intermediate/dat_panel_portfolios_explicit.csv"
 
-gen mbf_both = mbf_douglasfir + mbf_westernhemlock
+destring price* rate* site_class proportion* vpd_mean cwd_mean fire*, replace ignore("NA")
 
-tobit mbf_both siteclassmode elevation distance_mill stumpage_mean_20 rate_mean_20 vpd_mean_20 fire_30_doughnut_lag_1, ll(0)
+tobit mbf_both acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4, ll(0)
 
 *  Heckit
 
-gen mbf_0 = 0
-replace mbf_0 = 1 if mbf_both > 0
+gen mbf_binary = 0
+replace mbf_binary = 1 if mbf_bin == "TRUE"
 
 gen mbf_log = .
-replace mbf_log = log(mbf_both) if mbf_0 == 1
+replace mbf_log = log(mbf_both) if mbf_binary == 1
 
-heckman mbf_log siteclassmode elevation distance_mill stumpage_mean_20 rate_mean_20 vpd_mean_20 fire_30_doughnut_lag_1, select(mbf_0 = stumpage_mean_20 rate_mean_20 vpd_mean_20 fire_30_doughnut_lag_1) twostep first
+heckman mbf_log acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4, select(mbf_binary = acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4) twostep first
 
-*  Hurdles
+*  Craggit
 
-* Cragg's double hurdle might not be appropriate in the absence of "zero-type" (all zeros) observations. Or there are other problems with the structure of the data that prevent convergence. 
-* See also Engel et al. (2014) in the Stata Journal on alternative approaches to double hurdle implementation. The code is outdated but the statistical reasoning might not be. 
+*   Quick fix for churdle's nonconvergence with level production. Does this log form bias estimates?
 
-* churdle linear mbf_both siteclassmode elevation distance_mill stumpage_mean_20 rate_mean_20 vpd_mean_20 fire_30_doughnut_lag_1, select(stumpage_mean_20 rate_mean_20 vpd_mean_20 fire_30_doughnut_lag_1) ll(0)
+gen mbf_log_binary = mbf_binary
+replace mbf_log_binary = mbf_log if mbf_binary == 1
+
+churdle linear mbf_log_binary acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4, select(acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4) ll(0)
+
+margins, dydx(acres_owned price_stumpage_douglasfir_mean rate_mean elevation slope site_class proportion_douglasfir distance_city pyrome_klamath_mountains_area_pr pyrome_middle_cascades_area_pr cwd_mean fire_15_doughnut_mean_4 fire_30_doughnut_mean_4)
